@@ -1,6 +1,6 @@
 package API::Docker::Volume;
 # ABSTRACT: Docker volume entity
-
+our $VERSION = '0.002';
 use Moo;
 use namespace::clean;
 

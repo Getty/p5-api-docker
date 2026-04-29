@@ -1,6 +1,6 @@
 package API::Docker;
 # ABSTRACT: Perl client for the Docker Engine API
-
+our $VERSION = '0.002';
 use Moo;
 use Carp qw( croak );
 use Log::Any qw( $log );

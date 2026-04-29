@@ -1,6 +1,6 @@
 package API::Docker::Container;
 # ABSTRACT: Docker container entity
-
+our $VERSION = '0.002';
 use Moo;
 use namespace::clean;
 

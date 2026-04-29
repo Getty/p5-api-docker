@@ -1,6 +1,6 @@
 package API::Docker::API::Exec;
 # ABSTRACT: Docker Engine Exec API
-
+our $VERSION = '0.002';
 use Moo;
 use Carp qw( croak );
 use namespace::clean;
