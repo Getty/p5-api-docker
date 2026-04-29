@@ -3,9 +3,7 @@ Revision history for API-Docker
 {{$NEXT}}
 
 0.001     2026-04-29 00:40:43Z
-
-0.001     2026-04-21 00:00:00Z
-    - Initial release as API::Docker (renamed from WWW::Docker)
+    - Initial release as API::Docker
     - Docker Engine API client with Unix socket and TCP support
     - Auto-negotiate API version from daemon
     - Container, Image, Network, Volume, System, and Exec APIs
