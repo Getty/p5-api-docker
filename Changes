@@ -1,6 +1,6 @@
 Revision history for API-Docker
 
-{{$NEXT}}
+0.002     2026-05-17 05:36:20Z
   - HTTP role: `_request` now accepts a `headers => {}` option to set
     extra HTTP request headers. Headers are sanitised against CR/LF
     injection. Used by `images->push` to send `X-Registry-Auth`, and
