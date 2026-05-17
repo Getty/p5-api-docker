@@ -1,6 +1,6 @@
 package API::Docker::API::Containers;
 # ABSTRACT: Docker Engine Containers API
-our $VERSION = '0.002';
+our $VERSION = '0.003';
 use Moo;
 use API::Docker::Container;
 use Carp qw( croak );
