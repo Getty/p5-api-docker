@@ -135,6 +135,15 @@ sub _request {
     $request .= "Content-Length: " . length($body_content) . "\r\n";
   }
 
+  if ($opts{headers}) {
+    for my $h (sort keys %{$opts{headers}}) {
+      my $v = $opts{headers}{$h};
+      next unless defined $v;
+      $v =~ s/[\r\n]//g;
+      $request .= "$h: $v\r\n";
+    }
+  }
+
   $request .= "\r\n";
   $request .= $body_content if $body_content;
 
@@ -271,7 +280,8 @@ sub get {
 
 Perform HTTP GET request. Returns decoded JSON or raw response body.
 
-Options: C<params> (hashref of query parameters).
+Options: C<params> (hashref of query parameters),
+C<headers> (hashref of extra HTTP headers, e.g. C<< { 'X-Registry-Auth' => $b64 } >>).
 
 =cut
 
@@ -287,7 +297,8 @@ sub post {
 
 Perform HTTP POST request. C<$body> is automatically JSON-encoded if provided.
 
-Options: C<params> (hashref of query parameters).
+Options: C<params> (hashref of query parameters),
+C<headers> (hashref of extra HTTP headers).
 
 =cut
 

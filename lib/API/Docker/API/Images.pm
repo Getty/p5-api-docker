@@ -265,14 +265,61 @@ sub push {
   croak "Image name required" unless $name;
   my %params;
   $params{tag} = $opts{tag} if defined $opts{tag};
-  return $self->client->post("/images/$name/push", undef, params => \%params);
+
+  my $auth_header = _build_registry_auth_header($opts{auth});
+
+  return $self->client->post(
+    "/images/$name/push",
+    undef,
+    params  => \%params,
+    headers => { 'X-Registry-Auth' => $auth_header },
+  );
+}
+
+sub _build_registry_auth_header {
+  my ($auth) = @_;
+
+  # The Docker Engine requires an X-Registry-Auth header on every push,
+  # even for anonymous attempts. Encoding is base64url of a JSON object.
+  require JSON::MaybeXS;
+  require MIME::Base64;
+
+  my $payload;
+  if (!defined $auth) {
+    $payload = '{}';
+  }
+  elsif (ref $auth eq 'HASH') {
+    $payload = JSON::MaybeXS::encode_json($auth);
+  }
+  else {
+    # Already pre-built JSON or pre-encoded string. If it looks base64-like
+    # (no braces), pass through; otherwise encode as-is.
+    return $auth if $auth =~ /^[A-Za-z0-9+\/=_\-]+$/;
+    $payload = $auth;
+  }
+
+  my $b64 = MIME::Base64::encode_base64($payload, '');
+  $b64 =~ tr{+/}{-_};
+  $b64 =~ s/=+$//;
+  return $b64;
 }
 
 =method push
 
     $images->push('myrepo/nginx', tag => 'v1');
+    $images->push('myrepo/nginx', auth => {
+        username      => 'me',
+        password      => 'secret',
+        serveraddress => 'https://index.docker.io/v1/',
+    });
 
 Push an image to a registry. Optionally specify C<tag>.
+
+The Docker Engine requires an C<X-Registry-Auth> header on every push,
+even for anonymous attempts; the header is always sent. Pass C<auth> as
+a hashref of credentials (typical keys: C<username>, C<password>,
+C<serveraddress>, or C<identitytoken>), or as a pre-encoded base64 string.
+Without C<auth> the header carries an empty JSON object.
 
 =cut
 
