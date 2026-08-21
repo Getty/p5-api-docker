@@ -1,6 +1,13 @@
 Revision history for API-Docker
 
 {{$NEXT}}
+  - Document that this client speaks the Docker Engine HTTP API over a
+    socket and never shells out to the `docker` binary, so any engine
+    serving that API works -- Podman's rootless socket needs nothing
+    but `DOCKER_HOST`. The new CONTAINER ENGINES section also states
+    what socket discovery deliberately does not do: Docker contexts
+    (`currentContext`, `~/.docker/contexts/meta/*/meta.json`) are never
+    consulted, unlike the `docker` CLI, docker-java or Testcontainers.
 
 0.002     2026-05-17 05:36:20Z
   - HTTP role: `_request` now accepts a `headers => {}` option to set

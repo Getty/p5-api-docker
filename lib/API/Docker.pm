@@ -122,6 +122,8 @@ has host => (
 Docker daemon connection URL. Defaults to C<$ENV{DOCKER_HOST}> or
 C<unix:///var/run/docker.sock>.
 
+No other source is consulted; see L</Socket discovery>.
+
 Supported formats:
 
 =over
@@ -286,6 +288,46 @@ around _request => sub {
   return $self->$orig($method, $path, %opts);
 };
 
+=head1 CONTAINER ENGINES
+
+This client speaks the Docker Engine HTTP API over a socket. It never shells
+out to the C<docker> binary, so any engine serving that API works, whether or
+not Docker itself is installed.
+
+=head2 Podman
+
+Podman ships a Docker-compatible API service. Enable its rootless socket and
+point L</host> at it:
+
+    systemctl --user enable --now podman.socket
+    export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
+
+The socket announces API version 1.41, which L</negotiate_version> picks up
+like any other daemon. Multi-stage builds are passed through unchanged,
+C<target> included, down to skipping the stages the target does not depend on.
+
+=head2 Socket discovery
+
+L</host> resolves in two steps and no more: C<$ENV{DOCKER_HOST}>, then
+C<unix:///var/run/docker.sock>. It deliberately does B<not> read Docker
+contexts. C<currentContext> in F<~/.docker/config.json> and the matching
+F<~/.docker/contexts/meta/*/meta.json> are ignored, so if you switch daemons
+with C<docker context use>, that choice is not picked up here. Set
+C<DOCKER_HOST> explicitly instead.
+
+Other clients sit at different points on that scale. The C<docker> CLI and
+docker-java resolve contexts, with C<DOCKER_HOST> outranking them when set.
+docker-py's C<from_env()> reads C<DOCKER_HOST> and otherwise falls back to the
+default socket, leaving contexts to a separate API. Testcontainers layers its
+own F<~/.testcontainers.properties> and a rootless probe list
+(C<$XDG_RUNTIME_DIR/docker.sock>, F<~/.docker/run/docker.sock>,
+F<~/.docker/desktop/docker.sock>, C</run/user/$UID/docker.sock>) on top.
+
+What none of them do is guess Podman's socket path: that probe list is for
+rootless Docker, not for Podman. Every one of those projects documents
+C<DOCKER_HOST> as the way to reach Podman, which is the same answer given
+above.
+
 =head1 ENVIRONMENT VARIABLES
 
 =over
@@ -295,6 +337,9 @@ around _request => sub {
 Docker daemon connection URL. Used as default for L</host> if not explicitly set.
 
 Examples: C<unix:///var/run/docker.sock>, C<tcp://localhost:2375>
+
+Also the supported way to reach a non-Docker engine such as Podman:
+C<unix://$XDG_RUNTIME_DIR/podman/podman.sock>. See L</CONTAINER ENGINES>.
 
 =item C<DOCKER_CERT_PATH>
 
