@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-24T03:49:20Z
+created: 2026-08-24T03:31:53Z
+id: 10
+priority: medium
+started: 2026-08-24T03:49:20Z
+status: done
+tags:
+- tests
+- live
+title: t/containers.t hardcodes alpine:latest
+updated: 2026-08-24T03:49:20Z
+---
+
+The live path of t/containers.t creates a container from alpine:latest, which is not present on a clean machine -- the repo otherwise uses alpine:3. It currently only passes because prove happens to run images.t first, whose live build pulls alpine:latest as a base, so the suite is order-dependent and fails on a fresh checkout. Either pull the image explicitly in the test setup or switch it to the tag the rest of the repo uses. Found while working tickets 3 and 7.
