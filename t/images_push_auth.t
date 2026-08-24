@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use Test::More;
 use JSON::MaybeXS qw( decode_json );
-use MIME::Base64 qw( decode_base64 decode_base64url );
+use MIME::Base64 qw( decode_base64 );
 
 use API::Docker::API::Images;
 

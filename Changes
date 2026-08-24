@@ -1,6 +1,17 @@
 Revision history for API-Docker
 
 {{$NEXT}}
+  - Bring the cpanfile in line with what the code loads. `URI` was
+    required and is used nowhere in `lib/` or `t/`, so every consumer
+    installed it for nothing; it is gone. `Carp` (loaded by eight of the
+    twelve modules) and `IO::Socket::INET` (loaded by
+    API::Docker::Role::HTTP beside its already-declared `IO::Socket::UNIX`
+    sibling) were undeclared and are now required, as is `Exporter`
+    under `on test` for the mock helper. Nothing else in the tree loads
+    an undeclared module: `SOCK_STREAM` in the HTTP role comes from
+    IO::Socket, which IO::Socket::UNIX and IO::Socket::INET both
+    re-export, and `Path::Tiny` appears in `lib/` only inside the
+    API::Docker::API::Images SYNOPSIS, so it stays a test dependency.
   - Fix every image push failing with a 400. The X-Registry-Auth header
     was encoded as base64url with the padding stripped; the engine
     decodes it with Go's `base64.URLEncoding`, which requires padding
