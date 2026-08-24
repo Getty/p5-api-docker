@@ -113,7 +113,7 @@ sub events {
   $params{since}   = $opts{since}   if defined $opts{since};
   $params{until}   = $opts{until}   if defined $opts{until};
   $params{filters} = $opts{filters} if defined $opts{filters};
-  return $self->client->get('/events', params => \%params);
+  return $self->client->get('/events', params => \%params, ndjson => 1);
 }
 
 =method events
@@ -124,7 +124,13 @@ sub events {
         filters => { type => ['container'] },
     );
 
-Get real-time events from the Docker daemon.
+Get events from the Docker daemon. Returns an ArrayRef of events, one per
+object in the engine's newline-delimited JSON stream, even when the stream
+carried a single object.
+
+B<Always pass C<until>.> The transport buffers the whole response before
+parsing, so an unbounded call blocks until the daemon closes the connection,
+which for a live event stream is never.
 
 Options:
 

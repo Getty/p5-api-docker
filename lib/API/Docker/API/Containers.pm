@@ -33,8 +33,9 @@ use namespace::clean;
     $docker->containers->stop($result->{Id}, timeout => 10);
     $docker->containers->remove($result->{Id});
 
-    # View logs
-    my $logs = $docker->containers->logs($result->{Id}, tail => 100);
+    # View logs (ArrayRef of { stream => 'stdout'|'stderr'|'raw', data => ... })
+    my $frames = $docker->containers->logs($result->{Id}, tail => 100);
+    my $text = join '', map { $_->{data} } @$frames;
 
 =head1 DESCRIPTION
 
@@ -260,14 +261,40 @@ sub logs {
   $params{until}      = $opts{until}      if defined $opts{until};
   $params{timestamps} = $opts{timestamps} ? 1 : 0 if defined $opts{timestamps};
   $params{tail}       = $opts{tail}       if defined $opts{tail};
-  return $self->client->get("/containers/$id/logs", params => \%params);
+  return $self->client->stream_frames('GET', "/containers/$id/logs",
+    params => \%params,
+    defined $opts{tty} ? ( tty => $opts{tty} ) : (),
+  );
 }
 
 =method logs
 
-    my $logs = $containers->logs($id, tail => 100, timestamps => 1);
+    my $frames = $containers->logs($id, tail => 100, timestamps => 1);
 
-Get container logs.
+    # stdout and stderr, in the order the engine emitted them
+    my $text = join '', map { $_->{data} } @$frames;
+
+    # stderr only
+    my @errors = grep { $_->{stream} eq 'stderr' } @$frames;
+
+Get container logs. Returns an ArrayRef of frames, each a HashRef with
+C<stream> and C<data>:
+
+    [ { stream => 'stdout', data => "OUT\n" },
+      { stream => 'stderr', data => "ERR\n" } ]
+
+A container created without a TTY multiplexes stdout and stderr into a single
+framed stream, and this method demultiplexes it -- without that, the 8-byte
+frame headers end up in the caller's log text. A container created B<with> a
+TTY writes to one pty and the engine sends no frame headers, so its whole
+output arrives as a single frame with C<< stream => 'raw' >>: with a TTY there
+is no stdout/stderr distinction left to report. C<stream> is always a plain
+string, so C<< $_->{stream} eq 'stderr' >> is safe on any frame.
+
+Framing is detected from the response bytes, because the engine's
+C<Content-Type> cannot be trusted for it -- see
+L<API::Docker::Role::HTTP/"Detecting a framed stream"> for the rule and its one
+failure mode.
 
 Options:
 
@@ -284,6 +311,10 @@ Options:
 =item * C<timestamps> - Include timestamps
 
 =item * C<tail> - Number of lines from end (e.g., C<100> or C<all>)
+
+=item * C<tty> - Set to 1 when the container was created with a TTY and its
+output is binary, to skip demultiplexing. Not needed for text output. The
+container's own setting is C<Config.Tty> from C<< $containers->inspect($id) >>
 
 =back
 

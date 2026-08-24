@@ -140,6 +140,7 @@ sub build {
     raw_body     => $raw,
     content_type => 'application/x-tar',
     params       => \%params,
+    ndjson       => 1,
   );
 }
 
@@ -147,14 +148,14 @@ sub build {
 
     # Build from a tar archive
     my $tar_data = path('context.tar')->slurp_raw;
-    my $result = $docker->images->build(
+    my $events = $docker->images->build(
         context    => $tar_data,
         t          => 'myimage:latest',
         dockerfile => 'Dockerfile',
     );
 
     # Build with build args
-    my $result = $docker->images->build(
+    my $events = $docker->images->build(
         context   => $tar_data,
         t         => 'myapp:v1',
         buildargs => { APP_VERSION => '1.0' },
@@ -165,6 +166,17 @@ Build an image from a tar archive containing a Dockerfile and build context.
 
 The C<context> parameter is required and must contain the raw bytes of a tar
 archive (or a scalar reference to one).
+
+Returns an ArrayRef of build events, one per object in the engine's
+newline-delimited JSON stream, even when the stream carried a single object
+(C<< q => 1 >> produces exactly one). A failed build still arrives as HTTP 200
+with the failure as an C<errorDetail> event, so the caller has to scan for it:
+
+    my $events = $images->build(context => $tar, t => 'myapp:latest');
+    for my $event (@$events) {
+        die $event->{errorDetail}{message} if $event->{errorDetail};
+        $image_id = $event->{aux}{ID} if $event->{aux};
+    }
 
 Options:
 
@@ -220,14 +232,36 @@ sub pull {
   my %params;
   $params{fromImage} = $opts{fromImage};
   $params{tag}       = $opts{tag} // 'latest';
-  return $self->client->post('/images/create', undef, params => \%params);
+  return $self->client->post('/images/create', undef,
+    params => \%params,
+    ndjson => 1,
+  );
 }
 
 =method pull
 
-    $images->pull(fromImage => 'nginx', tag => 'latest');
+    my $events = $images->pull(fromImage => 'nginx', tag => 'latest');
 
 Pull an image from a registry. C<tag> defaults to C<latest>.
+
+Returns an ArrayRef of progress events, one per object in the engine's
+newline-delimited JSON stream, even when the stream carried a single object.
+A failed pull can still arrive as HTTP 200 with the failure as an
+C<errorDetail> event, so the caller has to scan for it:
+
+    for my $event (@$events) {
+        die $event->{errorDetail}{message} if $event->{errorDetail};
+    }
+
+Options:
+
+=over
+
+=item * C<fromImage> - Image name to pull (required)
+
+=item * C<tag> - Tag to pull (default C<latest>)
+
+=back
 
 =cut
 
@@ -273,6 +307,7 @@ sub push {
     undef,
     params  => \%params,
     headers => { 'X-Registry-Auth' => $auth_header },
+    ndjson  => 1,
   );
 }
 
@@ -310,7 +345,7 @@ sub _build_registry_auth_header {
 
 =method push
 
-    $images->push('myrepo/nginx', tag => 'v1');
+    my $events = $images->push('myrepo/nginx', tag => 'v1');
     $images->push('myrepo/nginx', auth => {
         username      => 'me',
         password      => 'secret',
@@ -318,6 +353,11 @@ sub _build_registry_auth_header {
     });
 
 Push an image to a registry. Optionally specify C<tag>.
+
+Returns an ArrayRef of progress events, one per object in the engine's
+newline-delimited JSON stream, even when the stream carried a single object.
+A failed push can still arrive as HTTP 200 with the failure as an
+C<errorDetail> event, so the caller has to scan for it.
 
 The Docker Engine requires an C<X-Registry-Auth> header on every push,
 even for anonymous attempts; the header is always sent. Pass C<auth> as
