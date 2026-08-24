@@ -298,9 +298,13 @@ sub _build_registry_auth_header {
     $payload = $auth;
   }
 
+  # Padded base64url, and the padding is not optional: the engine decodes
+  # this header with Go's base64.URLEncoding, which requires it. Stripping
+  # the '=' made every push fail with a 400 -- 'failed to parse
+  # "X-Registry-Auth" header: unexpected EOF' -- including anonymous ones,
+  # where the payload is the three-character '{}' encoding that needs a pad.
   my $b64 = MIME::Base64::encode_base64($payload, '');
   $b64 =~ tr{+/}{-_};
-  $b64 =~ s/=+$//;
   return $b64;
 }
 

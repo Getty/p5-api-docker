@@ -1,6 +1,19 @@
 Revision history for API-Docker
 
 {{$NEXT}}
+  - Fix every image push failing with a 400. The X-Registry-Auth header
+    was encoded as base64url with the padding stripped; the engine
+    decodes it with Go's `base64.URLEncoding`, which requires padding
+    and answers `failed to parse "X-Registry-Auth" header ... unexpected
+    EOF` without it. That hit authenticated and anonymous pushes alike
+    -- the anonymous payload is `{}`, which encodes to three characters
+    and one `=`. Measured against a local registry: before, all three
+    tags of a test image came back 400 and nothing reached the registry;
+    after, all three are there.
+    The test that covered this could not have caught it. Its decode
+    helper computed the missing padding and appended it before decoding,
+    so the assertions passed either way. It now decodes what the engine
+    would get, and a separate case pins the exact padded header.
   - Document that this client speaks the Docker Engine HTTP API over a
     socket and never shells out to the `docker` binary, so any engine
     serving that API works -- Podman's rootless socket needs nothing
