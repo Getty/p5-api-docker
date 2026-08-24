@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-24T03:49:11Z
+created: 2026-08-24T00:42:47Z
+id: 2
+priority: high
+started: 2026-08-24T03:49:11Z
+status: done
+tags:
+- tests
+- transport
+title: API::Docker::Role::HTTP has no direct test coverage
+updated: 2026-08-24T03:49:11Z
+---
+
+Test::API::Docker::Mock replaces _request wholesale, so _read_response, _read_chunked, the >=400 croak path, header sanitising and request-line assembly are exercised by nothing beyond use_ok in t/basic.t. The chunked reader in particular is hand-written and unverified. Way in: an in-memory filehandle over a canned HTTP/1.1 response passed to _read_response, no socket needed.
