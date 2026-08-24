@@ -63,10 +63,19 @@ subtest 'container lifecycle' => sub {
     'DELETE /containers/mock123'       => undef,
   );
 
+  if (is_live()) {
+    # containers->create does not auto-pull; alpine:3 (the tag the rest of
+    # the suite standardises on) is not guaranteed to be cached on a fresh
+    # checkout. Pull it explicitly rather than relying on another test
+    # file -- or an earlier manual run -- having already done so: prove's
+    # file order is not a contract this test should depend on.
+    $docker->images->pull(fromImage => 'alpine', tag => '3');
+  }
+
   my $name = 'api-docker-test-' . $$;
   my $created = $docker->containers->create(
     name  => $name,
-    Image => 'alpine:latest',
+    Image => 'alpine:3',
     Cmd   => ['sleep', '10'],
   );
   ok($created->{Id}, 'created container has Id');
