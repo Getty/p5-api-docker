@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-24T04:20:59Z
+created: 2026-08-24T00:43:03Z
+id: 6
+priority: medium
+started: 2026-08-24T04:20:59Z
+status: done
+tags:
+- api
+- decision
+title: Decide what tls/cert_path mean
+updated: 2026-08-24T04:20:59Z
+---
+
+Both attributes exist on API::Docker, are documented as experimental, and are read by nothing: Role::HTTP always builds a plaintext IO::Socket::INET for tcp://. Either implement TLS (IO::Socket::SSL, cert/key/ca from cert_path, DOCKER_TLS_VERIFY) or drop the attributes and say plainly that tcp:// is plaintext only. Leaving them as-is advertises a capability that does not exist.
