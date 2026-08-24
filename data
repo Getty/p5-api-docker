@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-24T03:07:56Z
+created: 2026-08-24T00:42:43Z
+id: 1
+priority: high
+started: 2026-08-24T03:07:56Z
+status: done
+tags:
+- tests
+- live
+title: t/system.t events subtest fails against a live daemon
+updated: 2026-08-24T03:07:56Z
+---
+
+The events subtest asserts ref eq ARRAY outside its is_live() guard. A real daemon (verified against the rootless Podman socket at unix:///run/user/1000/podman/podman.sock) returns an empty body for a window with no events, _request returns undef, and ref undef is the empty string. Fix is a gated assertion: keep the ARRAY check for the mock, and assert only "no exception, and an arrayref or undef" live. Reproduce: API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock prove -lv t/system.t
