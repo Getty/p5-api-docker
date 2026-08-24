@@ -5,6 +5,7 @@ requires 'MIME::Base64';
 requires 'IO::Socket::UNIX';
 requires 'IO::Socket::INET';
 requires 'namespace::clean';
+requires 'overload';
 requires 'Log::Any';
 
 on test => sub {

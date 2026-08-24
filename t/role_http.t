@@ -288,6 +288,74 @@ subtest '_request: a CR/LF in a header value cannot inject a second header' => s
 };
 
 # ---------------------------------------------------------------------------
+# karr #11: the value above is sanitised, but the *name* used to go on the
+# wire untouched, so a caller-supplied key could open a header line of its
+# own. Names are rejected rather than stripped -- see the reasoning in
+# API::Docker::Role::HTTP under "Header names are rejected, header values are
+# stripped".
+subtest '_request: an invalid header name is refused, not rewritten' => sub {
+  my $t = Test::RoleHTTP::FakeTransport->new(
+    host        => 'unix:///nonexistent.sock',
+    api_version => '1.41',
+  );
+
+  subtest 'CRLF in the name croaks and sends nothing' => sub {
+    eval {
+      $t->_request('POST', '/images/x/push',
+        headers => { "X-Registry-Auth\r\nX-Injected" => 'evil' });
+    };
+    like $@, qr/invalid header name/, 'croaked';
+    like $@, qr/\QX-Registry-Auth\x0D\x0AX-Injected\E/,
+      'the offending name is shown with its control bytes escaped, so the '
+      . 'message stays on one line and names what was actually passed';
+    my $message = "$@";
+    unlike $message, qr/\r/, 'the croak itself carries no raw CR';
+    $message =~ s/\n\z//;
+    unlike $message, qr/\n/,
+      'and no LF beyond the one Carp ends on -- the escaped name cannot open '
+      . 'a line of its own in whatever logs the failure';
+    is $t->_sink, undef,
+      'no socket was even opened -- the name is checked while the request is '
+      . 'assembled, so nothing reached the daemon';
+  };
+
+  subtest 'the separators that would corrupt the line, injection or not' => sub {
+    my %bad = (
+      'an embedded space'       => 'X Registry Auth',
+      'a trailing colon'        => 'X-Registry-Auth:',
+      'a bare LF'               => "tail\n",
+      'a bare CR'               => "tail\r",
+      'the empty string'        => '',
+      'a non-ASCII byte'        => "X-Caf\xE9",
+    );
+    for my $why (sort keys %bad) {
+      eval { $t->_request('GET', '/x', headers => { $bad{$why} => 'v' }) };
+      like $@, qr/invalid header name/, "$why is rejected";
+    }
+  };
+
+  subtest 'a name is refused even when its value would skip the header' => sub {
+    # An undef value means the header is not sent, but the name is still a
+    # caller bug and is still reported.
+    eval { $t->_request('GET', '/x', headers => { "bad\r\nname" => undef }) };
+    like $@, qr/invalid header name/,
+      'validated before the defined-check on the value';
+  };
+
+  subtest 'every character an RFC 9110 token allows still passes' => sub {
+    my $token = "Abc123-!#\$%&'*+.^_`|~";
+    $t->_request('GET', '/x', headers => { $token => 'ok' });
+    like $t->written, qr/\Q$token\E: ok\r\n/,
+      'the full token charset is accepted, not just the alphanumerics';
+
+    $t->_request('POST', '/images/x/push',
+      headers => { 'X-Registry-Auth' => 'e30=' });
+    like $t->written, qr/X-Registry-Auth: e30=\r\n/,
+      'and the one name this distribution actually sends is unaffected';
+  };
+};
+
+# ---------------------------------------------------------------------------
 subtest '_request: >= 400 croaks' => sub {
   my $t = Test::RoleHTTP::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',

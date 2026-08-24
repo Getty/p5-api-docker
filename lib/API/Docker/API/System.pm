@@ -113,7 +113,15 @@ sub events {
   $params{since}   = $opts{since}   if defined $opts{since};
   $params{until}   = $opts{until}   if defined $opts{until};
   $params{filters} = $opts{filters} if defined $opts{filters};
-  return $self->client->get('/events', params => \%params, ndjson => 1);
+  # croak_on_error => 0: /events is a feed, not the progress of one
+  # operation. An object in it describes something that happened on the
+  # engine, so it is data even if it ever carries an errorDetail key -- this
+  # call must never croak on ordinary event traffic.
+  return $self->client->get('/events',
+    params         => \%params,
+    ndjson         => 1,
+    croak_on_error => 0,
+  );
 }
 
 =method events
@@ -127,6 +135,13 @@ sub events {
 Get events from the Docker daemon. Returns an ArrayRef of events, one per
 object in the engine's newline-delimited JSON stream, even when the stream
 carried a single object.
+
+Unlike C<< $docker->images->build >>, C<pull> and C<push>, this method never
+croaks on the content of the stream. Those report the outcome of one
+operation, so an C<errorDetail> object in their stream means that operation
+failed; C</events> is a feed, and an object in it is a record of something
+that happened on the engine, never a failure of this call. Only transport and
+HTTP errors croak here.
 
 B<Always pass C<until>.> The transport buffers the whole response before
 parsing, so an unbounded call blocks until the daemon closes the connection,

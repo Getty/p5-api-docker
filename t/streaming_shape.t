@@ -80,11 +80,16 @@ subtest 'the /events stream decodes to an ArrayRef' => sub {
 
 subtest 'a failed build is HTTP 200 with errorDetail in the stream' => sub {
   # Measured: podman answered 200 for a Dockerfile whose RUN exits 7.
+  #
+  # Decoding stays decoding: _decode_stream turns the body into events and
+  # judges none of them. Acting on the errorDetail is _request's job, and
+  # t/stream_error.t covers that -- build, pull and push croak on it, so what
+  # reaches a caller through those methods is never this ArrayRef.
   my $events = $client->_decode_stream(
     load_fixture_raw('images_build_error_stream.ndjson'));
   is ref $events, 'ARRAY', 'ArrayRef';
   my ($err) = grep { $_->{errorDetail} } @$events;
-  ok $err, 'the errorDetail event is reachable by the caller';
+  ok $err, 'the errorDetail event survives decoding';
   like $err->{errorDetail}{message}, qr/exit status 7/, 'and carries the cause';
 };
 

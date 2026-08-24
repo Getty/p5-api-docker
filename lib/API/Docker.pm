@@ -56,7 +56,8 @@ Key features:
 
 =item * Pure Perl implementation with minimal dependencies
 
-=item * Unix socket and TCP transport support
+=item * Unix socket and TCP transport support, both plaintext -- there is no
+TLS, and L</tls> croaks rather than implying there is
 
 =item * Automatic API version negotiation
 
@@ -157,7 +158,28 @@ has tls => (
 
 =attr tls
 
-Enable TLS for secure connections. Defaults to C<0>. Currently experimental.
+B<Not implemented.> C<< tls => 1 >> croaks at construction; the default of
+C<0> is the only value this client accepts.
+
+The attribute is kept rather than removed because silence is the failure mode
+worth preventing here. L<API::Docker::Role::HTTP> builds a plain
+L<IO::Socket::INET> connection and speaks HTTP over it, and nothing anywhere
+reads this attribute -- so a C<tcp://> daemon has always been addressed in
+cleartext, C<< tls => 1 >> or not, and a caller who asked for TLS got an
+unencrypted connection and no indication of it. Anyone who was passing this
+option was, by definition, sending credentials in the clear while believing
+otherwise.
+
+Terminate TLS in front of the daemon instead and point L</host> at the local
+end of it:
+
+    # stunnel, socat or plain ssh -- whatever is already in the stack
+    ssh -N -L 2375:127.0.0.1:2376 dockerhost
+    my $docker = API::Docker->new(host => 'tcp://127.0.0.1:2375');
+
+Implementing TLS here is new work, not a repair: it needs the socket builder
+to know about L<IO::Socket::SSL>, client certificates and verification
+policy. Until then this croaks.
 
 =cut
 
@@ -168,9 +190,30 @@ has cert_path => (
 
 =attr cert_path
 
-Path to TLS certificates. Defaults to C<$ENV{DOCKER_CERT_PATH}>.
+B<Unused.> Path to TLS certificates, defaulting to C<$ENV{DOCKER_CERT_PATH}>.
+No code reads it.
+
+Unlike L</tls> it does not croak, and deliberately so: it defaults from the
+environment, and C<DOCKER_CERT_PATH> is commonly exported on machines that
+also run the C<docker> CLI. Croaking on it would break clients that never
+asked for TLS at all, over a value the caller did not pass. On its own it
+also asserts nothing and transmits nothing -- setting it cannot make an
+unencrypted connection look encrypted, which is the specific harm L</tls>
+was doing. The path that would act on it is the one that croaks.
 
 =cut
+
+sub BUILD {
+  my ($self) = @_;
+  return unless $self->tls;
+  croak __PACKAGE__ . '->new tls => 1 is not implemented. This client always '
+    . 'speaks plaintext HTTP over the socket, so a tcp:// connection is never '
+    . 'encrypted no matter what this attribute says -- accepting the option '
+    . 'would only hide that credentials go out in the clear. Terminate TLS in '
+    . 'front of the daemon instead (stunnel, socat, or ssh -N -L '
+    . '2375:127.0.0.1:2376 dockerhost) and set host to the local end of the '
+    . 'tunnel';
+}
 
 has _version_negotiated => (
   is      => 'rw',
@@ -343,7 +386,10 @@ C<unix://$XDG_RUNTIME_DIR/podman/podman.sock>. See L</CONTAINER ENGINES>.
 
 =item C<DOCKER_CERT_PATH>
 
-Path to TLS certificates directory. Used as default for L</cert_path>.
+Path to TLS certificates directory. Used as default for L</cert_path>, which
+nothing reads -- this client has no TLS support at all. Setting it changes
+nothing, and having it set (as machines running the C<docker> CLI usually do)
+breaks nothing.
 
 =back
 

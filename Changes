@@ -1,6 +1,81 @@
 Revision history for API-Docker
 
 {{$NEXT}}
+  - `images->build`, `->pull` and `->push` now croak when the engine
+    reports a failure inside the event stream, instead of returning the
+    stream and leaving the check to the caller. A failed build, pull or
+    push is answered with HTTP 200 -- the status line is committed
+    before the operation is attempted -- and the failure arrives as an
+    `errorDetail` object among the progress events, so nothing about the
+    response says the operation broke. Measured against the rootless
+    Podman socket (5.4.2, API 1.41): a Dockerfile of `FROM alpine:3` /
+    `RUN exit 7` answers `200 OK` and ends the stream with
+    `{"errorDetail":{"message":"building at STEP \"RUN exit 7\": while
+    running runtime: exit status 7\n"},"error":"..."}`, the flat `error`
+    key carrying the same text. Callers that never scanned for it -- the
+    documented shape until now -- reported a broken build as a success.
+    The exception is an `API::Docker::Error::Stream`, a new class whose
+    whole purpose is that the progress output is not lost with the
+    return value: `$err->events` is the complete event list, error event
+    included. It overloads stringification and produces exactly what the
+    plain croak it replaces produced, reason plus Carp's ` at FILE line
+    N.` suffix, so existing eval-and-inspect-$@ code needs no change;
+    `$@ =~ s/...//` on it yields a plain string as it would for any
+    overloaded object. The trigger is the `errorDetail` key alone, never
+    the word "error" in payload text.
+    Which of the three actually takes that route depends on the engine,
+    and Podman is not Docker here -- measured on the same socket, all
+    three cases: only `build` answers 200 with the failure in the
+    stream. A pull of a missing repository answers `403 Forbidden` with
+    `{"message":"denied: requested access to the resource is denied"}`,
+    a missing tag answers `404 Not Found` with `{"message":"manifest
+    unknown: manifest unknown"}`, and a push to an unreachable registry
+    answers `500 Internal Server Error` with an `errorDetail` body and
+    no `message` key at all. The first two never reach the stream; the
+    third has its whole JSON body used as the croak text, because the
+    >= 400 path looks for `message`. So on Podman the new check fires
+    for `build` and the pre-existing status check catches the other two.
+    All three are loud either way, but catching
+    `API::Docker::Error::Stream` specifically is not a reliable way to
+    catch a failed pull or push -- inspect $@ as a string, which both
+    routes satisfy. The POD on each method says which engine does what.
+    `system->events` is explicitly exempt and never croaks on stream
+    content: it is a feed, so an object in it records something that
+    happened on the engine rather than the outcome of this call. The
+    check is on by default for the transport's `ndjson` option and
+    exempting an endpoint is deliberate (`croak_on_error => 0`), because
+    the operation-shaped streaming endpoints are open-ended while the
+    feed-shaped ones are `/events` and nothing else.
+  - `tls => 1` now croaks with "not implemented" instead of being
+    accepted and ignored. `tls` and `cert_path` were attributes no code
+    read: `API::Docker::Role::HTTP` builds a plain IO::Socket::INET and
+    speaks HTTP over it, so a `tcp://` daemon was always addressed in
+    cleartext and a caller who asked for TLS got an unencrypted
+    connection with no indication of it -- anyone passing the option was
+    by definition sending credentials in the clear while believing
+    otherwise. TLS is still not implemented; the croak names the reason
+    and the way round it, which is to terminate TLS in front of the
+    daemon (stunnel, socat, `ssh -N -L`) and point `host` at the local
+    end. Both attributes are kept. `cert_path` on its own does not
+    croak: it defaults from `DOCKER_CERT_PATH`, which is exported on
+    plenty of machines that also run the docker CLI, so croaking on it
+    would break constructions over a value the caller never passed, and
+    on its own it transmits nothing and makes an unencrypted connection
+    look no different. The POD called TLS "experimental", as though it
+    partly worked; it never worked at all.
+  - A header name passed through the transport's `headers` option is now
+    validated against the RFC 9110 token grammar and rejected if it does
+    not match. Only values were sanitised before, so a caller-supplied
+    key carrying CR/LF could open a header line of its own. Not
+    reachable from this distribution -- the one caller, `push`, passes
+    the literal `X-Registry-Auth` -- but the option is public. Names are
+    rejected rather than stripped, unlike values: a value can pick up a
+    stray newline honestly (`encode_base64` wraps its output by
+    default), and flattening it keeps what the caller meant, while a
+    name is a literal the programmer wrote and rewriting
+    "X-Foo\r\nX-Bar" into "X-FooX-Bar" would put a header on the wire
+    under a name nobody asked for. The check also catches spaces and
+    colons, which corrupt the request without injecting anything.
   - `containers->logs` and `exec->start` now demultiplex the Docker
     stream format and return an ArrayRef of frames, each a HashRef with
     `stream` and `data`:

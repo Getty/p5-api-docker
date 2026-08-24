@@ -165,14 +165,30 @@ archive (or a scalar reference to one).
 
 Returns an ArrayRef of build events, one per object in the engine's
 newline-delimited JSON stream, even when the stream carried a single object
-(C<< q => 1 >> produces exactly one). A failed build still arrives as HTTP 200
-with the failure as an C<errorDetail> event, so the caller has to scan for it:
+(C<< q => 1 >> produces exactly one). A successful build returns; a failed one
+croaks.
 
     my $events = $images->build(context => $tar, t => 'myapp:latest');
-    for my $event (@$events) {
-        die $event->{errorDetail}{message} if $event->{errorDetail};
-        $image_id = $event->{aux}{ID} if $event->{aux};
+    my ($aux) = grep { $_->{aux} } @$events;
+    my $image_id = $aux->{aux}{ID};
+
+The engine answers a failed build with HTTP 200 and reports the failure as an
+C<errorDetail> object inside the stream, so nothing about the response status
+says the build broke. This method used to return that stream like any other
+and leave the scan to the caller, which meant a caller who did not know to
+scan reported a broken build as a success. It now croaks with an
+L<API::Docker::Error::Stream> instead:
+
+    my $events = eval { $images->build(context => $tar, t => 'myapp:latest') };
+    if (my $err = $@) {
+        warn "$err";               # the reason, with Carp's location suffix
+        for my $event (@{ $err->events }) {   # the build output up to the failure
+            print $event->{stream} if defined $event->{stream};
+        }
     }
+
+The exception stringifies to what a plain C<croak> would have produced, so
+existing C<eval>-and-inspect-C<$@> code needs no change.
 
 Options:
 
@@ -242,12 +258,30 @@ Pull an image from a registry. C<tag> defaults to C<latest>.
 
 Returns an ArrayRef of progress events, one per object in the engine's
 newline-delimited JSON stream, even when the stream carried a single object.
-A failed pull can still arrive as HTTP 200 with the failure as an
-C<errorDetail> event, so the caller has to scan for it:
 
-    for my $event (@$events) {
-        die $event->{errorDetail}{message} if $event->{errorDetail};
-    }
+A failed pull croaks either way, but which way depends on the engine, so do
+not write code that expects one of them:
+
+=over
+
+=item * Docker reports it in the stream. The response is HTTP 200 and the
+failure is an C<errorDetail> object among the progress events; this method
+croaks with an L<API::Docker::Error::Stream>, whose C<< ->events >> holds the
+progress that preceded the failure.
+
+=item * Podman reports it in the status line. Measured against the rootless
+socket (5.4.2, API 1.41): pulling a repository that does not exist answers
+C<403 Forbidden> with C<< {"message":"denied: requested access to the resource
+is denied"} >>, and an existing repository with a missing tag answers
+C<404 Not Found> with C<< {"message":"manifest unknown: manifest unknown"} >>.
+Neither reaches the stream at all -- the transport's own status handling
+croaks with a plain string first.
+
+=back
+
+Catching L<API::Docker::Error::Stream> specifically is therefore not a
+reliable way to catch a failed pull. C<eval> and inspect C<$@> as a string,
+which both cases satisfy.
 
 Options:
 
@@ -349,8 +383,23 @@ Push an image to a registry. Optionally specify C<tag>.
 
 Returns an ArrayRef of progress events, one per object in the engine's
 newline-delimited JSON stream, even when the stream carried a single object.
-A failed push can still arrive as HTTP 200 with the failure as an
-C<errorDetail> event, so the caller has to scan for it.
+
+A failed push croaks, by one of two routes depending on the engine -- an
+unauthorised push to a private registry is the common case, and it is exactly
+the one that must not be reported as a success.
+
+Docker reports it inside a 200 stream as an C<errorDetail> object, which
+croaks with an L<API::Docker::Error::Stream> carrying the progress events.
+Podman puts an C<errorDetail> body behind a real error status instead:
+measured against the rootless socket (5.4.2, API 1.41), a push to an
+unreachable registry answers C<500 Internal Server Error> with
+C<< {"errorDetail":{"message":"... connection refused"},"error":"..."} >>, so
+the transport's status handling croaks with a plain string before the stream
+is ever decoded. That body carries no C<message> key, so the whole JSON
+object ends up as the croak text.
+
+Either way the failure is loud. Inspect C<$@> as a string rather than testing
+for the exception class, which only the first route produces.
 
 The Docker Engine requires an C<X-Registry-Auth> header on every push,
 even for anonymous attempts; the header is always sent. Pass C<auth> as
@@ -446,6 +495,8 @@ Delete unused images. Returns hashref with C<ImagesDeleted> and C<SpaceReclaimed
 =item * L<API::Docker> - Main Docker client
 
 =item * L<API::Docker::Image> - Image entity class
+
+=item * L<API::Docker::Error::Stream> - Raised by C<build>, C<pull> and C<push>
 
 =back
 
