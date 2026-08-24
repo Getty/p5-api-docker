@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-24T03:31:49Z
+created: 2026-08-24T00:55:44Z
+id: 8
+priority: medium
+started: 2026-08-24T03:31:49Z
+status: done
+tags:
+- api
+- engine
+title: exec->start does not surface the exit status
+updated: 2026-08-24T03:31:49Z
+---
+
+The exit code of an exec instance comes from GET /exec/{id}/json (ExitCode), exposed here as exec->inspect, never from the start call. Nothing in the POD says so, so a caller reasonably assumes start returns the result. Either document the two-call sequence on exec->start or give it a convenience that fetches the status.
