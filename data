@@ -1,0 +1,17 @@
+---
+class: standard
+completed: 2026-08-24T03:31:45Z
+created: 2026-08-24T00:55:40Z
+id: 7
+priority: high
+started: 2026-08-24T03:31:45Z
+status: done
+tags:
+- api
+- transport
+- engine
+title: logs/exec-start return multiplexed frames undecoded
+updated: 2026-08-24T03:31:45Z
+---
+
+A container created without a TTY produces the Docker stream format: 8-byte header per frame, byte 0 = stream type (1 stdout, 2 stderr), bytes 4-7 = big-endian uint32 length, then that many payload bytes. containers->logs returns it raw, so the caller receives header bytes mixed into log text. Measured against the rootless Podman socket with a container running "echo OUT; echo ERR 1>&2": Tty=0 gives 01 00 00 00 00 00 00 04 "OUT\n" 02 00 00 00 00 00 00 04 "ERR\n"; Tty=1 gives "OUT\r\n" "ERR\r\n" with no headers, which is why interactive hand-testing never caught it. exec->start with Detach=0 has the same problem, and there is no attach method at all. Fixing it changes a public return shape -- check ../p5-dist-zilla-plugin-docker-api first. Decide whether logs() demultiplexes by default (and how it signals stdout vs stderr) or gains an option.
