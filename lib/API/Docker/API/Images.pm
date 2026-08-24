@@ -4,6 +4,8 @@ our $VERSION = '0.003';
 use Moo;
 use API::Docker::Image;
 use Carp qw( croak );
+use JSON::MaybeXS qw( encode_json );
+use MIME::Base64 qw( encode_base64 );
 use namespace::clean;
 
 =head1 SYNOPSIS
@@ -125,14 +127,8 @@ sub build {
   $params{platform}   = $opts{platform}   if defined $opts{platform};
   $params{target}     = $opts{target}     if defined $opts{target};
 
-  if ($opts{buildargs}) {
-    require JSON::MaybeXS;
-    $params{buildargs} = JSON::MaybeXS::encode_json($opts{buildargs});
-  }
-  if ($opts{labels}) {
-    require JSON::MaybeXS;
-    $params{labels} = JSON::MaybeXS::encode_json($opts{labels});
-  }
+  $params{buildargs} = encode_json($opts{buildargs}) if $opts{buildargs};
+  $params{labels}    = encode_json($opts{labels})    if $opts{labels};
 
   my $raw = ref $context eq 'SCALAR' ? $$context : $context;
 
@@ -316,15 +312,12 @@ sub _build_registry_auth_header {
 
   # The Docker Engine requires an X-Registry-Auth header on every push,
   # even for anonymous attempts. Encoding is base64url of a JSON object.
-  require JSON::MaybeXS;
-  require MIME::Base64;
-
   my $payload;
   if (!defined $auth) {
     $payload = '{}';
   }
   elsif (ref $auth eq 'HASH') {
-    $payload = JSON::MaybeXS::encode_json($auth);
+    $payload = encode_json($auth);
   }
   else {
     # Already pre-built JSON or pre-encoded string. If it looks base64-like
@@ -338,7 +331,7 @@ sub _build_registry_auth_header {
   # the '=' made every push fail with a 400 -- 'failed to parse
   # "X-Registry-Auth" header: unexpected EOF' -- including anonymous ones,
   # where the payload is the three-character '{}' encoding that needs a pad.
-  my $b64 = MIME::Base64::encode_base64($payload, '');
+  my $b64 = encode_base64($payload, '');
   $b64 =~ tr{+/}{-_};
   return $b64;
 }
