@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-24T03:31:40Z
+created: 2026-08-24T00:42:51Z
+id: 3
+priority: medium
+started: 2026-08-24T03:31:40Z
+status: done
+tags:
+- transport
+- api
+title: Streaming endpoints return an inconsistent shape
+updated: 2026-08-24T03:31:40Z
+---
+
+_request first tries decode_json on the whole body and only falls back to line-by-line NDJSON parsing. A stream carrying exactly one JSON object therefore comes back as a hashref while a multi-event stream comes back as an arrayref, so every caller of build/pull/push has to check ref before iterating. Decide: always return an arrayref for the known streaming paths, or document the duality as the contract. Public return-shape change -- check ../p5-dist-zilla-plugin-docker-api before landing.
