@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-24T04:21:03Z
+created: 2026-08-24T03:49:24Z
+id: 11
+priority: low
+started: 2026-08-24T04:21:03Z
+status: done
+tags:
+- transport
+- security
+title: _request sanitises header values but not header names
+updated: 2026-08-24T04:21:03Z
+---
+
+The headers option strips CR/LF from each value but passes the key through untouched, so a caller-supplied header name containing CR/LF can inject an extra header line. Not currently reachable -- the only caller is the fixed literal X-Registry-Auth in Images.pm -- but the sanitiser is incomplete and the option is public. Strip or reject CR/LF in the name the same way, and cover it in t/role_http.t alongside the existing value case. Found while writing that file (ticket 2).
