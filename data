@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-24T04:20:54Z
+created: 2026-08-24T00:42:55Z
+id: 4
+priority: medium
+started: 2026-08-24T04:20:54Z
+status: done
+tags:
+- transport
+- api
+title: A failed build/pull/push is still HTTP 200
+updated: 2026-08-24T04:20:54Z
+---
+
+The engine reports stream failures as errorDetail inside the event stream while the HTTP status stays 200, so _request does not croak and every caller must scan the events itself. Consider a shared helper that inspects a parsed event list and croaks on errorDetail, opt-in per call site so raw event access stays available.
