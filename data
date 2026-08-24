@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-24T03:49:15Z
+created: 2026-08-24T03:08:05Z
+id: 9
+priority: low
+started: 2026-08-24T03:49:15Z
+status: done
+tags:
+- perl
+- cleanup
+title: Images.pm uses require as a lazy optimization
+updated: 2026-08-24T03:49:15Z
+---
+
+lib/API/Docker/API/Images.pm loads JSON::MaybeXS (lines 129, 133, 284) and MIME::Base64 (line 285) with runtime require inside method bodies. Neither is a runtime-resolved plugin class or an optional dependency -- both are declared in cpanfile and loaded unconditionally elsewhere in the distribution -- so this is require used purely to defer cost, which getty-perl-core forbids. Hoist both to top-level use. Found during the cpanfile audit (ticket 5).
