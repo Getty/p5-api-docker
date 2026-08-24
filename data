@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-24T03:08:01Z
+created: 2026-08-24T00:42:59Z
+id: 5
+priority: medium
+started: 2026-08-24T03:08:01Z
+status: done
+tags:
+- release
+- deps
+title: cpanfile does not match what the code loads
+updated: 2026-08-24T03:08:01Z
+---
+
+URI is declared and used nowhere. IO::Socket::INET is loaded by Role::HTTP and undeclared while IO::Socket::UNIX is declared. Carp is loaded in nearly every module and undeclared. Path::Tiny appears in a grep of lib/ only because of the Images SYNOPSIS POD -- it is a test dependency and already declared as one. Also: t/images_push_auth.t imports decode_base64url from MIME::Base64 without using it.
