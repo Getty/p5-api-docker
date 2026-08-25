@@ -1,0 +1,17 @@
+---
+class: standard
+completed: 2026-08-25T13:48:47Z
+created: 2026-08-24T04:21:16Z
+id: 14
+priority: low
+started: 2026-08-25T13:48:47Z
+status: done
+tags:
+- tests
+title: t/containers.t removes its container twice on live runs
+updated: 2026-08-25T13:48:51Z
+---
+
+The live path registers a cleanup at line 84 and also removes the container at line 108, so every live run prints "Cleanup failed: ... no such container". Harmless -- the END block evals it -- but it is noise on every live run and trains the reader to ignore cleanup warnings. Make the registered cleanup tolerant of an already-removed container, or drop the explicit removal.
+
+Committed; verified live against the podman socket - zero cleanup warnings, suite 102 PASS.
