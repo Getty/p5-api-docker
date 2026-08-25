@@ -1,6 +1,13 @@
 Revision history for API-Docker
 
 {{$NEXT}}
+  - The `>= 400` croak now falls back to `errorDetail.message` and then to
+    the flat `error` key when the JSON error body carries no `message`.
+    Docker answers `{"message":...}`; Podman answers a failed push with
+    the stream shape instead -- `{"errorDetail":{"message":...},"error":
+    ...}` and no `message` at all -- so the whole JSON object used to be
+    the croak text and the reason had to be dug out of it by eye. A body
+    that is not an object still surfaces verbatim.
   - `images->build`, `->pull` and `->push` now croak when the engine
     reports a failure inside the event stream, instead of returning the
     stream and leaving the check to the caller. A failed build, pull or

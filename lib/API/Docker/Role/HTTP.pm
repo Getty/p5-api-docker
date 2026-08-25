@@ -192,7 +192,13 @@ sub _request {
     if ($body && $body =~ /^\s*[\{\[]/) {
       eval {
         my $data = decode_json($body);
-        $error_msg = $data->{message} // $body;
+        # Docker answers with {"message":...}. Podman answers a failed push
+        # with the stream shape instead -- {"errorDetail":{"message":...},
+        # "error":...} and no message key at all -- so without these two
+        # fallbacks the whole JSON object became the croak text (karr #13).
+        my $detail = ref $data->{errorDetail} eq 'HASH'
+          ? $data->{errorDetail}{message} : undef;
+        $error_msg = $data->{message} // $detail // $data->{error} // $body;
       };
     }
     croak "Docker API error ($status_code): $error_msg";

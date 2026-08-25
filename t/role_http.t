@@ -393,6 +393,36 @@ subtest '_request: >= 400 croaks' => sub {
       'array-shaped error body is used verbatim, not blamed for a deref error';
   };
 
+  # karr #13: Podman answers a failed push with 500 and the stream-shaped
+  # body {"errorDetail":{"message":...},"error":...} -- no `message` key at
+  # all -- so the whole JSON object became the croak text.
+  subtest 'a JSON error body with errorDetail but no message uses errorDetail.message' => sub {
+    $t->canned([500, 'Internal Server Error', {}, encode_json({
+      errorDetail => { message => 'denied: requested access to the resource is denied' },
+      error       => 'denied: requested access to the resource is denied',
+    })]);
+    eval { $t->_request('POST', '/images/x/push') };
+    like $@, qr/\ADocker API error \(500\): denied: requested access to the resource is denied at /,
+      'errorDetail.message is the reason, not the raw JSON object';
+  };
+
+  subtest 'a JSON error body with only a flat error key uses that' => sub {
+    $t->canned([500, 'Internal Server Error', {}, encode_json({ error => 'flat error text' })]);
+    eval { $t->_request('POST', '/images/x/push') };
+    like $@, qr/\ADocker API error \(500\): flat error text at /,
+      'the flat error key is the last fallback before the raw body';
+  };
+
+  subtest 'message still wins when it is present beside errorDetail' => sub {
+    $t->canned([500, 'Internal Server Error', {}, encode_json({
+      message     => 'the message key',
+      errorDetail => { message => 'the detail' },
+    })]);
+    eval { $t->_request('POST', '/images/x/push') };
+    like $@, qr/\ADocker API error \(500\): the message key at /,
+      'message is consulted first, errorDetail only fills its absence';
+  };
+
   subtest '204 and other success codes still return undef/decode normally' => sub {
     $t->canned([204, 'No Content', {}, '']);
     is $t->_request('POST', '/containers/abc/start'), undef, '204 -> undef';
