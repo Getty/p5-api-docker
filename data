@@ -1,0 +1,17 @@
+---
+class: standard
+completed: 2026-08-25T00:51:59Z
+created: 2026-08-24T04:21:11Z
+id: 13
+priority: medium
+started: 2026-08-25T00:51:59Z
+status: done
+tags:
+- transport
+title: _request only looks for message when extracting a >= 400 error
+updated: 2026-08-25T00:51:59Z
+---
+
+The >= 400 path decodes a JSON error body and uses $data->{message}, falling back to the raw body. Measured on Podman: a failed push answers 500 with {"errorDetail":{...},"error":"..."} and no message key, so the whole raw JSON object becomes the croak text instead of the reason. Fall back to errorDetail.message and then to error before giving up on the raw body. Also covers the arrayref-body case already exercised in t/role_http.t.
+
+Fixed in fd81b5a: message // errorDetail.message // error // raw body. t/role_http.t covers errorDetail-only, error-only and message-beside-errorDetail.
