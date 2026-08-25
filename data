@@ -1,0 +1,18 @@
+---
+class: standard
+completed: 2026-08-25T00:51:51Z
+created: 2026-08-24T04:21:07Z
+id: 12
+priority: high
+started: 2026-08-25T00:51:51Z
+status: done
+tags:
+- cross-repo
+- consumer
+title: 'CONSUMER: dist-zilla-plugin-docker-api loses build output on failure'
+updated: 2026-08-25T00:51:51Z
+---
+
+Belongs on the board of ../p5-dist-zilla-plugin-docker-api, which has none yet -- filed here so it is not lost. Since API::Docker croaks on errorDetail, images->build no longer returns, so the plugin never reaches its "for my $event (@$events)" loop and logs nothing on a failed build. It used to print the build steps before dying. The data is still there in $err->events; the plugin just does not look. Fix in lib/Dist/Zilla/Plugin/Docker/API/Client.pm around line 180: drain the events in the failure branch, guarded with ref($err) && $err->can("events"). Its suite stays green either way because its mocks never produce the exception -- this was found by driving the real build path. Must be handled before API::Docker is released.
+
+Fixed in p5-dist-zilla-plugin-docker-api 91c0bda (its board now exists: Dist-Zilla-Plugin-Docker-API#1, escalated from this card). Client.pm drains $err->events through the progress filter before the fatal; t/65-build-failure-stream.t covers verbose, concise and plain-string failures.
