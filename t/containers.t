@@ -81,7 +81,12 @@ subtest 'container lifecycle' => sub {
   ok($created->{Id}, 'created container has Id');
   my $id = is_live() ? $created->{Id} : 'mock123';
 
-  register_cleanup(sub { $docker->containers->remove($id, force => 1) }) if is_live();
+  # Safety net for a die before the remove below; on the happy path the
+  # container is already gone, and that must not warn.
+  register_cleanup(sub {
+    eval { $docker->containers->remove($id, force => 1) };
+    die $@ if $@ && $@ !~ /\(404\)/;
+  }) if is_live();
 
   $docker->containers->start($id);
   pass('container started');

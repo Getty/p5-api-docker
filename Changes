@@ -1,6 +1,10 @@
 Revision history for API-Docker
 
 {{$NEXT}}
+  - t/containers.t: the registered cleanup tolerates the container the
+    happy path already removed, so a live run no longer warns "Cleanup
+    failed: ... no such container" on every pass. The safety net still
+    warns on any other failure.
   - The `>= 400` croak now falls back to `errorDetail.message` and then to
     the flat `error` key when the JSON error body carries no `message`.
     Docker answers `{"message":...}`; Podman answers a failed push with
