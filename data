@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-08-27T06:36:01Z
+claimed_by: doc-writer
+class: standard
+completed: 2026-08-27T06:36:01Z
+created: 2026-08-27T05:04:12Z
+id: 32
+priority: medium
+started: 2026-08-27T05:58:37Z
+status: done
+tags:
+- docs
+title: API/Docker.pm still calls the plugins accessor scaffolding
+updated: 2026-08-27T06:36:01Z
+---
+
+lib/API/Docker.pm's `=attr plugins` POD still reads:
+
+  Returns L<API::Docker::API::Plugins> instance for managed-plugin operations.
+  Scaffolding -- the class has no endpoint methods yet.
+
+That is no longer true as of karr #28: the class implements list, privileges, install, inspect, remove, enable, disable, upgrade, push and configure, and the 'Scaffolding only' paragraph was removed from Plugins.pm itself.
+
+Not fixed in place because the implementing agent's scope excluded lib/API/Docker.pm while other agents were editing it. One sentence to delete.
+
+The identical line at the `=attr distribution` accessor a few lines above belongs to karr #15 and is still accurate at time of writing -- check before deleting both.
