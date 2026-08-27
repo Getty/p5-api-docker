@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-08-27T17:20:57Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T17:20:57Z
+created: 2026-08-27T05:20:27Z
+id: 38
+priority: medium
+started: 2026-08-27T16:11:28Z
+status: done
+tags:
+- tests
+title: Mock harness cannot produce an error status, so every error path is tested
+  below the socket
+updated: 2026-08-27T17:20:57Z
+---
+
+Test::API::Docker::Mock replaces _request wholesale. mock_response(status => 404) sets the response out-parameter, but the mock then returns $response->{data} unconditionally -- it never performs the ">= 400 croak" that the real _request does. A route table therefore cannot exercise any error-handling path: not the croak itself, not the message extraction (message / errorDetail.message / error), not a method that catches a status and decides something, such as API::Docker::API::Distribution/exists.
+
+The workaround in the suite is a FakeTransport subclass of API::Docker that overrides _build__socket with an in-memory sink and _read_response with a canned [status, reason, headers, body]. That runs the real _request and is the right tool for request-shape assertions -- but it now exists five times, copied into t/role_http.t, t/plugins.t, t/registry_auth.t, t/system_auth.t and t/distribution.t, with the same 12 lines and slightly different helper subs around it.
+
+Two things worth doing, in either order:
+
+1. Make the mock honour an error status, so a route table can say 404 and get the croak a caller would get.
+2. Lift the FakeTransport into t/lib (next to Test::API::Docker::Mock) so the copies collapse to one.
+
+Neither blocks anything today; both make the next error-path test cheaper than a copy-paste.
