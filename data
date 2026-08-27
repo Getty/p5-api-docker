@@ -1,0 +1,60 @@
+---
+claimed_at: 2026-08-27T06:34:44Z
+claimed_by: registry-worker
+class: standard
+completed: 2026-08-27T06:34:44Z
+created: 2026-08-27T04:23:15Z
+id: 17
+priority: high
+started: 2026-08-27T05:07:35Z
+status: done
+tags:
+- registry
+- consumer
+title: No POST /auth - registry credentials cannot be verified
+updated: 2026-08-27T06:34:44Z
+---
+
+System has info, version, ping, events and df, but not POST /auth.
+
+The endpoint checks a set of registry credentials against the registry and
+answers 200 with {"Status":"Login Succeeded"} or 401. It takes the same
+AuthConfig body that push encodes into X-Registry-Auth, so
+_build_registry_auth_header already builds most of what is needed.
+
+Consumer motivation: ../p5-dist-zilla-plugin-docker-api pushes release
+images and currently discovers a bad or expired credential only when the
+push fails, halfway through a release, after the image is already built and
+tagged. A cheap pre-flight check would let it fail before doing the work.
+
+Suggested shape:
+  $docker->system->auth(
+    username => ..., password => ..., serveraddress => ...,
+  );
+or accept the same auth argument images->push takes, so a caller can hand
+over whatever it was going to push with.
+
+2026-08-27 05:20 Implemented as API::Docker::API::System/auth.
+
+  $docker->system->auth(username => ..., password => ..., serveraddress => ...)
+  $docker->system->auth(auth => $config)   # same argument images->push takes
+
+Both spellings, never mixed: the AuthConfig has no "auth" field so there is no
+ambiguity, but passing both croaks rather than silently picking a set of
+credentials. auth => accepts a HashRef, a JSON object, or an already-encoded
+X-Registry-Auth value, which is decoded back through API::Docker::Role::RegistryAuth.
+
+Returns the decoded engine answer ({Status, IdentityToken}); a rejected
+credential croaks, which is what makes it usable as a pre-flight check.
+response => \%res is passed through so an eval-ing caller reaches the status.
+Passing no credentials at all croaks before the request -- stricter than the
+engine on purpose.
+
+Measured against rootless Podman 5.4.2 (API 1.41): the endpoint exists, but a
+failed check is 500, not Docker 401, with the registry text wrapped by Podman;
+an empty AuthConfig answers 500 "cannot prompt for username without stdin".
+Documented -- test the outcome, not the status number. No login was ever
+performed: probes used an unreachable serveraddress (127.0.0.1:1).
+
+Tests: t/system_auth.t (fixture-driven, no socket). prove -lr t/ and dzil test
+green. No Changes entry written -- lines handed to the orchestrating agent.
