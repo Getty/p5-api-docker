@@ -2,6 +2,7 @@ package API::Docker::API::Networks;
 # ABSTRACT: Docker Engine Networks API
 our $VERSION = '0.004';
 use Moo;
+with 'API::Docker::Role::Filters';
 use API::Docker::Network;
 use Carp qw( croak );
 use namespace::clean;
@@ -63,7 +64,8 @@ sub _wrap_list {
 sub list {
   my ($self, %opts) = @_;
   my %params;
-  $params{filters} = $opts{filters} if defined $opts{filters};
+  $params{filters} = $self->_normalise_filters($opts{filters})
+    if defined $opts{filters};
   my $result = $self->client->get('/networks', params => \%params);
   return $self->_wrap_list($result // []);
 }
@@ -71,8 +73,19 @@ sub list {
 =method list
 
     my $networks = $networks->list;
+    my $bridges  = $networks->list(filters => { driver => ['bridge'] });
 
 List networks. Returns ArrayRef of L<API::Docker::Network> objects.
+
+Options:
+
+=over
+
+=item * C<filters> - HashRef of filter name to ArrayRef of string values; the
+engine accepts C<dangling>, C<driver>, C<id>, C<label>, C<name>, C<scope> and
+C<type> here. Shape-checked and normalised by L<API::Docker::Role::Filters>
+
+=back
 
 =cut
 
@@ -156,15 +169,27 @@ Disconnect a container from a network. Optional C<Force> parameter.
 sub prune {
   my ($self, %opts) = @_;
   my %params;
-  $params{filters} = $opts{filters} if defined $opts{filters};
+  $params{filters} = $self->_normalise_filters($opts{filters})
+    if defined $opts{filters};
   return $self->client->post('/networks/prune', undef, params => \%params);
 }
 
 =method prune
 
     my $result = $networks->prune;
+    my $result = $networks->prune(filters => { until => ['24h'] });
 
 Delete unused networks. Returns hashref with C<NetworksDeleted>.
+
+Options:
+
+=over
+
+=item * C<filters> - HashRef of filter name to ArrayRef of string values; the
+engine accepts C<until> and C<label> here. Shape-checked and normalised by
+L<API::Docker::Role::Filters>
+
+=back
 
 =cut
 

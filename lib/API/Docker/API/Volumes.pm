@@ -2,6 +2,7 @@ package API::Docker::API::Volumes;
 # ABSTRACT: Docker Engine Volumes API
 our $VERSION = '0.004';
 use Moo;
+with 'API::Docker::Role::Filters';
 use API::Docker::Volume;
 use Carp qw( croak );
 use namespace::clean;
@@ -63,7 +64,8 @@ sub _wrap_list {
 sub list {
   my ($self, %opts) = @_;
   my %params;
-  $params{filters} = $opts{filters} if defined $opts{filters};
+  $params{filters} = $self->_normalise_filters($opts{filters})
+    if defined $opts{filters};
   my $result = $self->client->get('/volumes', params => \%params);
   return $self->_wrap_list($result->{Volumes} // []);
 }
@@ -71,8 +73,19 @@ sub list {
 =method list
 
     my $volumes = $volumes->list;
+    my $unused  = $volumes->list(filters => { dangling => ['true'] });
 
 List volumes. Returns ArrayRef of L<API::Docker::Volume> objects.
+
+Options:
+
+=over
+
+=item * C<filters> - HashRef of filter name to ArrayRef of string values; the
+engine accepts C<dangling>, C<driver>, C<label> and C<name> here.
+Shape-checked and normalised by L<API::Docker::Role::Filters>
+
+=back
 
 =cut
 
@@ -127,15 +140,27 @@ Remove a volume. Optional C<force> parameter.
 sub prune {
   my ($self, %opts) = @_;
   my %params;
-  $params{filters} = $opts{filters} if defined $opts{filters};
+  $params{filters} = $self->_normalise_filters($opts{filters})
+    if defined $opts{filters};
   return $self->client->post('/volumes/prune', undef, params => \%params);
 }
 
 =method prune
 
     my $result = $volumes->prune;
+    my $result = $volumes->prune(filters => { label => ['stage=build'] });
 
 Delete unused volumes. Returns hashref with C<VolumesDeleted> and C<SpaceReclaimed>.
+
+Options:
+
+=over
+
+=item * C<filters> - HashRef of filter name to ArrayRef of string values; the
+engine accepts C<label> here. Shape-checked and normalised by
+L<API::Docker::Role::Filters>
+
+=back
 
 =cut
 

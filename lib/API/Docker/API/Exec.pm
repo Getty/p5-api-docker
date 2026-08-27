@@ -79,9 +79,13 @@ sub start {
     Detach => $opts{Detach} ? \1 : \0,
     Tty    => $opts{Tty}    ? \1 : \0,
   };
+  # exists, not truth: an unset callback is a caller bug, and falling back to
+  # the buffered path for it would answer a long-running command by waiting
+  # for it in silence. Handed over as it is, the transport says so instead.
   return $self->client->stream_frames('POST', "/exec/$exec_id/start",
     body => $body,
     $opts{Tty} ? ( tty => 1 ) : (),
+    exists $opts{on_frame} ? ( on_frame => $opts{on_frame} ) : (),
   );
 }
 
@@ -120,7 +124,44 @@ to L</create>, and it also suppresses demultiplexing of the response. Framing is
 otherwise detected from the response bytes -- see
 L<API::Docker::Role::HTTP/"Detecting a framed stream">
 
+=item * C<on_frame> - CodeRef called with each frame as it arrives, instead of
+the ArrayRef being collected and returned; see below
+
 =back
+
+=head2 Watching the output as it is produced
+
+Without a callback this returns when the command has finished and the daemon
+has closed the stream -- a command that runs for a minute is a minute of
+silence, and one that never finishes never returns. Pass C<on_frame> and the
+frames are handed over as they arrive:
+
+    my $summary = $exec->start($exec_id,
+        on_frame => sub {
+            my ($frame, $stop) = @_;
+            print $frame->{data};
+            $stop->() if $frame->{data} =~ /ready/;
+        },
+    );
+
+    $summary;   # { delivered => 9, stopped => 1 }
+
+With a callback the return value is that summary HashRef, not the frames:
+C<delivered> is how many went to the callback, C<stopped> is 1 when the
+callback ended the stream and 0 when the daemon did. Nothing is accumulated,
+so joining the output is the callback's job. See
+L<API::Docker::Role::HTTP/"Streaming a response as it arrives">.
+
+A detached start produces no output, so its summary is
+C<< { delivered => 0, stopped => 0 } >> where the buffered call returns an
+empty ArrayRef.
+
+C<Tty> means something stronger on this path. The buffered path decides
+framing by walking the whole body, which is exactly what a streamed one does
+not have; so with C<on_frame> it is a promise about the exec instance rather
+than a hint, and an undeclared stream that turns out not to be framed croaks
+instead of being handed back raw. Pass the same C<Tty> that went to L</create>
+-- the engine expects them to agree in any case.
 
 =cut
 
