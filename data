@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-08-27T23:31:55Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T23:31:55Z
+created: 2026-08-27T23:14:38Z
+id: 66
+priority: high
+started: 2026-08-27T23:31:55Z
+status: done
+tags:
+- changes
+- docs
+- release-blocker
+title: 'Changes {{$NEXT}}: TLS entry still says DOCKER_TLS_VERIFY is not consulted,
+  contradicted by a later entry in the same block'
+updated: 2026-08-27T23:31:55Z
+---
+
+The 'tls => 1 now speaks actual TLS' entry (near the top of {{$NEXT}}) ends: "DOCKER_TLS_VERIFY, which the docker CLI reads to turn TLS on from the environment, is deliberately not consulted -- tls still defaults to 0 regardless of what the environment exports." A later entry in the SAME {{$NEXT}} block ('tls now defaults from $ENV{DOCKER_TLS_VERIFY} instead of always being 0...') does exactly what the first entry says is deliberately not done. This is a real self-contradiction in the release notes as they stand today, not a stylistic nit -- a reader of the first entry alone is told the wrong thing about this release. Found during release audit. Fix: delete or rewrite the stale sentence in the first entry (it predates the DOCKER_TLS_VERIFY commit) so only the later entry makes the claim.
