@@ -1,0 +1,75 @@
+---
+claimed_at: 2026-08-27T06:35:32Z
+claimed_by: swarm-lite-worker
+class: standard
+completed: 2026-08-27T06:35:32Z
+created: 2026-08-27T04:25:16Z
+id: 27
+priority: low
+started: 2026-08-27T04:52:36Z
+status: done
+tags:
+- scope
+- coverage
+title: 'SCOPE: the Swarm family is entirely absent - decide in or out'
+updated: 2026-08-27T06:35:32Z
+---
+
+A scope question, not a defect. Six resource groups exist in the Engine API
+and none is exposed:
+
+  /swarm     init, join, leave, update, unlockkey, unlock
+  /nodes     list, inspect, update, delete
+  /services  list, create, inspect, update, delete, logs
+  /tasks     list, inspect, logs
+  /secrets   list, create, inspect, delete, update
+  /configs   list, create, inspect, delete, update
+
+Arguments for out: Podman - the engine this client is actually tested
+against - does not implement Swarm at all, so half the matrix would be
+untestable here. Compose and Kubernetes took the orchestration role Swarm
+was aimed at. It is a lot of surface for something no current consumer asks
+for.
+
+Arguments for in: secrets and configs are useful on their own and are the
+smallest two. Services would make the client able to deploy, not just build.
+
+Wanted: a decision, and then either the work or a sentence in the POD saying
+Swarm is out of scope, so the absence reads as a choice. Right now a reader
+cannot tell "not yet" from "never".
+
+
+--- DECISION 2026-08-27 (maintainer) ---
+PARTIALLY IN. /secrets and /configs are implemented -- the two smallest, and
+useful on their own. /swarm, /nodes, /services and /tasks stay OUT and get a
+sentence in the POD saying so, so the absence reads as a choice rather than
+as unfinished work.
+
+2026-08-27 05:06 PARTIALLY IN, as decided. Implemented lib/API/Docker/API/Secrets.pm and
+lib/API/Docker/API/Configs.pm with list/create/inspect/update/remove, removed
+both "Scaffolding only" paragraphs, and added the swarm-exclusion decision to
+API/Docker.pm under =head2 "Swarm orchestration is out of scope".
+
+Measured against Podman 5.4.2 / API 1.41, not extrapolated:
+- Podman DOES serve /secrets, from its own local secret store, no swarm
+  needed. The scaffold DESCRIPTION claimed the opposite and was corrected.
+  create answers 200 (Docker documents 201); update answers 501 "update is
+  not supported" with or without version.
+- Podman does NOT serve /configs: 404 with a plain-text "Not Found" body.
+- Data on the wire is base64 and the daemon does NOT validate it. Data set to
+  the plain text "hello there!" was accepted with HTTP 200 and stored three
+  bytes of garbage. That silent-corruption path is why this class encodes for
+  the caller rather than expecting pre-encoded bytes.
+- The alphabet is STANDARD base64, not URL-safe, despite the Engine API
+  reference calling the field "base64-url-safe-encoded": +v/++w== stored
+  correctly, the same bytes as -v_--w== were rejected 500.
+
+update takes the version as a mandatory second positional argument and croaks
+client-side when it is missing or non-numeric, naming inspect() and
+Version.Index as the source.
+
+Tests: t/secrets_configs.t (new, fixture-driven, 17 subtests) plus
+t/fixtures/secrets_list.json captured live from Podman. All four staged files
+are git-added. prove -lr t/ green (18 files, 178 tests); dzil test green (20
+files, 195 tests). No Changes entry written by request - proposed lines are in
+the report. Follow-up drift filed as #35 (no entity classes).
