@@ -1,0 +1,45 @@
+---
+claimed_at: 2026-08-27T17:20:57Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T17:20:57Z
+created: 2026-08-27T06:06:02Z
+id: 45
+priority: medium
+started: 2026-08-27T16:11:28Z
+status: done
+tags:
+- engine
+- podman
+- streaming
+title: 'stats on a stopped container: HTTP 200 carrying an error object neither check
+  catches'
+updated: 2026-08-27T17:20:57Z
+---
+
+Measured on Podman 5.4.2 (API 1.41), 2026-08-27.
+
+GET /containers/{id}/stats on a container that exists but is not running is
+answered with HTTP 200, Transfer-Encoding: chunked, and this body -- for both
+stream=1 and the one-shot call:
+
+  {"cause":"container is stopped","message":"container is stopped","response":500}
+
+Neither guard in the transport sees it:
+  - the >= 400 croak does not, because the status line is 200
+  - _assert_no_stream_error does not, because its trigger is the errorDetail
+    key alone and this object is keyed cause/message/response
+
+So containers->stats($id) returns that HashRef where a reading was expected,
+and with on_event the callback is handed it as though it were a reading.
+
+Documented as a caveat in the stats POD (Containers.pm) for now; no code
+change made. Open question for a decision, NOT to be fixed opportunistically:
+whether the stream error check should also recognise Podman-shaped in-200
+errors ({cause,message,response}), or whether that belongs in the transport as
+a general "error object inside a 200" rule. It would be a public behaviour
+change (a croak where callers now get a HashRef) and it touches Role::HTTP,
+which is the seam under all twelve modules.
+
+Related: the errorDetail default for stats itself was measured and kept loud
+in this same round -- see the stats POD.
