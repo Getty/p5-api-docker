@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-08-27T06:36:06Z
+claimed_by: doc-writer
+class: standard
+completed: 2026-08-27T06:36:06Z
+created: 2026-08-27T05:20:12Z
+id: 37
+priority: low
+started: 2026-08-27T05:58:42Z
+status: done
+tags:
+- docs
+- registry
+title: Role::RegistryAuth is not named in the client POD or the README
+updated: 2026-08-27T06:36:06Z
+---
+
+lib/API/Docker.pm lists the transport role twice -- as an architecture item ("HTTP Role - L<API::Docker::Role::HTTP> - HTTP transport layer", around line 122) and in SEE ALSO (around line 471). The new L<API::Docker::Role::RegistryAuth>, which carries the X-Registry-Auth / AuthConfig encoding shared by Images, Plugins, Distribution and System, appears in neither, and README.md names no roles at all.
+
+Not fixed with the merge itself: lib/API/Docker.pm was locked to another agent at the time, and README.md is the doc-writer lane.
+
+Add one architecture item and one SEE ALSO entry, and whatever the README module list wants.
