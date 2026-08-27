@@ -13,34 +13,31 @@ use Test::API::Docker::FakeTransport;
 # >=400 croak path are exercised by nothing but use_ok in t/basic.t.
 #
 # Nothing here opens a real socket or reaches a daemon: the socket-facing
-# methods (_read_response, _read_chunked) are driven directly over an
-# in-memory filehandle, and _request itself is driven through a subclass
-# that fakes the socket instead of connecting one. So this file needs no
-# is_live()/can_write() gating -- it is unconditionally safe with no Docker
-# installed.
+# methods (_read_response, _read_chunked) are driven directly over a tied
+# filehandle, and _request itself is driven through a subclass that fakes the
+# socket instead of connecting one. So this file needs no is_live()/can_write()
+# gating -- it is unconditionally safe with no Docker installed.
 
 # ---------------------------------------------------------------------------
-# A tied filehandle that hands back only a few bytes per read() call
-# regardless of how much was asked for, so "a chunk arriving in several
-# reads" is a real multi-call scenario for _read_chunked's inner while loop,
-# not just a single read() that happens to satisfy the whole request. An
-# in-memory scalar filehandle (open $fh, '<', \$str) never does this --
-# PerlIO::scalar always returns everything available in one call.
+# A tied filehandle serving a fixed string, with a step: 0 hands over
+# everything that is left in one call, a positive N hands over at most N bytes
+# per call, so "a chunk arriving in several reads" is a real multi-call
+# scenario for _read_chunked's inner while loop rather than one read that
+# happens to satisfy the whole request.
+#
+# This used to be an in-memory scalar filehandle (open $fh, '<', \$str) for
+# everything but the multi-read case. It cannot be one any more: since karr #60
+# the transport reads with sysread, and sysread on a scalar filehandle fails
+# outright -- measured, it returns undef with EBADF, because such a handle has
+# no file descriptor (fileno is -1). A tied handle is the shape that works for
+# both, and it also makes the step explicit rather than inherited from
+# PerlIO::scalar's own behaviour.
 package Test::RoleHTTP::PartialReader;
 
 sub TIEHANDLE {
   my ($class, $data, $step) = @_;
-  return bless { buf => $data, pos => 0, step => $step || 3 }, $class;
-}
-
-sub READLINE {
-  my ($self) = @_;
-  return undef if $self->{pos} >= length $self->{buf};
-  my $idx = index($self->{buf}, "\n", $self->{pos});
-  my $end = $idx == -1 ? length($self->{buf}) : $idx + 1;
-  my $line = substr($self->{buf}, $self->{pos}, $end - $self->{pos});
-  $self->{pos} = $end;
-  return $line;
+  return bless { buf => $data, pos => 0, step => defined $step ? $step : 0 },
+    $class;
 }
 
 sub READ {
@@ -49,7 +46,8 @@ sub READ {
   my $offset = $_[3] || 0;
   my $avail  = length($self->{buf}) - $self->{pos};
   return 0 if $avail <= 0;
-  my $n = $len > $self->{step} ? $self->{step} : $len;
+  my $n = $len;
+  $n = $self->{step} if $self->{step} && $n > $self->{step};
   $n = $avail if $n > $avail;
   my $chunk = substr($self->{buf}, $self->{pos}, $n);
   if ($offset) {
@@ -66,6 +64,23 @@ sub CLOSE { 1 }
 
 package main;
 
+# A handle over $data. Anonymous, so several can be alive at once and none
+# needs untying.
+sub string_handle {
+  my ($data, $step) = @_;
+  my $fh = \do { no warnings 'once'; local *HANDLE };
+  tie *$fh, 'Test::RoleHTTP::PartialReader', $data, $step;
+  return $fh;
+}
+
+# What the transport has read off a handle but not yet consumed. Since karr #60
+# the read-ahead past a header block lands here instead of in PerlIO's own
+# buffer, which is what makes "these bytes were not swallowed" answerable.
+sub unconsumed {
+  my ($client, $fh) = @_;
+  return ${ $client->_read_buffer($fh) };
+}
+
 my $client = API::Docker->new(
   host        => 'unix:///nonexistent.sock',
   api_version => '1.41',
@@ -73,7 +88,7 @@ my $client = API::Docker->new(
 
 # ---------------------------------------------------------------------------
 subtest '_read_response: status line parsing' => sub {
-  open my $fh, '<', \"HTTP/1.1 204 No Content\r\n\r\n" or die $!;
+  my $fh = string_handle("HTTP/1.1 204 No Content\r\n\r\n");
   my $resp = $client->_read_response($fh);
   is $resp->[0], 204, 'status code';
   is $resp->[1], 'No Content', 'status text, including the embedded space';
@@ -86,7 +101,7 @@ subtest '_read_response: header collection' => sub {
     . "Content-Length: 2\r\n"
     . "\r\n"
     . "{}";
-  open my $fh, '<', \$raw or die $!;
+  my $fh = string_handle($raw);
   my $resp = $client->_read_response($fh);
   my $headers = $resp->[2];
 
@@ -106,7 +121,7 @@ subtest '_read_response: chunked body' => sub {
     . "5\r\nhello\r\n"
     . "6\r\n world\r\n"
     . "0\r\n\r\n";
-  open my $fh, '<', \$raw or die $!;
+  my $fh = string_handle($raw);
   my $resp = $client->_read_response($fh);
   is $resp->[3], 'hello world', 'chunks concatenated, chunk framing stripped';
 };
@@ -119,7 +134,7 @@ subtest '_read_response: content-length body' => sub {
     . 'Content-Length: ' . length($body) . "\r\n"
     . "\r\n"
     . $body;
-  open my $fh, '<', \$raw or die $!;
+  my $fh = string_handle($raw);
   my $resp = $client->_read_response($fh);
   is $resp->[3], $body,
     'exactly content-length bytes read, embedded CRLF/NUL preserved';
@@ -132,7 +147,7 @@ subtest '_read_response: read-to-EOF fallback' => sub {
     . "Connection: close\r\n"
     . "\r\n"
     . "no length header, read until eof";
-  open my $fh, '<', \$raw or die $!;
+  my $fh = string_handle($raw);
   my $resp = $client->_read_response($fh);
   is $resp->[3], 'no length header, read until eof',
     'falls back to slurping the rest of the socket';
@@ -142,13 +157,13 @@ subtest '_read_response: read-to-EOF fallback' => sub {
 subtest '_read_chunked: hex sizes, upper and lower case' => sub {
   # 'a' and 'A' are both 10 -- hex() is case-insensitive, and so must this be.
   my $raw = "a\r\n0123456789\r\nA\r\nABCDEFGHIJ\r\n0\r\n\r\n";
-  open my $fh, '<', \$raw or die $!;
+  my $fh = string_handle($raw);
   is $client->_read_chunked($fh), '0123456789ABCDEFGHIJ',
     'lowercase and uppercase hex chunk sizes both read correctly';
 };
 
 subtest '_read_chunked: a single zero-size chunk terminates immediately' => sub {
-  open my $fh, '<', \"0\r\n\r\n" or die $!;
+  my $fh = string_handle("0\r\n\r\n");
   is $client->_read_chunked($fh), '', 'empty body, no chunks';
 };
 
@@ -451,9 +466,15 @@ subtest '_request: >= 400 croaks' => sub {
 # send -- Content-Length among them -- and then sends no body at all. Reading
 # one waits for bytes that never arrive. The bytes after the blank line below
 # stand in for whatever comes next on the connection: consuming them as a body
-# is exactly the bug, and an in-memory filehandle that simply hits EOF would
-# hide it (the old code returned '' there too, from a read that failed rather
-# than from one it never made).
+# is exactly the bug, and a handle that simply hit EOF there would hide it (the
+# old code returned '' there too, from a read that failed rather than from one
+# it never made).
+#
+# Where "not consumed" is now read: since karr #60 the read-ahead past the
+# header block sits in the transport's own buffer rather than in PerlIO's, so
+# the question is asked of that buffer. The claim is unchanged -- these bytes
+# were not taken as a body -- and it is now asked somewhere this code owns
+# rather than of a buffer it could not see into.
 subtest '_read_response: a HEAD response has no body, whatever it announces' => sub {
   subtest 'an announced content-length is not read' => sub {
     my $raw = "HTTP/1.1 200 OK\r\n"
@@ -461,7 +482,7 @@ subtest '_read_response: a HEAD response has no body, whatever it announces' => 
       . "X-Docker-Container-Path-Stat: e30=\r\n"
       . "\r\n"
       . 'NOT-THE-BODY!';
-    open my $fh, '<', \$raw or die $!;
+    my $fh = string_handle($raw);
     my $resp = $client->_read_response($fh, 'HEAD');
 
     is $resp->[3], '', 'body is empty';
@@ -469,9 +490,9 @@ subtest '_read_response: a HEAD response has no body, whatever it announces' => 
       'the announced length is still collected as a header';
     is $resp->[2]{'x-docker-container-path-stat'}, 'e30=',
       'and so is the header a HEAD response carries its payload in';
-    is do { local $/; <$fh> }, 'NOT-THE-BODY!',
-      'the bytes after the headers were left on the handle, not swallowed as '
-      . 'a body that was never sent';
+    is unconsumed($client, $fh), 'NOT-THE-BODY!',
+      'the bytes after the headers are still unconsumed, not swallowed as a '
+      . 'body that was never sent';
   };
 
   subtest 'a chunked announcement is not read either' => sub {
@@ -479,20 +500,20 @@ subtest '_read_response: a HEAD response has no body, whatever it announces' => 
       . "Transfer-Encoding: chunked\r\n"
       . "\r\n"
       . "5\r\nhello\r\n0\r\n\r\n";
-    open my $fh, '<', \$raw or die $!;
+    my $fh = string_handle($raw);
     my $resp = $client->_read_response($fh, 'HEAD');
 
     is $resp->[3], '', 'body is empty';
-    is do { local $/; <$fh> }, "5\r\nhello\r\n0\r\n\r\n",
+    is unconsumed($client, $fh), "5\r\nhello\r\n0\r\n\r\n",
       'the chunk framing was not consumed';
   };
 
   subtest 'every other method still reads its body' => sub {
     my $raw = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}";
-    open my $fh, '<', \$raw or die $!;
+    my $fh = string_handle($raw);
     is $client->_read_response($fh, 'GET')->[3], '{}', 'a GET body is read';
 
-    open my $fh2, '<', \$raw or die $!;
+    my $fh2 = string_handle($raw);
     is $client->_read_response($fh2)->[3], '{}',
       'and so is one read without a method argument at all';
   };

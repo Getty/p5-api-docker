@@ -187,12 +187,21 @@ the content may stop mid-value. They are here so a caller who wants them can
 have them rather than because the transport thinks they are usable.
 
 Always the empty string for a streamed request, which keeps no body by design.
-Nothing is lost there either: the bytes of the read that ran out of time are
-put through the same decoding as every other byte first, so the units they
-complete reach the callback and are counted in L</summary> before this is
-raised. That matters more than it sounds -- on the raw-stream endpoints a
-single read holds the whole response, so dropping it would hand a caller with
-a callback nothing at all.
+Nothing is lost there either: every byte that arrived went through the same
+decoding as every other byte, so the units it completed reached the callback
+and are counted in L</summary> before this is raised.
+
+That holds by construction rather than by rescue, which is worth knowing if
+you are reading the transport. The read that expires carries nothing --
+C<sysread> returns what it received and leaves C<errno> alone, and fails with
+C<EAGAIN> only when it received nothing at all. It used to be otherwise:
+PerlIO's C<read()> could come back with part of what it was asked for B<and>
+C<EAGAIN> together, so the bytes of the expiring read had to be fed to the
+callback before the exception went up or a caller would have been handed
+nothing even though the whole response had arrived.
+
+Also empty when L</phase> is C<'connect'>: there was no response to have part
+of.
 
 =cut
 

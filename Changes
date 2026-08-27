@@ -780,6 +780,57 @@ Revision history for API-Docker
     Successful builds were measured too and leak nothing, on either engine;
     of everything under `t/` only this file and `t/images.t` build against a
     real daemon at all.
+  - The HTTP role reads through one buffer of its own instead of through
+    perl's, so a callback now receives data as it arrives rather than in one
+    piece when the daemon closes. `read()` fills: measured on a blocking
+    socket with 6 bytes available it waited 0.9s for EOF and returned 12,
+    where `sysread` returned the 6 at once. On a close-delimited endpoint
+    that meant `on_chunk` and `on_frame` fired once at the end -- and on an
+    endpoint that never closes, potentially never. Measured on one container
+    writing a line every 0.4s over `attach`, identical on Podman 5.8.4 (API
+    1.44) and Docker 29.7.2 (API 1.55): one `on_chunk` call at 2.00s before,
+    which was the read timeout expiring, and five at 0.00, 0.40, 0.80, 1.20
+    and 1.60s after. `logs` was never affected -- it is chunked on both
+    engines.
+  - That could not be done at one read site: `_read_head` read lines through
+    perl's buffer and pulled the start of the body in with them, so anything
+    switching to `sysread` afterwards would have lost those bytes, and there
+    is no supported way to hand perl's read-ahead over. All three physical
+    reads are therefore one function that answers `data`, `eof` or `timeout`
+    rather than a raw count, and the twelve call sites consume that instead
+    of interpreting a return value each: an `undef` can no longer become an
+    accidental end of body at any of them. `EINTR` is retried, which perl's
+    `read()` did internally and would otherwise have been a regression, and
+    a short positive read is never read as an end.
+  - The rescue hook that fed a timed-out read's bytes to the callback before
+    croaking is gone, because `sysread` cannot return data and `EAGAIN` in
+    the same call, so it could never fire -- dead code that looked
+    load-bearing. What it was there for now holds by construction: every
+    byte reaches the callback in the pull that delivered it.
+  - TLS was measured through the same rewrite and is unchanged in three
+    shapes (records spaced 0.15s apart, 100000 bytes across many records,
+    and a silent stream under a 1s timeout): `IO::Socket::SSL` ties the
+    handle and its `READ` already delegated to a single `Net::SSLeay::read`,
+    so the builtin never had whole-response semantics there to begin with.
+    `SSL_WANT_READ` and `SSL_WANT_WRITE` are deliberately not retried -- on a
+    blocking socket they arrive as `EWOULDBLOCK`, and with `SO_RCVTIMEO` in
+    force that means the bound fired. The POD now also says that
+    `SO_RCVTIMEO` bounds the underlying receives rather than the time since
+    the last plaintext byte, so it is not an exact idle timer under TLS.
+  - New `connect_timeout`, beside `read_timeout` and shaped the same way: a
+    client attribute and a per-request option, off by default.
+    `IO::Socket`'s own `Timeout` was measured rather than assumed -- against
+    a host dropping SYNs it gives up at 2.00s where the kernel takes over
+    two minutes, and on a unix socket whose listener backlog is full it
+    fails at once where the connect otherwise still blocked after 8s. That
+    second case is a bound bought by not tolerating a momentary backlog,
+    which the POD says rather than hides. `API::Docker::Error::Timeout`
+    gained `phase` (`read` or `connect`) instead of a second class: a caller
+    catches it to ask whether the request finished in time, and that answer
+    is the same either way.
+  - `cpanfile` lists `Errno`, `IO::Handle`, `Scalar::Util` and `Socket`,
+    which `API::Docker::Role::HTTP` loads. Three of the four were missing
+    before this round. All are core.
 
 0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the

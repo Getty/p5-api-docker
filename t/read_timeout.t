@@ -11,43 +11,58 @@ use API::Docker::Error::Timeout;
 #
 # Tier one -- everything down to "the real socket" below -- is the loop logic,
 # which is where the risk is. SO_RCVTIMEO does not poison the handle and does
-# not end the stream: a read that ran out of time comes back looking exactly
-# like a read that reached the end of the response, and errno is the only
-# thing that tells them apart. Every `last unless $n` in the readers would
-# otherwise take a timeout for the end of the body and hand back a truncated
-# response as a whole one -- turning the hang this option removes into silent
-# data loss, which is worse than the hang. So each read site is driven twice,
-# once for each meaning of the same short read, and the two have to come out
-# differently. A tied handle can produce both exactly, with no socket and no
-# waiting.
+# not end the stream: a read that delivered nothing because the clock ran out
+# comes back looking exactly like one that reached the end of the response, and
+# errno is the only thing that tells them apart. Every `last unless $n` in the
+# readers would otherwise take a timeout for the end of the body and hand back
+# a truncated response as a whole one -- turning the hang this option removes
+# into silent data loss, which is worse than the hang. So each read site is
+# driven twice, once for each meaning of the same empty read, and the two have
+# to come out differently. A tied handle can produce both exactly, with no
+# socket and no waiting.
 #
 # Tier two is the one assertion a tied handle cannot make: that the setsockopt
 # is really in force on a real socket. That one costs about a fifth of a
 # second and needs a socketpair, no daemon and no network.
+#
+# What karr #60 changed here. The transport used to read with PerlIO's read()
+# and readline, which fill: a read could come back with *part* of what it was
+# asked for and EAGAIN at the same time, and an interrupted readline handed
+# back the part of the line it had. Both of those were scripted below as one
+# entry carrying data and `timeout => 1` together. sysread has no such state --
+# a call that received anything returns it and leaves errno alone; only a call
+# that received nothing fails with EAGAIN -- so those entries are now two: the
+# delivery, and then the expiry. The scenarios and their claims are unchanged;
+# what changed is that the transport can no longer be in the position of
+# holding bytes it has not passed on when the clock runs out, so the entries
+# that said otherwise had to be split rather than kept.
 #
 # Nothing here reaches a Docker daemon, so there is no is_live()/can_write()
 # gating: it is unconditionally safe with no engine installed.
 
 # ---------------------------------------------------------------------------
 # A tied handle scripted with what each read is to do, so both meanings of a
-# short read can be produced on demand:
+# read that delivers nothing can be produced on demand. One entry per sysread:
 #
-#   { line  => "text\n" }               a whole line
-#   { line  => "half",  timeout => 1 }  the half a line an expired readline
-#                                       hands back, with EAGAIN in errno
-#   { line  => undef,   timeout => 1 }  an expired readline with nothing at all
-#   { line  => undef }                  the clean end of the response
-#   { bytes => "abc" }                  three bytes
-#   { bytes => "ab", timeout => 1 }     a short read that ran out of time
-#   { bytes => '',   timeout => 1 }     an expired read with nothing at all
-#   { bytes => '' }                     the clean end of the response
+#   { line  => "text\n" }   a whole line arrives
+#   { line  => "half" }     part of one, with the rest still to come
+#   { bytes => "abc" }      three bytes
+#   { bytes => '' }         the clean end of the response
+#   { }                     the same, which is what running off the end gives
+#   { timeout => 1 }        the clock ran out: undef, with EAGAIN in errno
+#   { eintr => 1 }          a signal interrupted it: undef, with EINTR
+#   { fail => 1 }           undef with errno untouched, which is what a handle
+#                           that reports nothing looks like
 #
-# Running off the end of the script is the clean end, so a scenario only has
-# to script as far as the site under test. Every one of these shapes was
-# measured on a real socketpair with SO_RCVTIMEO set before being written
-# down here -- including the two that matter most: an interrupted readline
-# returns the part of the line it has, and a clean end leaves errno untouched
-# while an expiry sets EAGAIN.
+# `line` and `bytes` are the same delivery -- to sysread a line and a run of
+# bytes are both just bytes -- and are kept apart only so a script reads as the
+# wire it stands for.
+#
+# Running off the end of the script is the clean end, so a scenario only has to
+# script as far as the site under test. Every one of these shapes was measured
+# on a real socketpair with SO_RCVTIMEO set before being written down here,
+# including the one that matters most: a clean end leaves errno untouched and
+# returns 0, while an expiry sets EAGAIN and returns undef.
 package Test::ReadTimeout::Handle;
 
 sub TIEHANDLE {
@@ -60,27 +75,36 @@ sub _next {
   return $self->{script}[ $self->{i}++ ] || {};
 }
 
-sub READLINE {
-  my ($self) = @_;
-  my $act = $self->_next;
+# sysread reaches a tied handle through READ, so this is the whole interface
+# the transport uses now -- READLINE is gone from here because nothing calls
+# it any more: _read_line finds its terminator in the transport's own buffer.
+sub READ {
+  my $self = $_[0];
+  my $act  = $self->_next;
+
+  # sysread cannot deliver and expire in the same call, unlike the PerlIO
+  # read() this harness was first written against. An entry that tries to be
+  # both is a script that was not translated when karr #60 landed, and saying
+  # so here is cheaper than the silent near-miss it would otherwise be.
+  die "a scripted read cannot both deliver and expire\n"
+    if ($act->{timeout} || $act->{eintr} || $act->{fail})
+      && (defined $act->{line} || defined $act->{bytes});
+
   # Set last and read first: errno is only meaningful straight after the
   # operation that failed, which is exactly the discipline the code under
   # test has to keep. With keep_errno it is left exactly as the caller left
   # it, which is how a stale value gets in front of the check.
-  $! = $act->{timeout} ? Errno::EAGAIN() : 0 unless $act->{keep_errno};
-  return $act->{line};
-}
+  unless ($act->{keep_errno}) {
+    $! = $act->{timeout} ? Errno::EAGAIN()
+      : $act->{eintr}    ? Errno::EINTR()
+      : 0;
+  }
+  return undef if $act->{timeout} || $act->{eintr} || $act->{fail};
 
-sub READ {
-  my $self = $_[0];
-  my $act  = $self->_next;
-  my $data = defined $act->{bytes} ? $act->{bytes} : '';
+  my $data = defined $act->{line} ? $act->{line}
+    : defined $act->{bytes} ? $act->{bytes} : '';
   $_[1] = $data;
-  $! = $act->{timeout} ? Errno::EAGAIN() : 0 unless $act->{keep_errno};
-  # read() answers a pure failure with undef and a partial delivery with the
-  # count it managed; both are short, and both are what an expiry can look
-  # like.
-  return undef if $act->{timeout} && !length $data;
+  # 0 is the clean end of the response, and is the only thing that means it.
   return length $data;
 }
 
@@ -167,7 +191,7 @@ my $BLANK   = { line => "\r\n" };
 # _read_head -- the status line and the header block
 # ---------------------------------------------------------------------------
 site_ok '_read_head: the status line never arrives',
-  sub { scripted({ line => undef, timeout => $_[0] }) },
+  sub { scripted({ timeout => $_[0] }) },
   sub { $client->_read_head($_[0], $_[1]) },
   sub {
     my ($out, $other) = @_;
@@ -177,7 +201,7 @@ site_ok '_read_head: the status line never arrives',
   };
 
 site_ok '_read_head: half a status line',
-  sub { scripted({ line => 'HTTP/1.1 20', timeout => $_[0] }) },
+  sub { scripted({ line => 'HTTP/1.1 20' }, { timeout => $_[0] }) },
   sub { $client->_read_head($_[0], $_[1]) },
   sub {
     my ($out) = @_;
@@ -189,7 +213,7 @@ site_ok '_read_head: half a status line',
 site_ok '_read_head: the header block stops halfway',
   sub {
     scripted($HEAD_OK, { line => "Content-Type: application/json\r\n" },
-      { line => 'X-Half', timeout => $_[0] });
+      { line => 'X-Half' }, { timeout => $_[0] });
   },
   sub { $client->_read_head($_[0], $_[1]) },
   sub {
@@ -203,7 +227,8 @@ site_ok '_read_head: the header block stops halfway',
 # ---------------------------------------------------------------------------
 site_ok '_read_body: a content-length body stops short',
   sub {
-    scripted({ bytes => 'hello ' }, { bytes => 'wor', timeout => $_[0] });
+    scripted({ bytes => 'hello ' }, { bytes => 'wor' },
+      { timeout => $_[0] });
   },
   sub {
     $client->_read_body($_[0], { 'content-length' => 11 }, 'GET', $_[1]);
@@ -216,7 +241,7 @@ site_ok '_read_body: a content-length body stops short',
   };
 
 site_ok '_read_body: a close-delimited body stops short',
-  sub { scripted({ line => 'partial frames', timeout => $_[0] }) },
+  sub { scripted({ bytes => 'partial frames' }, { timeout => $_[0] }) },
   sub { $client->_read_body($_[0], {}, 'GET', $_[1]) },
   sub {
     my ($out) = @_;
@@ -226,7 +251,7 @@ site_ok '_read_body: a close-delimited body stops short',
 site_ok '_read_chunked: the chunk header stops halfway',
   sub {
     scripted({ line => "5\r\n" }, { bytes => 'hello' }, { line => "\r\n" },
-      { line => '1a', timeout => $_[0] });
+      { line => '1a' }, { timeout => $_[0] });
   },
   sub { $client->_read_chunked($_[0], $_[1]) },
   sub {
@@ -237,7 +262,7 @@ site_ok '_read_chunked: the chunk header stops halfway',
 site_ok '_read_chunked: the chunk data stops short',
   sub {
     scripted({ line => "5\r\n" }, { bytes => 'hello' }, { line => "\r\n" },
-      { line => "6\r\n" }, { bytes => ' wor', timeout => $_[0] });
+      { line => "6\r\n" }, { bytes => ' wor' }, { timeout => $_[0] });
   },
   sub { $client->_read_chunked($_[0], $_[1]) },
   sub {
@@ -248,7 +273,7 @@ site_ok '_read_chunked: the chunk data stops short',
 site_ok '_read_chunked: the CRLF after the chunk data never arrives',
   sub {
     scripted({ line => "5\r\n" }, { bytes => 'hello' },
-      { line => undef, timeout => $_[0] });
+      { timeout => $_[0] });
   },
   sub { $client->_read_chunked($_[0], $_[1]) },
   sub {
@@ -279,7 +304,7 @@ sub drive_stream {
     sub {
       scripted($HEAD_OK, { line => "Transfer-Encoding: chunked\r\n" }, $BLANK,
         { line => "5\r\n" }, { bytes => 'hello' }, { line => "\r\n" },
-        { line => '1a', timeout => $_[0] });
+        { line => '1a' }, { timeout => $_[0] });
     },
     drive_stream(\@got),
     sub { is_deeply \@got, ['hello', 'hello'],
@@ -291,14 +316,14 @@ sub drive_stream {
   site_ok 'streaming, chunked: the chunk data stops short',
     sub {
       scripted($HEAD_OK, { line => "Transfer-Encoding: chunked\r\n" }, $BLANK,
-        { line => "6\r\n" }, { bytes => ' wor', timeout => $_[0] });
+        { line => "6\r\n" }, { bytes => ' wor' }, { timeout => $_[0] });
     },
     drive_stream(\@got),
     sub {
       is_deeply \@got, [' wor', ' wor'],
-        'the bytes of the read that ran out of time are handed to the '
-        . 'callback before the exception is raised, so both runs deliver the '
-        . 'same units and only one of them also croaks';
+        'every byte that arrived reached the callback before the exception '
+        . 'was raised, so both runs deliver the same units and only one of '
+        . 'them also croaks';
     };
 }
 
@@ -307,8 +332,7 @@ sub drive_stream {
   site_ok 'streaming, chunked: the CRLF after the chunk data never arrives',
     sub {
       scripted($HEAD_OK, { line => "Transfer-Encoding: chunked\r\n" }, $BLANK,
-        { line => "5\r\n" }, { bytes => 'hello' },
-        { line => undef, timeout => $_[0] });
+        { line => "5\r\n" }, { bytes => 'hello' }, { timeout => $_[0] });
     },
     drive_stream(\@got),
     sub { is_deeply \@got, ['hello', 'hello'], 'the chunk was delivered' };
@@ -319,7 +343,7 @@ sub drive_stream {
   site_ok 'streaming, content-length: the body stops short',
     sub {
       scripted($HEAD_OK, { line => "Content-Length: 11\r\n" }, $BLANK,
-        { bytes => 'hello ' }, { bytes => 'wor', timeout => $_[0] });
+        { bytes => 'hello ' }, { bytes => 'wor' }, { timeout => $_[0] });
     },
     drive_stream(\@got),
     sub {
@@ -334,14 +358,14 @@ sub drive_stream {
   site_ok 'streaming, close-delimited: the body stops short',
     sub {
       scripted($HEAD_OK, $BLANK,
-        { bytes => 'frame one' }, { bytes => 'fra', timeout => $_[0] });
+        { bytes => 'frame one' }, { bytes => 'fra' }, { timeout => $_[0] });
     },
     drive_stream(\@got),
     sub {
       is_deeply \@got, ['frame one', 'fra', 'frame one', 'fra'],
         'and on the raw-stream path, which is the one karr #52 hangs on and '
-        . 'where it matters most: read() asks for 64K and fills, so the whole '
-        . 'response is still unfed when the stall lands';
+        . 'where it matters most -- and where the two bursts are two calls '
+        . 'rather than one 64K read, which is karr #60';
     };
 }
 
@@ -350,7 +374,8 @@ sub drive_stream {
 # ---------------------------------------------------------------------------
 subtest 'the bytes that did arrive come out with the exception' => sub {
   subtest 'a content-length body' => sub {
-    my $fh = scripted({ bytes => 'hello ' }, { bytes => 'wor', timeout => 1 });
+    my $fh = scripted({ bytes => 'hello ' }, { bytes => 'wor' },
+      { timeout => 1 });
     eval { $client->_read_body($fh, { 'content-length' => 11 }, 'GET', ctx()) };
     my $err = $@;
     isa_ok $err, 'API::Docker::Error::Timeout';
@@ -361,8 +386,8 @@ subtest 'the bytes that did arrive come out with the exception' => sub {
 
   subtest 'a chunked body keeps the chunk it stalled inside' => sub {
     my $fh = scripted({ line => "5\r\n" }, { bytes => 'hello' },
-      { line => "\r\n" }, { line => "6\r\n" },
-      { bytes => ' wor', timeout => 1 });
+      { line => "\r\n" }, { line => "6\r\n" }, { bytes => ' wor' },
+      { timeout => 1 });
     eval { $client->_read_chunked($fh, ctx()) };
     my $err = $@;
     isa_ok $err, 'API::Docker::Error::Timeout';
@@ -371,7 +396,7 @@ subtest 'the bytes that did arrive come out with the exception' => sub {
   };
 
   subtest 'a close-delimited body' => sub {
-    my $fh = scripted({ line => 'partial frames', timeout => 1 });
+    my $fh = scripted({ bytes => 'partial frames' }, { timeout => 1 });
     eval { $client->_read_body($fh, {}, 'GET', ctx()) };
     isa_ok $@, 'API::Docker::Error::Timeout';
     is attr($@, "partial"), 'partial frames', 'the bytes the slurp had collected';
@@ -383,7 +408,7 @@ subtest 'the bytes that did arrive come out with the exception' => sub {
       $BLANK,
       { line => "5\r\n" }, { bytes => 'hello' }, { line => "\r\n" },
       { line => "5\r\n" }, { bytes => 'there' }, { line => "\r\n" },
-      { line => undef, timeout => 1 });
+      { timeout => 1 });
     eval {
       $client->_read_streaming_response($fh, 'GET', chunk_handler(\@got), ctx());
     };
@@ -396,25 +421,28 @@ subtest 'the bytes that did arrive come out with the exception' => sub {
     like attr($err, "message"), qr/2 units/, 'the message says so too';
   };
 
-  subtest 'the units completed by the read that expired are delivered' => sub {
+  subtest 'everything that arrived is delivered before the expiry' => sub {
     # This is the shape karr #52 actually has: everything the daemon had to
-    # say arrives in a single read and the socket then stays open and silent.
-    # read() fills, so that one read is also the one that expires -- and if
-    # its bytes went up with the exception instead of through the feed, a
-    # caller with a callback would be handed nothing at all even though the
-    # whole response had arrived. Measured against Podman 5.8.4 on an attach
-    # to an exited container: two frames, 42 bytes, delivered 0 before this
-    # and 2 after.
+    # say arrives, and the socket then stays open and silent. Measured against
+    # Podman 5.8.4 on an attach to an exited container: two frames, 42 bytes,
+    # delivered 0 before karr #59 and 2 after.
+    #
+    # Under read() those 42 bytes and the expiry were one call, and #59 had to
+    # rescue them out of it. Under sysread they are two -- the delivery, then
+    # the silence -- and the property holds without a rescue, which is why the
+    # script below has two entries where it used to have one. What is asserted
+    # is the property, not the mechanism: at the moment the exception is
+    # raised, the caller is holding everything the daemon sent.
     my @got;
     my $fh = scripted($HEAD_OK, $BLANK,
-      { bytes => 'frame one and two', timeout => 1 });
+      { bytes => 'frame one and two' }, { timeout => 1 });
     eval {
       $client->_read_streaming_response($fh, 'GET', chunk_handler(\@got), ctx());
     };
     my $err = $@;
     isa_ok $err, 'API::Docker::Error::Timeout';
     is_deeply \@got, ['frame one and two'],
-      'the callback got the bytes of the read that ran out of time';
+      'the callback got every byte that arrived';
     is_deeply attr($err, 'summary'), { delivered => 1, stopped => 0 },
       'and the summary counts them, so it says what happened rather than '
       . 'undercounting it';
@@ -427,7 +455,7 @@ subtest 'the bytes that did arrive come out with the exception' => sub {
     my @got;
     my $fh = scripted({ line => "HTTP/1.1 500 Internal Server Error\r\n" },
       { line => "Content-Length: 40\r\n" }, $BLANK,
-      { bytes => '{"message":"bo', timeout => 1 });
+      { bytes => '{"message":"bo' }, { timeout => 1 });
     eval {
       $client->_read_streaming_response($fh, 'GET', chunk_handler(\@got), ctx());
     };
@@ -439,7 +467,7 @@ subtest 'the bytes that did arrive come out with the exception' => sub {
 
   subtest 'nothing at all is said so, not reported as zero bytes' => sub {
     my $fh = scripted($HEAD_OK, { line => "Content-Length: 11\r\n" }, $BLANK,
-      { bytes => '', timeout => 1 });
+      { timeout => 1 });
     eval { $client->_read_response($fh, 'GET', ctx()) };
     my $err = $@;
     isa_ok $err, 'API::Docker::Error::Timeout';
@@ -449,7 +477,7 @@ subtest 'the bytes that did arrive come out with the exception' => sub {
 };
 
 subtest 'the exception is still the string it replaces' => sub {
-  my $fh = scripted({ line => undef, timeout => 1 });
+  my $fh = scripted({ timeout => 1 });
   eval { $client->_read_head($fh, ctx()) };
   my $err = $@;
   isa_ok $err, 'API::Docker::Error::Timeout';
@@ -527,24 +555,65 @@ subtest 'a stale errno cannot be mistaken for this read timing out' => sub {
 
 subtest 'the read sites clear errno rather than trusting what they find'
   => sub {
-  # The socketpair above cannot show this on its own: perl's read() happens to
-  # zero errno itself on a socket, so removing the zeroing there changes
+  # The socketpair above cannot show this on its own: perl's own read paths
+  # happen to zero errno on a socket, so removing the zeroing there changes
   # nothing. A handle that leaves errno alone is the only way to pin that the
   # check reads the errno of *this* read and not one from before it -- and
-  # _read_bytes is a primitive, so its correctness must not rest on a perl
-  # internal that is documented nowhere.
-  my $fh = scripted({ bytes => 'twelve bytes', keep_errno => 1 });
+  # _pull is the primitive every reader is built out of, so its correctness
+  # must not rest on a perl internal that is documented nowhere.
+  #
+  # The case that can go wrong is a read that fails while saying nothing about
+  # why. Without the zeroing an unrelated EAGAIN from earlier in the process is
+  # still sitting in errno, and the end of this response is reported as this
+  # request timing out -- which is the option breaking working code.
+  my $fh = scripted({ fail => 1, keep_errno => 1 });
   $! = Errno::EAGAIN();
   my ($n, $buf) = eval { $client->_read_bytes($fh, 4096, ctx()) };
-  ok !$@, 'a short read is not a timeout because of an older EAGAIN'
-    or diag "raised: $@";
-  is $buf, 'twelve bytes', 'and the bytes come back';
+  ok !$@, 'a read that failed silently is not a timeout because of an older '
+    . 'EAGAIN' or diag "raised: $@";
+  is $n, 0, 'it is the end of the response, as it always was';
 
-  my $lh = scripted({ line => 'no terminator', keep_errno => 1 });
+  my $lh = scripted({ fail => 1, keep_errno => 1 });
   $! = Errno::EAGAIN();
   my $line = eval { $client->_read_line($lh, ctx()) };
+  ok !$@, 'nor is one on the line path' or diag "raised: $@";
+  is $line, undef, 'which is simply undef';
+
+  # And a read that delivered is never asked about errno at all: a short
+  # positive count is the normal case over TLS, one record at a time.
+  my $dh = scripted({ bytes => 'twelve bytes', keep_errno => 1 });
+  $! = Errno::EAGAIN();
+  my ($dn, $dbuf) = eval { $client->_read_bytes($dh, 4096, ctx()) };
+  ok !$@, 'a short delivery is not a timeout either' or diag "raised: $@";
+  is $dbuf, 'twelve bytes', 'and the bytes come back';
+
+  my $th = scripted({ line => 'no terminator' });
+  my $tline = eval { $client->_read_line($th, ctx()) };
   ok !$@, 'nor is an unterminated final line' or diag "raised: $@";
-  is $line, 'no terminator', 'which is returned as the line it is';
+  is $tline, 'no terminator', 'which is returned as the line it is';
+};
+
+subtest 'a signal is retried, not mistaken for either meaning' => sub {
+  # perl's read() retried on EINTR of its own accord (PerlIOUnix_read loops
+  # while errno is EINTR); _pull calls sysread, which does not, so the retry
+  # had to be written out. Without it a SIGCHLD arriving mid-read would end
+  # the response early -- and with a read_timeout armed it would not even be
+  # reported as a timeout, so the caller would get a truncated body and no
+  # sign that anything happened.
+  my $fh = scripted({ eintr => 1 }, { bytes => 'after the signal' },
+    { eintr => 1 }, { bytes => ' and another' });
+  my ($n, $buf) = eval { $client->_read_bytes($fh, 4096, ctx()) };
+  ok !$@, 'an interrupted read raises nothing' or diag "raised: $@";
+  is $buf, 'after the signal', 'it is retried and the data comes back';
+
+  my ($n2, $buf2) = eval { $client->_read_bytes($fh, 4096, ctx()) };
+  is $buf2, ' and another', 'and again, so it is a loop rather than one retry';
+
+  # With no timeout armed too: the retry is not part of the timeout check.
+  my $off = scripted({ eintr => 1 }, { bytes => 'still read' });
+  my ($n3, $buf3) = eval { $client->_read_bytes($off, 4096, ctx_off()) };
+  ok !$@, 'and with no read_timeout set' or diag "raised: $@";
+  is $buf3, 'still read', 'the retry happens there as well';
 };
 
 subtest 'a socket that cannot take a timeout is refused, not ignored' => sub {

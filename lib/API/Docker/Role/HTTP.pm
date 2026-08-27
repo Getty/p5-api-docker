@@ -4,10 +4,14 @@ our $VERSION = '0.004';
 use Moo::Role;
 use IO::Socket::UNIX;
 use IO::Socket::INET;
+# For the sysread method on a plain filehandle: _pull calls it as a method so
+# that IO::Socket::SSL's own gets picked up rather than the builtin. See _pull.
+use IO::Handle;
 use Socket qw( SOL_SOCKET SO_RCVTIMEO );
-# For %!, which is how a read that came back short says it ran out of time
-# rather than out of stream. See _timed_out.
-use Errno qw( EAGAIN EWOULDBLOCK );
+# How a read that delivered nothing says it ran out of time rather than out of
+# stream (EAGAIN/EWOULDBLOCK), and how it says it was interrupted rather than
+# either (EINTR). See _pull and _timed_out.
+use Errno qw( EAGAIN EWOULDBLOCK EINTR );
 use JSON::MaybeXS qw( encode_json decode_json );
 use Scalar::Util qw( looks_like_number );
 use Path::Tiny;
@@ -190,9 +194,10 @@ my @STREAM_OPTION = qw( on_event on_frame on_chunk );
 # four-character string 'null'. See _request.
 my $JSON_BODY = qr/\A\s*(?:[\[\{"]|-?[0-9]|true|false|null)/;
 
-# How much of a body is asked for per read() on the incremental path. Only an
-# upper bound: read() returns whatever has arrived, which on a live feed is
-# usually one event.
+# How much is asked for per sysread. Strictly an upper bound -- sysread
+# returns what has arrived rather than filling to it (see _pull), so on a live
+# feed a call typically comes back with one burst, and asking for 64K costs
+# nothing but the size of the buffer it lands in.
 my $READ_SIZE = 64 * 1024;
 
 has read_timeout => (
@@ -219,14 +224,52 @@ cover.
 
 =cut
 
+has connect_timeout => (
+  is => 'ro',
+);
+
+=attr connect_timeout
+
+Seconds after which opening the connection gives up and croaks with an
+L<API::Docker::Error::Timeout> whose C<< ->phase >> is C<'connect'>. C<undef>
+-- the default, and what every existing caller gets -- means no bound and is
+the behaviour this distribution has always had; C<0> means the same and is the
+way to say it explicitly.
+
+    my $docker = API::Docker->new(connect_timeout => 5);
+    $docker->system->version(connect_timeout => 0);    # this one may wait
+
+Separate from L</read_timeout> rather than folded into it, because the two
+bound different things and want different numbers: a connect is either
+immediate or broken, while a read is waiting on work the daemon has to do.
+
+Per request it is an option of L</get>, L</post>, L</put>, L</delete_request>
+and L</head>. See L</"Bounding the connection itself"> for what it does on
+each transport, which is not the same thing on all three.
+
+=cut
+
 has _socket => (
   is      => 'lazy',
   clearer => '_clear_socket',
 );
 
+# The connect timeout and the endpoint it belongs to, on their way to
+# _build__socket. It is a lazy builder and so cannot be handed an argument,
+# and the value is per request rather than per client -- hence rw, with
+# _reconnect as the only writer, setting it immediately before the build and
+# clearing it immediately after. Unset is the whole of the old behaviour: no
+# Timeout on any constructor, and the plain croak on a failure.
+has _pending_connect => (
+  is       => 'rw',
+  init_arg => undef,
+);
+
 sub _build__socket {
   my ($self) = @_;
-  my $host = $self->host;
+  my $host    = $self->host;
+  my $pending = $self->_pending_connect;
+  my $timeout = $pending ? $pending->{timeout} : undef;
 
   if ($host =~ m{^unix://(.+)$}) {
     my $path = $1;
@@ -234,8 +277,15 @@ sub _build__socket {
     my $sock = IO::Socket::UNIX->new(
       Peer => $path,
       Type => SOCK_STREAM,
+      $timeout ? (Timeout => $timeout) : (),
     );
-    croak "Cannot connect to Unix socket $path: $!" unless $sock;
+    unless ($sock) {
+      # Asked before anything else can touch $@ or $!, which is the whole of
+      # the evidence; see _connect_expired.
+      $self->_croak_connect_timeout($pending, 'unix://' . $path)
+        if $self->_connect_expired($timeout);
+      croak "Cannot connect to Unix socket $path: $!";
+    }
     return $sock;
   }
   elsif ($host =~ m{^tcp://([^:]+):(\d+)$}) {
@@ -247,8 +297,13 @@ sub _build__socket {
         PeerAddr => $addr,
         PeerPort => $port,
         Proto    => 'tcp',
+        $timeout ? (Timeout => $timeout) : (),
       );
-      croak "Cannot connect to $addr:$port: $!" unless $sock;
+      unless ($sock) {
+        $self->_croak_connect_timeout($pending, $addr . ':' . $port)
+          if $self->_connect_expired($timeout);
+        croak "Cannot connect to $addr:$port: $!";
+      }
       return $sock;
     }
 
@@ -263,9 +318,12 @@ sub _build__socket {
       PeerAddr => $addr,
       PeerPort => $port,
       Proto    => 'tcp',
+      $timeout ? (Timeout => $timeout) : (),
       %ssl,
     );
     unless ($sock) {
+      $self->_croak_connect_timeout($pending, $addr . ':' . $port . ' (TLS)')
+        if $self->_connect_expired($timeout);
       # $SSL_ERROR carries the handshake failure -- an untrusted certificate,
       # a name that does not match -- and $! the plain connect failure. Both
       # are named because either can be the one that happened. The pragma is
@@ -383,9 +441,64 @@ sub _ssl_certificates {
 }
 
 sub _reconnect {
-  my ($self) = @_;
+  my ($self, $pending) = @_;
   $self->_clear_socket;
-  return $self->_socket;
+
+  # Cleared on the way out whichever way the build went, so a later _socket
+  # built by anything but a request -- a test subclass, a caller reaching for
+  # it directly -- never picks up the last request's bound.
+  $self->_pending_connect($pending);
+  my $sock;
+  my $ok  = eval { $sock = $self->_socket; 1 };
+  my $err = $@;
+  $self->_pending_connect(undef);
+  die $err unless $ok;
+
+  return $sock;
+}
+
+# Whether the connect that has just failed failed because the bound fired.
+# Asked with nothing in between, because $@ and $! are the whole of the
+# evidence and both are global.
+#
+# $@ rather than errno: IO::Socket writes 'connect: timeout' there, and only
+# there, when its own select() ran out -- measured, against a host that drops
+# SYNs, where $! is ETIMEDOUT, which the kernel also produces on its own after
+# two minutes with no Timeout set at all.
+#
+# EAGAIN is the second shape and belongs to unix:// alone. Measured against a
+# listener whose backlog is full: with no Timeout the connect blocks
+# indefinitely (still blocked after 8s), and with one it fails at once with
+# EAGAIN, because IO::Socket does the timed connect non-blocking and an
+# AF_UNIX connect has no in-progress state to wait on. So on that transport
+# the option does not wait, it refuses -- but a connect that failed with
+# EAGAIN is still one the bound ended, and reporting it as anything else would
+# name a cause the caller cannot act on.
+sub _connect_expired {
+  my ($self, $timeout) = @_;
+
+  return 0 unless $timeout;
+  return 1 if defined $@ && $@ =~ /connect: timeout\z/;
+  return 1 if $! == EAGAIN || $! == EWOULDBLOCK;
+  return 0;
+}
+
+sub _croak_connect_timeout {
+  my ($self, $pending, $where) = @_;
+
+  my $endpoint = $pending->{endpoint};
+  # See _croak_timeout for why the object goes into a variable first and why
+  # the location is captured by hand.
+  my $error = API::Docker::Error::Timeout->new(
+    message  => 'Docker API connect timeout'
+      . (defined $endpoint && length $endpoint ? ' (' . $endpoint . ')' : '')
+      . ': ' . $where . ' did not accept within ' . $pending->{timeout} . 's',
+    location => shortmess(''),
+    endpoint => defined $endpoint ? $endpoint : '',
+    timeout  => $pending->{timeout},
+    phase    => 'connect',
+  );
+  croak $error;
 }
 
 # undef for "no timeout", which is both the default and the explicit 0, so a
@@ -393,27 +506,39 @@ sub _reconnect {
 # is not a non-negative number is a caller mistake and is refused rather than
 # rounded to something: silently reading a typo as "off" would hand back the
 # hang the caller was asking to be protected from.
-sub _read_timeout_value {
-  my ($self, $timeout) = @_;
+sub _timeout_value {
+  my ($self, $name, $timeout) = @_;
 
   return undef unless defined $timeout;
-  croak __PACKAGE__ . '->_request read_timeout must be a non-negative number '
+  croak __PACKAGE__ . '->_request ' . $name . ' must be a non-negative number '
     . 'of seconds (0 or undef for none), not "' . $timeout . '"'
     unless !ref $timeout && looks_like_number($timeout) && $timeout >= 0;
 
   return $timeout > 0 ? $timeout : undef;
 }
 
-# Why SO_RCVTIMEO and not select(): select() reports what the *socket* holds,
-# and every read below goes through PerlIO, which reads ahead. Measured: after
-# one readline of a socket holding "one\ntwo\nthree\n", two whole lines sit in
-# the PerlIO buffer and select() says the handle is not ready. A select-based
-# bound over these reads would therefore fire while the data it was waiting
-# for was already in hand. The alternative is rewriting all of them onto
-# sysread with a buffer of our own; SO_RCVTIMEO gets the same guarantee for
-# one setsockopt, and gets idle-since-the-last-byte semantics for free, which
-# is the semantics these endpoints need (karr #52: the buffered frames arrive,
-# and *then* the socket stalls -- a time-to-first-byte bound would never fire).
+sub _read_timeout_value {
+  my ($self, $timeout) = @_;
+  return $self->_timeout_value('read_timeout', $timeout);
+}
+
+sub _connect_timeout_value {
+  my ($self, $timeout) = @_;
+  return $self->_timeout_value('connect_timeout', $timeout);
+}
+
+# Why SO_RCVTIMEO and not select(): a bound that reads the socket cannot see
+# what is already buffered above it, and would fire while the data it was
+# waiting for was in hand. That was true of PerlIO's read-ahead when this was
+# written (measured: after one readline of a socket holding
+# "one\ntwo\nthree\n", two whole lines sit in the PerlIO buffer and select()
+# says the handle is not ready), and it is true of _read_buffer now. A
+# select-based bound would have to be asked only when that buffer is empty,
+# which is one more invariant to keep for no gain: SO_RCVTIMEO bounds the one
+# syscall in _pull for one setsockopt, and gets idle-since-the-last-byte
+# semantics for free, which is the semantics these endpoints need (karr #52:
+# the buffered frames arrive, and *then* the socket stalls -- a
+# time-to-first-byte bound would never fire).
 sub _apply_read_timeout {
   my ($self, $sock, $timeout) = @_;
 
@@ -452,24 +577,23 @@ sub _apply_read_timeout {
   return;
 }
 
-# A read that came back short did so for one of two reasons, and they are not
-# the same thing: the stream ended, or the clock ran out. errno is the only
-# thing that separates them -- measured, both eof() and $fh->error are true
-# after a timeout just as they are at a clean end, and asking eof() costs a
-# second full timeout. So $! is zeroed immediately before each read and looked
-# at immediately after it, with nothing in between: it is only meaningful
-# after a failure, and any operation in between would overwrite it.
+# A read that did not deliver did not deliver for one of two reasons, and they
+# are not the same thing: the stream ended, or the clock ran out. errno is the
+# only thing that separates them -- measured, both eof() and $fh->error are
+# true after a timeout just as they are at a clean end, and asking eof() costs
+# a second full timeout. So $! is zeroed immediately before the read in _pull
+# and captured immediately after it, with nothing in between: it is only
+# meaningful after a failure, and any operation in between would overwrite it.
 #
-# Without this every `last unless $n` and `last unless defined` in the readers
-# would take a timeout for the end of the response and return a truncated body
-# as a whole one. That is the reason this ticket is not just the setsockopt:
-# switching the option on alone would turn a hang into silent data loss, which
-# is the worse of the two.
+# Without this the readers would take a timeout for the end of the response and
+# return a truncated body as a whole one. That is the reason karr #59 is not
+# just the setsockopt: switching the option on alone would turn a hang into
+# silent data loss, which is the worse of the two.
 sub _timed_out {
-  my ($self, $ctx) = @_;
+  my ($self, $ctx, $errno) = @_;
 
   return 0 unless $ctx->{timeout};
-  return ($! == EAGAIN || $! == EWOULDBLOCK) ? 1 : 0;
+  return ($errno == EAGAIN || $errno == EWOULDBLOCK) ? 1 : 0;
 }
 
 sub _croak_timeout {
@@ -505,65 +629,168 @@ sub _croak_timeout {
   croak $error;
 }
 
-# The two reads every reader below is built out of. With no timeout armed they
-# are the bare readline and read they replace, down to the return value; with
-# one, they are the only place the EAGAIN/end-of-stream question is asked.
-sub _read_line {
-  my ($self, $sock, $ctx) = @_;
+# ---------------------------------------------------------------------------
+# Reading, in one buffer regime
+#
+# Every byte of a response is taken off the handle by _pull and by nothing
+# else, and every reader below is served out of the buffer _pull fills. That
+# is not an optimisation, it is the only shape that works (karr #60).
+#
+# What forced it: perl's read() is fread-shaped. It loops until it has the
+# LENGTH it was asked for or the stream ends -- it does not return what has
+# arrived. Measured on an AF_UNIX socketpair whose peer writes 6 bytes, waits
+# half a second, writes 6 more and closes: read($sock, $buf, 65536) came back
+# with 12 after 0.90s, having waited for the close, while sysread came back
+# with 6 in 0.00s. On the endpoints with neither a Content-Length nor chunked
+# encoding -- attach, logs(follow), exec/start, all
+# application/vnd.docker.raw-stream -- the reader asks for $READ_SIZE, so
+# read() delivered nothing to an on_frame/on_chunk callback until 64K had
+# piled up or the daemon hung up. On a stream that never ends it would deliver
+# nothing at all. The POD promised those callbacks the bytes as they arrive,
+# and that promise was not kept.
+#
+# Why it could not be fixed at the one site that had the bug: _read_head read
+# the status line and the headers with <$sock>, and PerlIO reads ahead. The
+# bytes past the header block were sitting in a buffer this code cannot reach
+# -- there is no supported way to take them back out; ungetc is layer-
+# dependent, seek does not work on a socket, and select/MSG_PEEK see the
+# kernel's buffer rather than PerlIO's. So switching only the body reads to
+# sysread would have silently dropped the start of every body. Either all read
+# sites move together or none do.
+#
+# The buffer lives on the handle rather than on the client or in the context:
+# it is the unconsumed bytes of *that* handle, its lifetime is the handle's,
+# and a client that opens a socket per request therefore has nothing to reset.
+# ${*$sock}{...} is the IO::Socket idiom for exactly this and was measured to
+# work on a real socket, a lexical filehandle, a bareword glob and a tied
+# handle alike.
+my $RBUF = __PACKAGE__ . '/rbuf';
 
-  return scalar <$sock> unless $ctx->{timeout};
+sub _read_buffer {
+  my ($self, $sock) = @_;
 
-  $! = 0;
-  my $line = <$sock>;
-  # A line that arrived with its terminator is whole, whatever errno says
-  # afterwards. Everything else is the ambiguous case -- undef, or the half a
-  # line a timeout hands back (measured: an interrupted readline returns the
-  # part it has, with EAGAIN set).
-  return $line if defined $line && $line =~ /\n\z/;
-  $self->_croak_timeout($ctx, $ctx->{partial} ? ${ $ctx->{partial} } : '')
-    if $self->_timed_out($ctx);
-
-  return $line;
+  ${*$sock}{$RBUF} = '' unless defined ${*$sock}{$RBUF};
+  return \${*$sock}{$RBUF};
 }
 
+# The one physical read. It answers with what happened rather than with a
+# count, because a count makes every reader re-derive the same distinction and
+# an undef quietly becoming an end of stream at any one of them is the silent
+# truncation this transport must not have:
+#
+#   'data'     something was appended to the buffer -- however little
+#   'eof'      the stream ended
+#   'timeout'  the read_timeout expired with nothing to show for it
+#
+# What TLS does here, since it is not obvious from the call. IO::Socket::SSL
+# ties the glob, so the builtin sysread reaches the same place -- SSL_HANDLE's
+# READ delegates to the object's own sysread -- and the method form is written
+# out only so that the dispatch is visible rather than accidental. What does
+# matter is sysread rather than read: IO::Socket::SSL's sysread is a single
+# Net::SSLeay::read, one record, while its read is ssl_read_all on a blocking
+# socket, which is the same fill semantics this is here to get away from.
+#
+# A short positive read is never an end of stream and never an expiry. Over
+# TLS it is the normal case, one plaintext record at a time; over a plain
+# socket it is whatever the kernel had. Both are data.
+#
+# SSL_WANT_READ and SSL_WANT_WRITE are deliberately not retried. On a blocking
+# socket they arrive as EWOULDBLOCK (IO::Socket::SSL's _skip_rw_error does
+# `$! ||= EWOULDBLOCK`) and mean the underlying receive would have blocked --
+# which, with SO_RCVTIMEO in force, is the bound firing and nothing else.
+# Retrying would be a busy loop on WANT_READ and could not make progress on
+# WANT_WRITE in any case, so they are reported as the timeout they are.
+sub _pull {
+  my ($self, $sock, $ctx) = @_;
+
+  my $buf = $self->_read_buffer($sock);
+
+  while (1) {
+    # errno immediately before, errno immediately after, nothing in between:
+    # it is only meaningful after a failure, and any operation at all would
+    # overwrite it. See _timed_out.
+    $! = 0;
+    my $n = $sock->sysread(my $got, $READ_SIZE);
+    my $errno = 0 + $!;
+
+    if (defined $n) {
+      return 'eof' unless $n;
+      $$buf .= $got;
+      return 'data';
+    }
+
+    # A signal is not an answer. perl's read() retried here of its own accord
+    # (PerlIOUnix_read loops while errno is EINTR), so retrying keeps the
+    # behaviour this replaces rather than introducing one.
+    next if $errno == EINTR;
+
+    return 'timeout' if $self->_timed_out($ctx, $errno);
+
+    # Anything else -- a reset connection, a handle that cannot be read at
+    # all -- ends the response, which is what it did before this too: every
+    # reader answered a failed read with `last unless $n`. Whether the
+    # response was complete when it ended is a question about its structure,
+    # and is asked by the readers that know the structure.
+    return 'eof';
+  }
+}
+
+# The two reads every reader below is built out of. Both serve from the buffer
+# and pull only when it is empty, so both hand back what has arrived rather
+# than waiting for what was asked for.
+sub _read_line {
+  my ($self, $sock, $ctx) = @_;
+  $ctx ||= {};
+
+  my $buf = $self->_read_buffer($sock);
+  my $idx = index($$buf, "\n");
+
+  while ($idx < 0) {
+    my $kind = $self->_pull($sock, $ctx);
+    # The part of a line already in the buffer is dropped, exactly as the
+    # readline this replaces dropped it: every line read here is protocol --
+    # a status line, a header, a chunk header -- never payload, so there is no
+    # callback it could belong to. What a buffered body had collected is
+    # reported instead, from $ctx->{partial}.
+    $self->_croak_timeout($ctx, $ctx->{partial} ? ${ $ctx->{partial} } : '')
+      if $kind eq 'timeout';
+    last if $kind eq 'eof';
+    $idx = index($$buf, "\n");
+  }
+
+  return substr($$buf, 0, $idx + 1, '') if $idx >= 0;
+
+  # The stream ended. Whatever is left is a final line with no terminator,
+  # which is what readline hands back there as well; nothing left is undef.
+  return undef unless length $$buf;
+  return substr($$buf, 0, length($$buf), '');
+}
+
+# Returns (count, bytes) like the read() it replaces, so `last unless $n`
+# still ends a loop at the end of the response. What changed is the count: it
+# is now what had arrived, never more and no longer padded out by waiting.
+# Every caller loops until it has what it needs, so a short count is a
+# delivery rather than a truncation.
 sub _read_bytes {
   my ($self, $sock, $want, $ctx) = @_;
+  $ctx ||= {};
 
-  my $buf;
-  unless ($ctx->{timeout}) {
-    my $n = read($sock, $buf, $want);
-    return ($n, $buf);
+  my $buf = $self->_read_buffer($sock);
+
+  if (!length $$buf) {
+    my $kind = $self->_pull($sock, $ctx);
+    # Nothing is lost with this exception, and unlike under read() nothing has
+    # to be rescued for it either. sysread does not hand back data and EAGAIN
+    # together the way PerlIO's read() did: the bytes of every successful pull
+    # are already in the accumulator or already through the callback by the
+    # time a later pull expires, and the pull that expires carries none.
+    $self->_croak_timeout($ctx, $ctx->{partial} ? ${ $ctx->{partial} } : '')
+      if $kind eq 'timeout';
+    return (0, '') if $kind eq 'eof';
   }
 
-  $! = 0;
-  my $n = read($sock, $buf, $want);
-  # A read that delivered everything it was asked for cannot have run out of
-  # time, so a full count needs no errno check. A short one is the ambiguous
-  # case and errno decides it -- which is also why the gate is shortness
-  # rather than the count being zero: over a plain socket read() fills and
-  # comes back short only at the end of the stream or on a failure, but over
-  # TLS it does not (measured: read(20) with 5 bytes available returns 5 at
-  # once, errno untouched), so a short read there is ordinary and must not be
-  # mistaken for either.
-  if ((!defined $n || $n < $want) && $self->_timed_out($ctx)) {
-    # Whatever this read did get is still data the daemon sent, and it is not
-    # dropped just because the clock ran out on the rest of it. On a streamed
-    # request it goes where every other byte went -- through the feed, so the
-    # units it completes reach the callback and are counted, and the summary
-    # on the exception is what actually happened rather than an undercount.
-    # Measured, and the reason this is not left to the exception alone: read()
-    # asks for $READ_SIZE on the raw-stream path and fills, so a stall lands
-    # here with the whole response still unfed.
-    $ctx->{feed}->($buf) if $ctx->{feed} && defined $buf && length $buf;
-
-    # On a buffered request there is no callback to give them to, so they go
-    # on the exception instead.
-    my $partial = $ctx->{partial} ? ${ $ctx->{partial} } : '';
-    $partial .= $buf if defined $buf;
-    $self->_croak_timeout($ctx, $partial);
-  }
-
-  return ($n, $buf);
+  my $take = $want < length($$buf) ? $want : length($$buf);
+  return ($take, substr($$buf, 0, $take, ''));
 }
 
 sub _request {
@@ -667,11 +894,17 @@ sub _request {
   my $timeout = $self->_read_timeout_value(
     exists $opts{read_timeout} ? $opts{read_timeout} : $self->read_timeout);
 
+  # Same resolution, same reason.
+  my $connect_timeout = $self->_connect_timeout_value(
+    exists $opts{connect_timeout}
+      ? $opts{connect_timeout} : $self->connect_timeout);
+
   # The endpoint without its query string, for the same reason the >= 400
   # croak uses that form.
   my $ctx = { endpoint => $endpoint, timeout => $timeout };
 
-  my $sock = $self->_reconnect;
+  my $sock = $self->_reconnect(
+    { timeout => $connect_timeout, endpoint => $endpoint });
   # Applied here rather than in _build__socket because the value is per
   # request, not per client: a socket is opened and closed for each one, so
   # this is the connection the option belongs to.
@@ -941,16 +1174,22 @@ sub _read_body {
     return $body;
   }
 
-  local $/;
-  $! = 0 if $ctx->{timeout};
-  my $body = <$sock>;
-  $body = '' unless defined $body;
-  # The one read site whose own result cannot say whether it is complete: with
-  # $/ undef a whole body and a truncated one are both just bytes, and the
-  # daemon closing is what would have ended it. errno is all there is -- and
-  # this is the path karr #52's hang is on, an attach whose buffered frames
-  # arrive and whose socket then never closes.
-  $self->_croak_timeout($ctx, $body) if $self->_timed_out($ctx);
+  # Read until the daemon closes. This used to be a `local $/; <$sock>` slurp;
+  # it is a loop over the same primitive as the other two branches now, which
+  # is what karr #60 needed and what the timeout wanted anyway -- with $/ undef
+  # a whole body and a truncated one are both just bytes, so the slurp's own
+  # result could never say which it was. This is the path karr #52's hang is
+  # on, an attach whose buffered frames arrive and whose socket then never
+  # closes.
+  my $body = '';
+  # What a timeout hands over instead of dropping; see the content-length
+  # branch above.
+  local $ctx->{partial} = \$body;
+  while (1) {
+    my ($n, $buf) = $self->_read_bytes($sock, $READ_SIZE, $ctx);
+    last unless $n;
+    $body .= $buf;
+  }
 
   return $body;
 }
@@ -984,9 +1223,13 @@ sub _read_streaming_response {
   my $feed = $handler->{feed};
   my $more = 1;
 
-  # So a read that ran out of time can still hand over what it did get before
-  # the exception goes up; see _read_bytes.
-  local $ctx->{feed} = $feed;
+  # There is deliberately nothing here to hand the callback the bytes of the
+  # read that expires. karr #59 needed that hook because PerlIO's read() could
+  # come back with data *and* EAGAIN at once, so a stall could land with the
+  # whole response read and none of it fed; sysread cannot (karr #60). Every
+  # byte reaches the callback in the pull that delivered it, and the pull that
+  # expires delivers none -- so the property #59 established now holds by
+  # construction instead of by rescue.
 
   if ($headers->{'transfer-encoding'} && $headers->{'transfer-encoding'} eq 'chunked') {
     while ($more) {
@@ -1001,7 +1244,7 @@ sub _read_streaming_response {
         my ($n, $buf) = $self->_read_bytes($sock, $chunk_size - $read, $ctx);
         last unless $n;
         $read += $n;
-        # Fed per read() rather than per completed chunk. A chunk is the
+        # Fed per read rather than per completed chunk. A chunk is the
         # daemon's framing, not the caller's -- the engine is free to send an
         # hour of log output as one chunk -- so waiting for the whole of one
         # would reintroduce exactly the buffering this path exists to avoid.
@@ -1253,6 +1496,11 @@ and croaks with an L<API::Docker::Error::Timeout>. Overrides the
 L</read_timeout> attribute; C<0> means no timeout. See L</"Bounding a request
 that never ends">
 
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Overrides the L</connect_timeout> attribute; C<0> means no
+bound. See L</"Bounding the connection itself">
+
 =item * C<headers> names are validated, not sanitised; see
 L</"Header names are rejected, header values are stripped">
 
@@ -1320,9 +1568,9 @@ where the caller already holds every unit.
 
 =head3 What it does not cover
 
-Only reading. Connecting is not bounded -- a daemon that accepts the
-connection and then says nothing is caught, one whose socket never accepts is
-not -- and neither is writing the request.
+Only reading. Connecting is bounded separately by L</connect_timeout>, and
+writing the request is not bounded at all -- which matters only for a large
+C</build> context sent to a daemon that has stopped reading.
 
 It is implemented with C<SO_RCVTIMEO> on the socket, which was measured to
 behave the same over C<unix://>, plain C<tcp://> and TLS: the timeout fires,
@@ -1331,6 +1579,52 @@ timeval> it is set with was measured on Linux; on Windows the millisecond
 C<DWORD> Winsock documents is sent instead, which is reasoned rather than
 measured. A platform that rejects either croaks rather than continuing without
 the bound.
+
+Over TLS it is not quite an idle timer on the plaintext. C<SO_RCVTIMEO> bounds
+each blocking receive on the underlying socket, and one plaintext read can
+consume several of those while a TLS record arrives in pieces -- so a record
+dribbling in slowly enough resets the clock without a byte reaching the
+caller. It still bounds the hang, which is what it is for.
+
+=head2 Bounding the connection itself
+
+L</connect_timeout> is the other half, and it is off by default for the same
+reason: nothing here changes behaviour unless it is asked for.
+
+    my $docker = API::Docker->new(connect_timeout => 5, read_timeout => 30);
+
+What it does is not the same on all three transports, and the difference was
+measured rather than assumed:
+
+=over
+
+=item * C<tcp://> -- a real bound. Against a host that drops SYNs, an unbounded
+connect waits for the kernel's own timeout, which on Linux is over two
+minutes; C<< connect_timeout => 2 >> gave up after 2.00s. This is the case the
+option exists for.
+
+=item * C<unix://> -- a bound, but it does not wait. A connect to a Unix socket
+whose listen backlog is full blocks: measured against a listener with
+C<< Listen => 1 >> and nobody accepting, still blocked after 8 seconds. With a
+C<connect_timeout> set it fails at once instead, with C<EAGAIN> -- because
+C<IO::Socket> performs a timed connect non-blocking, and an C<AF_UNIX> connect
+has no in-progress state to wait on. So the hang is gone, at the price of not
+tolerating even a momentary backlog. A socket path that does not exist is
+C<ENOENT> either way and is not affected.
+
+=item * TLS -- bounds the TCP connect only. The handshake that follows it runs
+on the connected socket, before L</read_timeout>'s C<SO_RCVTIMEO> is applied,
+and is not covered by either.
+
+=back
+
+An expiry croaks with an L<API::Docker::Error::Timeout> carrying
+C<< ->phase >> C<'connect'>, C<< ->timeout >> the value that expired and an
+empty C<< ->partial >> -- there is no response to have part of. Every other
+connect failure croaks with the plain string it always did: a refused
+connection, a missing socket path and a rejected certificate are diagnoses,
+not timeouts, and rewriting them as one would name a cause the caller cannot
+act on.
 
 =head2 Streaming a response as it arrives
 
@@ -1412,6 +1706,32 @@ Only a complete unit is buffered while it is still arriving: the current
 ndjson line or the current frame. A line, and equally an 8-byte frame header,
 can be split across two chunks or two reads, so partial ones are carried
 forward rather than decoded early.
+
+=head3 How often the callback is called
+
+Once per unit the daemon has finished sending, as soon as the bytes that
+complete it have arrived -- not once per read of a fixed size, and not once
+at the end.
+
+That is worth stating because it was not true before karr #60. The reads were
+C<read()>, which is C<fread>-shaped: it loops until it has the length it was
+asked for or the stream ends, rather than returning what has arrived. On the
+raw-stream endpoints -- C<attach>, C<< logs(follow => 1) >>, C<exec/start>,
+which carry neither a C<Content-Length> nor chunked encoding -- the reader
+asks for 64K, so nothing reached the callback until 64K had accumulated or the
+daemon hung up. On a stream that never ends, nothing reached it at all.
+
+Measured on an C<AF_UNIX> socket pair with no daemon involved, a peer writing
+three frames 0.15s apart and then closing:
+
+    before:  1 call  at 0.45s          (the moment it closed)
+    after:   3 calls at 0.15s, 0.30s, 0.45s
+
+Every read now goes through one C<sysread> and a buffer this role keeps
+itself, which is also why the status line and the headers are read the same
+way: PerlIO's read-ahead put the first bytes of the body somewhere the body
+reader could not get at them, so the header reads had to move too or those
+bytes would have been dropped.
 
 =head3 What is not streamed
 
