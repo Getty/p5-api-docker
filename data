@@ -1,0 +1,45 @@
+---
+claimed_at: 2026-08-27T06:34:39Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-27T06:34:39Z
+created: 2026-08-27T04:23:10Z
+id: 16
+priority: high
+started: 2026-08-27T04:46:19Z
+status: done
+tags:
+- transport
+- correctness
+title: 304 Not Modified is treated as an empty success
+updated: 2026-08-27T06:34:39Z
+---
+
+Role::HTTP croaks on status >= 400 and decodes everything else. 304 falls
+into the second group: no body, so _request hands back undef - exactly what
+a 204 returns.
+
+The daemon answers 304 for a no-op state change:
+  POST /containers/{id}/start   on a running container
+  POST /containers/{id}/stop    on a stopped one
+  POST /containers/{id}/pause   on a paused one, and unpause likewise
+
+So $docker->containers->start($id) cannot tell "started it" from "it was
+already running". Callers that care - anything idempotent, anything
+reporting what it did - have no way to ask.
+
+Decide the semantics explicitly and document it on each affected method:
+either return a distinguishable value (the status code, or a small result
+object), or croak, or state in the POD that 304 is folded into success on
+purpose. Any of the three beats the current silence.
+
+The Engine reference calls this out because clients get it wrong; see the
+docker-engine-api skill, "Response shapes".
+
+
+--- DECISION 2026-08-27 (maintainer) ---
+304 becomes a changed-flag. start/stop/pause/unpause/restart return 1 when
+the call changed something (204) and 0 when the container was already in the
+target state (304). They return undef today; 0 and undef are both falsy, so
+no caller that ignores the return value or tests it for truth changes
+behaviour. Documented per method in the POD.
