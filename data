@@ -1,0 +1,30 @@
+---
+claimed_at: 2026-08-27T15:55:35Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T15:55:35Z
+created: 2026-08-27T05:03:02Z
+id: 29
+priority: low
+started: 2026-08-27T15:34:18Z
+status: done
+tags:
+- containers
+- consistency
+title: containers->kill still returns undef while the other state changes return 1/0
+updated: 2026-08-27T15:55:35Z
+---
+
+Fallout from #16, which routed start/stop/restart/pause/unpause through
+_state_change so they answer 1 (changed, 204) or 0 (already so, 304).
+
+kill was correctly left out: it never answers 304. It is 204, or 409 when
+the container is not running, and 409 croaks. So there is no second outcome
+for a flag to carry.
+
+The consequence is a surface that now reads inconsistently - kill is
+state-change-shaped, sits next to five methods that report what they did,
+and returns undef. Either it joins them (always 1, since reaching the return
+means the signal was delivered), or the POD says in one sentence why it does
+not. Measured behaviour first: check what the engine actually answers for
+kill on a stopped container before deciding.
