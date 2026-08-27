@@ -1,0 +1,43 @@
+---
+claimed_at: 2026-08-27T06:35:37Z
+claimed_by: plugins-worker
+class: standard
+completed: 2026-08-27T06:35:37Z
+created: 2026-08-27T04:25:20Z
+id: 28
+priority: low
+started: 2026-08-27T04:52:40Z
+status: done
+tags:
+- scope
+- coverage
+title: 'SCOPE: /plugins is absent'
+updated: 2026-08-27T06:35:37Z
+---
+
+The managed-plugin endpoints (list, install, inspect, remove, enable,
+disable, upgrade, push, configure under /plugins) are not exposed.
+
+Smaller and more self-contained than the Swarm question, and Podman does
+implement a subset. Still no consumer asking for it, so the same decision
+applies: implement, or say in the POD that it is out of scope.
+
+
+--- DECISION 2026-08-27 (maintainer) ---
+IN. /plugins is implemented. Smaller and more self-contained than the Swarm
+question, and Podman implements a subset, so it is at least partly testable
+against the engine this repo actually runs on.
+
+2026-08-27 05:04 Implemented in lib/API/Docker/API/Plugins.pm: list, privileges, install (POST /plugins/pull), inspect, remove, enable, disable, upgrade, push, configure (POST /plugins/{name}/set). 'Scaffolding only' paragraph removed. Fixture-free daemon-free tests in t/plugins.t (23 subtests), both files git-added. prove -lr t/ and dzil test green.
+
+Contract verified against moby's swagger AND its plugin router/backend source, not deduced. Four places the reference is wrong or silent, all documented in the POD and pinned by tests:
+- enable has NO default for timeout (strconv.Atoi on the raw value), so the parameter is sent unconditionally or every enable 400s.
+- the list filter is 'enabled', not the documented 'enable', and the daemon validates names -> hard error. Noted on karr #24.
+- X-Registry-Auth is read on /plugins/privileges and /plugins/{name}/push; the reference documents it on neither.
+- remove writes no body, despite a documented Plugin response schema.
+
+Podman serves NONE of /plugins (measured, 5.4.2/API 1.41) - the ticket's premise that it implements a subset is wrong. Documented in the class POD.
+
+No Changes entry written (per instruction); lines proposed in the report. No commit, no version bump.
+
+Follow-ups filed: #30 (transport returns a bare JSON scalar body undecoded), #31 (no API::Docker::Plugin entity class), #32 (stale scaffolding POD in API/Docker.pm). Registry-auth header builder is duplicated from Images.pm by instruction - flagged for the merge.
