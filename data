@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-08-27T23:31:55Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T23:31:55Z
+created: 2026-08-27T23:15:04Z
+id: 68
+priority: medium
+started: 2026-08-27T23:31:55Z
+status: done
+tags:
+- docs
+- pod
+title: 'API::Docker::Secret and ::Config: CreatedAt/UpdatedAt attributes have no =attr
+  POD'
+updated: 2026-08-27T23:31:55Z
+---
+
+lib/API/Docker/Secret.pm and lib/API/Docker/Config.pm both 'has CreatedAt' and 'has UpdatedAt' (line ~81-82 / ~85-86) with no =attr block for either -- every other attribute in both classes (client, ID, Spec, Version) is documented. lib/API/Docker/Plugin.pm, the third new entity class from this same round, documents all seven of its fields including the equivalent timestamp-shaped ones, so this is an inconsistency within the round rather than a pre-existing gap. Found during release audit (POD-vs-code sweep of the three new entity classes). Fix: add =attr CreatedAt / =attr UpdatedAt to both files, matching Plugin.pm's style.
