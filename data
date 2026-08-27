@@ -1,0 +1,34 @@
+---
+claimed_at: 2026-08-27T15:55:35Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T15:55:35Z
+created: 2026-08-27T05:15:34Z
+id: 36
+priority: medium
+started: 2026-08-27T15:34:18Z
+status: done
+tags:
+- containers
+- tests
+title: Capture the archive/attach fixtures against a live engine
+updated: 2026-08-27T15:55:35Z
+---
+
+The work on karr #18/#19/#23 was held to read-only probes and the daemon had no containers, so three things went into t/containers_endpoints.t unmeasured:
+
+  - t/fixtures/containers_archive.tar is a real ustar archive built with GNU
+    tar, shaped like what GET /containers/{id}/archive?path=/etc/hostname
+    returns. It is not a daemon capture. Every other tar fixture in t/ is.
+  - the attach subtests reuse t/fixtures/containers_logs_multiplexed.bin,
+    on the (documented, not measured here) ground that the one-way attach
+    stream is byte-identical to the logs stream.
+  - the X-Docker-Container-Path-Stat payload is constructed in the test from
+    the key names the Docker Engine API documents (name, size, mode, mtime,
+    linkTarget). Podman's spelling of them is unverified, and mode is claimed
+    to be Go os.FileMode bits rather than a POSIX mode word.
+
+With API_DOCKER_TEST_WRITE=1 against the Podman socket, capture the three for
+real and replace the constructed ones. The live subtest at the bottom of
+t/containers_endpoints.t already reads and notes the header keys off any
+container that happens to exist -- it skipped on the run that added it.
