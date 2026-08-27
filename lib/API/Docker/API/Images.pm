@@ -2,10 +2,10 @@ package API::Docker::API::Images;
 # ABSTRACT: Docker Engine Images API
 our $VERSION = '0.004';
 use Moo;
+with 'API::Docker::Role::Filters', 'API::Docker::Role::RegistryAuth';
 use API::Docker::Image;
 use Carp qw( croak );
 use JSON::MaybeXS qw( encode_json );
-use MIME::Base64 qw( encode_base64 );
 use namespace::clean;
 
 =head1 SYNOPSIS
@@ -36,6 +36,16 @@ use namespace::clean;
 
     # Remove image
     $docker->images->remove('nginx:latest', force => 1);
+
+    # Snapshot a container into an image
+    my $new = $docker->images->commit(container => $id, repo => 'myapp', tag => 'snap');
+
+    # Air-gapped roundtrip: export here, carry the tar over, load there
+    my $export = $docker->images->get('myapp:snap');   # raw tar bytes
+    $docker->images->load($export);
+
+    # Reclaim the build cache (not the same thing as prune)
+    $docker->images->build_prune(all => 1);
 
 =head1 DESCRIPTION
 
@@ -78,7 +88,8 @@ sub list {
   my %params;
   $params{all}     = $opts{all} ? 1 : 0     if defined $opts{all};
   $params{digests} = $opts{digests} ? 1 : 0 if defined $opts{digests};
-  $params{filters} = $opts{filters}          if defined $opts{filters};
+  $params{filters} = $self->_normalise_filters($opts{filters})
+    if defined $opts{filters};
   my $result = $self->client->get('/images/json', params => \%params);
   return $self->_wrap_list($result // []);
 }
@@ -97,7 +108,9 @@ Options:
 
 =item * C<digests> - Include digest information
 
-=item * C<filters> - Hashref of filters
+=item * C<filters> - HashRef of filter name to ArrayRef of string values, e.g.
+C<< { dangling => ['true'] } >>. Shape-checked and normalised by
+L<API::Docker::Role::Filters>
 
 =back
 
@@ -132,11 +145,13 @@ sub build {
 
   my $raw = ref $context eq 'SCALAR' ? $$context : $context;
 
+  # exists, not truth: an unset callback is a caller bug, and falling back to
+  # the buffered path for it would hand a long build back as silence.
   return $self->client->_request('POST', '/build',
     raw_body     => $raw,
     content_type => 'application/x-tar',
     params       => \%params,
-    ndjson       => 1,
+    exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
 
@@ -234,7 +249,71 @@ Options:
 
 =item * C<target> - Multi-stage build target
 
+=item * C<on_event> - CodeRef called with each build event as it arrives,
+instead of the ArrayRef being collected and returned; see below
+
 =back
+
+=head2 Progress as it arrives
+
+Without a callback the whole stream is read before anything is parsed, so a
+build that takes two minutes is two minutes of silence followed by all of its
+output at once. Pass C<on_event> and the events are handed over as the daemon
+sends them:
+
+    my $summary = $images->build(
+        context  => $tar,
+        t        => 'myapp:latest',
+        on_event => sub {
+            my ($event, $stop) = @_;
+            print $event->{stream} if defined $event->{stream};
+        },
+    );
+
+    $summary;   # { delivered => 41, stopped => 0 }
+
+With a callback the return value is that summary HashRef, not the events:
+C<delivered> is how many went to the callback, C<stopped> is 1 when the
+callback ended the stream and 0 when the daemon did. Nothing is accumulated,
+so a caller that wants the C<aux> event with the image id in it must keep that
+event itself as it goes by. See
+L<API::Docker::Role::HTTP/"Streaming a response as it arrives">.
+
+The same section applies to L</pull>, L</push> and L</load>, which take
+C<on_event> on the same terms.
+
+=head3 A failed build still croaks, one event earlier
+
+The C<errorDetail> check runs either way, so a failed build croaks with an
+L<API::Docker::Error::Stream> on both paths. What differs is when, and what
+the exception carries:
+
+=over
+
+=item * Buffered, the stream is scanned once it is complete, and
+C<< $err->events >> is the B<whole> event list -- all the build output that
+led up to the failure.
+
+=item * Streamed, the check runs per event, so the croak happens at the event
+that reports the failure rather than when the daemon eventually closes. The
+exception then carries B<that one event> alone: a callback stream keeps no
+history, having handed every earlier event to the callback already. The
+failing event itself is not delivered.
+
+=back
+
+So a caller that reads the progress out of C<< $err->events >> must, on this
+path, collect it in the callback instead:
+
+    my @output;
+    my $summary = eval {
+        $images->build(context => $tar, t => 'myapp:latest',
+            on_event => sub { push @output, $_[0] });
+    };
+    if (my $err = $@) {
+        warn "$err";               # the reason, as before
+        # $err->events is the failing event; @output is what preceded it
+    }
 
 =cut
 
@@ -246,7 +325,7 @@ sub pull {
   $params{tag}       = $opts{tag} // 'latest';
   return $self->client->post('/images/create', undef,
     params => \%params,
-    ndjson => 1,
+    exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
 
@@ -291,6 +370,11 @@ Options:
 
 =item * C<tag> - Tag to pull (default C<latest>)
 
+=item * C<on_event> - CodeRef called with each progress event as it arrives,
+instead of the ArrayRef being collected and returned. The return value is then
+the summary HashRef and a stream failure croaks one event in, exactly as for
+L</build>; see L</"Progress as it arrives">
+
 =back
 
 =cut
@@ -330,44 +414,15 @@ sub push {
   my %params;
   $params{tag} = $opts{tag} if defined $opts{tag};
 
-  my $auth_header = _build_registry_auth_header($opts{auth});
+  my $auth_header = $self->_registry_auth_header($opts{auth});
 
   return $self->client->post(
     "/images/$name/push",
     undef,
     params  => \%params,
     headers => { 'X-Registry-Auth' => $auth_header },
-    ndjson  => 1,
+    exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
-}
-
-sub _build_registry_auth_header {
-  my ($auth) = @_;
-
-  # The Docker Engine requires an X-Registry-Auth header on every push,
-  # even for anonymous attempts. Encoding is base64url of a JSON object.
-  my $payload;
-  if (!defined $auth) {
-    $payload = '{}';
-  }
-  elsif (ref $auth eq 'HASH') {
-    $payload = encode_json($auth);
-  }
-  else {
-    # Already pre-built JSON or pre-encoded string. If it looks base64-like
-    # (no braces), pass through; otherwise encode as-is.
-    return $auth if $auth =~ /^[A-Za-z0-9+\/=_\-]+$/;
-    $payload = $auth;
-  }
-
-  # Padded base64url, and the padding is not optional: the engine decodes
-  # this header with Go's base64.URLEncoding, which requires it. Stripping
-  # the '=' made every push fail with a 400 -- 'failed to parse
-  # "X-Registry-Auth" header: unexpected EOF' -- including anonymous ones,
-  # where the payload is the three-character '{}' encoding that needs a pad.
-  my $b64 = encode_base64($payload, '');
-  $b64 =~ tr{+/}{-_};
-  return $b64;
 }
 
 =method push
@@ -406,6 +461,22 @@ even for anonymous attempts; the header is always sent. Pass C<auth> as
 a hashref of credentials (typical keys: C<username>, C<password>,
 C<serveraddress>, or C<identitytoken>), or as a pre-encoded base64 string.
 Without C<auth> the header carries an empty JSON object.
+
+Options:
+
+=over
+
+=item * C<tag> - Tag to push
+
+=item * C<auth> - Registry credentials, as above
+
+=item * C<on_event> - CodeRef called with each progress event as it arrives --
+layer by layer, rather than the whole upload in one silence -- instead of the
+ArrayRef being collected and returned. The return value is then the summary
+HashRef and a stream failure croaks one event in, exactly as for L</build>;
+see L</"Progress as it arrives">
+
+=back
 
 =cut
 
@@ -459,7 +530,8 @@ sub search {
   my %params;
   $params{term}    = $term;
   $params{limit}   = $opts{limit}   if defined $opts{limit};
-  $params{filters} = $opts{filters} if defined $opts{filters};
+  $params{filters} = $self->_normalise_filters($opts{filters})
+    if defined $opts{filters};
   return $self->client->get('/images/search', params => \%params);
 }
 
@@ -469,14 +541,27 @@ sub search {
 
 Search Docker Hub for images. Returns ArrayRef of search results.
 
-Options: C<limit>, C<filters>.
+Options:
+
+=over
+
+=item * C<limit> - Maximum number of results
+
+=item * C<filters> - HashRef of filter name to ArrayRef of string values; the
+engine accepts C<is-official>, C<is-automated> and C<stars> here. The boolean
+ones want the string, C<< { 'is-official' => ['true'] } >>, and C<stars> a
+number written as one -- L<API::Docker::Role::Filters> takes care of both and
+croaks on a shape the daemon would refuse
+
+=back
 
 =cut
 
 sub prune {
   my ($self, %opts) = @_;
   my %params;
-  $params{filters} = $opts{filters} if defined $opts{filters};
+  $params{filters} = $self->_normalise_filters($opts{filters})
+    if defined $opts{filters};
   return $self->client->post('/images/prune', undef, params => \%params);
 }
 
@@ -485,6 +570,392 @@ sub prune {
     my $result = $images->prune(filters => { dangling => ['true'] });
 
 Delete unused images. Returns hashref with C<ImagesDeleted> and C<SpaceReclaimed>.
+
+Options:
+
+=over
+
+=item * C<filters> - HashRef of filter name to ArrayRef of string values; the
+engine accepts C<dangling>, C<until> and C<label> here. Shape-checked and
+normalised by L<API::Docker::Role::Filters>
+
+=back
+
+=cut
+
+sub get {
+  my ($self, $name, %opts) = @_;
+  croak "Image name required" unless $name;
+  # `raw` and `on_chunk` are the same promise made twice -- hand the response
+  # bytes over undecoded -- so only one of them is sent: with a callback there
+  # is no return value for `raw` to describe.
+  return $self->client->get("/images/$name/get",
+    exists $opts{on_chunk} ? ( on_chunk => $opts{on_chunk} ) : ( raw => 1 ));
+}
+
+=method get
+
+    use Path::Tiny;
+    my $tar = $images->get('alpine:3');
+    path('alpine.tar')->spew_raw($tar);
+
+Export one image, and the history behind it, as a tar archive -- the endpoint
+behind C<docker image save>. Together with L</load> it is the only way in or
+out of a daemon that does not go through a registry.
+
+B<The return value is raw bytes, not a decoded structure.> The engine answers
+with the tar stream itself, and the transport is told to hand it back
+untouched (C<< raw => 1 >>), so what arrives is byte for byte what the daemon
+wrote. Write it with a binary-safe file handle -- C<< path(...)->spew_raw >>,
+or C<binmode> on a handle of your own. Treating it as text corrupts it, and
+nothing about the value announces that it is binary.
+
+The archive holds one tarball per layer, a config JSON per image,
+C<manifest.json> and C<repositories>. Measured against Podman 5.4.2 (API
+1.41): the response is chunked with
+C<< Content-Type: application/octet; charset=us-ascii >>, where Docker sends
+C<application/x-tar> -- the transport looks at neither, so the difference does
+not reach the caller. Exporting C<alpine:3> through this method produced bytes
+md5-identical to what C<curl --unix-socket> wrote for the same request, all
+8705536 of them, so the chunked reader is binary-clean.
+
+An unknown image croaks. On the same engine that is C<404 Not Found> with
+C<< {"message":"failed to find image ...: image not known"} >>.
+
+=head2 Exporting without buffering the archive
+
+The whole archive is buffered in memory before it is returned, so exporting a
+large image costs its full size in RAM. Pass C<on_chunk> and the bytes are
+handed over as they arrive instead, and nothing is kept:
+
+    use Path::Tiny;
+    my $out = path('alpine.tar')->openw_raw;
+    my $summary = $images->get('alpine:3',
+        on_chunk => sub { print {$out} $_[0] });
+    close $out;
+
+    $summary;   # { delivered => 266, stopped => 0 }
+
+The units are whatever the transport read, not a fixed size: a chunk boundary
+carries no meaning in a tar stream, and the only guarantee is that
+concatenating them in order gives the same bytes the buffered call returns.
+Write them to a binary-safe handle, exactly as for the buffered value.
+
+Measured against Podman 5.4.2 (API 1.41): exporting C<alpine:3> this way
+delivered its 8705536 bytes in 266 pieces, md5-identical to what the buffered
+call returns for the same request, with no more than one piece held at a time.
+
+With a callback the return value is the summary HashRef
+C<< { delivered => N, stopped => 0|1 } >>, not the archive: C<delivered> is
+how many pieces went to the callback, C<stopped> is 1 when the callback ended
+the transfer. Stopping leaves a B<truncated> archive behind -- the export is
+one tar stream, not a sequence of independent records -- so stop only to
+abandon it. See
+L<API::Docker::Role::HTTP/"Streaming a response as it arrives">.
+
+Options:
+
+=over
+
+=item * C<on_chunk> - CodeRef called with each piece of the archive as it
+arrives, instead of the whole thing being returned
+
+=back
+
+=cut
+
+sub get_all {
+  my ($self, @names) = @_;
+
+  # The list form has nowhere to put an option: get_all('a', 'b') is names all
+  # the way down, and a trailing `on_chunk => sub {...}` in it would be two
+  # more image names as far as this method can tell. So options ride behind
+  # the ArrayRef form, which already exists for exactly one list.
+  my %opts;
+  if (ref $names[0] eq 'ARRAY') {
+    my $list = shift @names;
+    croak __PACKAGE__ . '->get_all takes options as pairs after the ArrayRef '
+      . 'of names; got an odd number of them' if @names % 2;
+    %opts  = @names;
+    @names = @$list;
+  }
+
+  croak "At least one image name required" unless @names;
+  return $self->client->get('/images/get?' . $self->_names_query(@names),
+    exists $opts{on_chunk} ? ( on_chunk => $opts{on_chunk} ) : ( raw => 1 ));
+}
+
+# `names` is a repeated query parameter -- names=a&names=b -- and nothing
+# else is accepted: measured against Podman 5.4.2, the comma-joined spelling
+# answers 500 with 'parsing reference "alpine:3,registry:2": invalid
+# reference format', and Docker reads r.Form["names"], so a single value is
+# always exactly one name. _request's params encoder emits one pair per key
+# and has no way to repeat one, so the query is built here and handed over as
+# part of the path. The escaping mirrors the transport's own _uri_encode: `/`
+# and `:` stay raw so an image reference survives intact.
+sub _names_query {
+  my ($self, @names) = @_;
+  return join '&', map {
+    my $name = $_;
+    $name =~ s/([^A-Za-z0-9\-_.~:\/])/sprintf("%%%02X", ord($1))/ge;
+    'names=' . $name;
+  } @names;
+}
+
+=method get_all
+
+    my $tar = $images->get_all('alpine:3', 'registry:2');
+    my $tar = $images->get_all([ 'alpine:3', 'registry:2' ]);
+
+Export several images into one tar archive. Takes the names as a list or as a
+single ArrayRef; at least one is required.
+
+B<The return value is raw bytes>, exactly as for L</get> -- see there for what
+that means for writing it out.
+
+C<manifest.json> inside the archive carries one entry per image, so a single
+tar can be carried to another host and loaded in one L</load> call. Measured
+against Podman 5.4.2 (API 1.41): asking for no names at all answers
+C<400 Bad Request> with C<< {"message":"no images to download"} >>.
+
+C<on_chunk> works here exactly as it does for L</get> -- several images make a
+bigger archive, so this is where not buffering it matters most -- but it can
+only be passed with the ArrayRef form:
+
+    my $summary = $images->get_all([ 'alpine:3', 'registry:2' ],
+        on_chunk => sub { print {$out} $_[0] });
+
+The list form takes names and nothing else: a trailing option pair in it would
+be indistinguishable from two more image names. Options after the ArrayRef
+must come in pairs; an odd number croaks.
+
+Measured against Podman 5.4.2 (API 1.41): C<alpine:3> and C<registry:2>
+together came to 34725888 bytes in 1060 pieces, none of which had to be held.
+
+=cut
+
+sub load {
+  my ($self, $tar, %opts) = @_;
+  croak "Tar archive required (raw bytes or a scalar ref)" unless defined $tar;
+
+  my %params;
+  $params{quiet} = $opts{quiet} ? 1 : 0 if defined $opts{quiet};
+
+  my $raw = ref $tar eq 'SCALAR' ? $$tar : $tar;
+
+  return $self->client->_request('POST', '/images/load',
+    raw_body     => $raw,
+    content_type => 'application/x-tar',
+    params       => \%params,
+    exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
+  );
+}
+
+=method load
+
+    use Path::Tiny;
+    my $events = $images->load(path('alpine.tar')->slurp_raw);
+
+    for my $event (@$events) {
+        print $event->{stream} if defined $event->{stream};
+    }
+
+Import a tar archive produced by L</get> or L</get_all> -- the endpoint behind
+C<docker image load>. The archive is the request body; pass it as raw bytes or
+as a scalar reference to them, the way L</build> takes its context.
+
+Returns an ArrayRef of progress events, one per object in the engine's
+newline-delimited JSON stream, even when the stream carried a single object.
+The last of them names what was imported:
+
+    my ($loaded) = grep { ($_->{stream} // '') =~ /^Loaded image/ } @$events;
+
+Options:
+
+=over
+
+=item * C<quiet> - Suppress the per-layer progress detail in the response
+stream
+
+=item * C<on_event> - CodeRef called with each progress event as it arrives,
+instead of the ArrayRef being collected and returned. The return value is then
+the summary HashRef and a stream failure croaks one event in, exactly as for
+L</build>; see L</"Progress as it arrives">
+
+=back
+
+C<quiet> changes how much the engine says, not what this method returns: the
+body stays newline-delimited JSON and the return stays an ArrayRef either way.
+B<Podman ignores it entirely> -- measured against 5.4.2 (API 1.41), C<quiet>
+unset, C<0> and C<1> all produce the identical single
+C<< {"stream":"Loaded image: ..."} >> object. Should an engine answer a quiet
+load with a body of no bytes at all, the transport still returns C<[]>, not
+C<undef> -- the C<ndjson> branch in L<API::Docker::Role::HTTP/_request> runs
+before the empty-body check that would return C<undef>, so a caller that
+iterates the result unconditionally needs no guard for this case.
+
+A failed load croaks, but by which route depends on the engine, the same split
+L</pull> and L</push> have. Docker reports it as an C<errorDetail> object
+inside a 200 stream, which croaks with an L<API::Docker::Error::Stream>
+carrying the events. Podman reports it in the status line instead: measured
+against 5.4.2, a body that is not an image archive answers C<500 Internal
+Server Error> with C<< {"message":"failed to load image: payload does not
+match any of the supported image formats: ..."} >>, and the transport's status
+handling croaks with a plain string before any stream is decoded. Inspect
+C<$@> as a string rather than testing for the exception class.
+
+The archive is sent as one buffered request body, so loading a large image
+costs its full size in RAM.
+
+=cut
+
+sub commit {
+  my ($self, %opts) = @_;
+  croak "container required" unless $opts{container};
+
+  my %params;
+  $params{container} = $opts{container};
+  $params{repo}      = $opts{repo}    if defined $opts{repo};
+  $params{tag}       = $opts{tag}     if defined $opts{tag};
+  $params{comment}   = $opts{comment} if defined $opts{comment};
+  $params{author}    = $opts{author}  if defined $opts{author};
+  $params{pause}     = $opts{pause} ? 1 : 0 if defined $opts{pause};
+
+  # `changes` is a repeated query parameter on the wire, but the engine parses
+  # each value as a Dockerfile snippet and a snippet may span lines, so one
+  # newline-joined value carries a list just as well. Measured against Podman
+  # 5.4.2: changes=LABEL%20a%3Db%0AEXPOSE%208080 and two separate changes=
+  # pairs produce the same image. The joined form is used because it fits the
+  # transport's one-value-per-key params encoder.
+  if (defined $opts{changes}) {
+    $params{changes} = ref $opts{changes} eq 'ARRAY'
+      ? join("\n", @{$opts{changes}})
+      : $opts{changes};
+  }
+
+  return $self->client->post('/commit', $opts{config}, params => \%params);
+}
+
+=method commit
+
+    my $result = $images->commit(
+        container => $container_id,
+        repo      => 'myapp',
+        tag       => 'snapshot',
+        comment   => 'after the migration ran',
+    );
+    my $image_id = $result->{Id};
+
+    # With a config override and Dockerfile instructions
+    $images->commit(
+        container => $container_id,
+        repo      => 'myapp',
+        tag       => 'v2',
+        config    => { Cmd => [ '/bin/sh' ], Labels => { built => 'here' } },
+        changes   => [ 'EXPOSE 8080', 'LABEL stage=release' ],
+    );
+
+Create an image from a container's current filesystem. This is the one
+image-producing path that does not go through a build context, and it is how a
+caller snapshots a container it has been exec-ing into.
+
+Returns the raw daemon response, a HashRef with an C<Id> key. Measured against
+Podman 5.4.2 (API 1.41) the status is C<201 Created> and C<Id> is a bare hex
+digest with no C<sha256:> prefix; Docker prefixes it. Do not compare it
+literally against an id from C<inspect> without normalising.
+
+Options:
+
+=over
+
+=item * C<container> - Container id or name to commit (required)
+
+=item * C<repo> - Repository for the new image, e.g. C<myapp>
+
+=item * C<tag> - Tag for the new image
+
+=item * C<comment> - Commit message stored in the image history
+
+=item * C<author> - Author, e.g. C<< Jane <jane@example.com> >>
+
+=item * C<pause> - Pause the container while committing (engine default is true)
+
+=item * C<changes> - Dockerfile instructions to apply to the new image, as a
+single string or an ArrayRef of them; an ArrayRef is joined with newlines,
+which is what the engine's parser expects
+
+=item * C<config> - HashRef of container configuration to override on the new
+image (C<Cmd>, C<Env>, C<Labels>, C<ExposedPorts>, ...), sent as the request
+body. Measured against Podman 5.4.2: C<Cmd> replaces the container's, C<Env>
+is merged onto the environment the container inherited, and a C<Labels> here
+lands alongside a C<LABEL> given in C<changes> -- the two are applied
+together, not one instead of the other
+
+=back
+
+=cut
+
+sub build_prune {
+  my ($self, %opts) = @_;
+
+  my %params;
+  # The engine spells this one with a hyphen, and an unquoted
+  # `keep-storage => $n` is not even valid Perl -- the fat comma quotes a
+  # bareword identifier, and keep-storage is a subtraction. So keep_storage is
+  # the documented spelling, the wire name is accepted beside it for anyone
+  # copying out of the Engine reference, and the hyphen is what goes on the
+  # wire. _uri_encode leaves `-` alone, so the key survives unmangled.
+  my $keep_storage = $opts{keep_storage} // $opts{'keep-storage'};
+  $params{'keep-storage'} = $keep_storage       if defined $keep_storage;
+  $params{all}            = $opts{all} ? 1 : 0  if defined $opts{all};
+  $params{filters}        = $self->_normalise_filters($opts{filters})
+    if defined $opts{filters};
+
+  return $self->client->post('/build/prune', undef, params => \%params);
+}
+
+=method build_prune
+
+    my $result = $images->build_prune(all => 1);
+    my $freed  = $result->{SpaceReclaimed};
+
+    # Keep 5 GB of cache
+    $images->build_prune(keep_storage => 5 * 1024 * 1024 * 1024);
+
+Clear the BuildKit build cache. B<This is not L</prune>>, and the two are not
+interchangeable: L</prune> deletes unused I<images>, this deletes the
+intermediate I<build cache> that L</build> writes. Neither touches the other's
+storage, and on a machine that builds often the build cache is usually the
+larger of the two.
+
+Returns the raw daemon response, a HashRef with C<CachesDeleted> and
+C<SpaceReclaimed>.
+
+B<Podman does not implement this endpoint.> Measured against 5.4.2 (API 1.41):
+C<POST /build/prune> answers C<404 Not Found> with a C<text/plain> body of
+C<Not Found> -- not the JSON C<< {"message":...} >> shape its other errors use
+-- at every version prefix tried, and there is no C<libpod> equivalent either.
+The transport croaks with C<Docker API error (404): Not Found>, the plain body
+verbatim, because it is not JSON to unwrap. A caller that must work on both
+engines has to treat that 404 as "no build cache to clear here" rather than as
+a transport fault.
+
+Options:
+
+=over
+
+=item * C<keep_storage> - Bytes of cache to keep. Sent as the engine's
+C<keep-storage>, which is also accepted as the option name; the underscore
+form exists because the hyphenated one has to be quoted in a Perl hash
+
+=item * C<all> - Remove all cache, not just the dangling entries
+
+=item * C<filters> - HashRef of filters, e.g. C<< { until => ['24h'] } >>;
+values are ArrayRefs of strings, shape-checked and normalised by
+L<API::Docker::Role::Filters>, and passed to the transport unencoded because
+it JSON-encodes a HashRef params value itself
+
+=back
 
 =cut
 
@@ -496,7 +967,11 @@ Delete unused images. Returns hashref with C<ImagesDeleted> and C<SpaceReclaimed
 
 =item * L<API::Docker::Image> - Image entity class
 
-=item * L<API::Docker::Error::Stream> - Raised by C<build>, C<pull> and C<push>
+=item * L<API::Docker::Role::RegistryAuth> - the C<X-Registry-Auth>
+encoding C<push> uses, shared with the other registry-facing endpoints
+
+=item * L<API::Docker::Error::Stream> - Raised by C<build>, C<pull>, C<push>
+and C<load>
 
 =back
 
