@@ -1,0 +1,39 @@
+---
+claimed_at: 2026-08-27T06:36:25Z
+claimed_by: doc-final
+class: standard
+completed: 2026-08-27T06:36:25Z
+created: 2026-08-27T06:25:58Z
+id: 47
+priority: low
+started: 2026-08-27T06:29:23Z
+status: done
+tags:
+- docs
+- transport
+title: Role::HTTP put() POD omits raw_body/content_type, which put_archive now relies
+  on
+updated: 2026-08-27T06:36:25Z
+---
+
+lib/API/Docker/Role/HTTP.pm, =method put says:
+
+  Options: C<params> (hashref of query parameters).
+
+put() is a thin wrapper -- 'my ($self, $path, $body, %opts) = @_; $opts{body} = $body if defined $body; return $self->_request('PUT', $path, %opts);' -- so it forwards the same %opts _request always accepts, exactly as post() does. post()'s own POD says so: 'Options: params, headers, ndjson, croak_on_error, raw, response and the on_event/on_frame/on_chunk callbacks as for L</get>, plus raw_body and content_type for sending a non-JSON payload such as a build context tarball.'
+
+Until this batch nothing called put() with more than params, so the short doc was accurate. New containers->put_archive (karr #18) now does:
+
+  return $self->client->put("/containers/$id/archive", undef,
+    params       => \%params,
+    raw_body     => $raw,
+    content_type => 'application/x-tar',
+  );
+
+which works (raw_body/content_type are handled generically inside _request, not method-specific), but put()'s own page never says it accepts them -- a reader following L<API::Docker::Role::HTTP/put> from put_archive's SEE ALSO would not know why the call above is legal.
+
+Cross-lane miss: put_archive is Containers.pm (containers-worker lane), put()'s POD is Role::HTTP.pm (transport lane), and nobody touched both in the same ticket.
+
+Fix: mirror post()'s Options line onto put() (same options, same wording). No code change needed -- _request already supports it.
+
+Found during the pre-release audit; not fixed here per the audit's own scope (report only).
