@@ -1,6 +1,396 @@
 Revision history for API-Docker
 
 {{$NEXT}}
+  - `containers->start`, `->stop`, `->restart`, `->pause` and `->unpause`
+    now return 1 when the call changed the container's state and 0 when it
+    was already in the state asked for, instead of always returning undef.
+    The engine answers a no-op state change with 304 Not Modified, which
+    carries no body -- exactly like the 204 of a change that did happen --
+    so nothing in the response told the two apart. Measured against the
+    rootless Podman socket (5.4.2, API 1.41): starting a running container
+    and stopping a stopped one answer `304 Not Modified` with no body and
+    no Content-Length. Nothing else measured there does. `pause` on an
+    already-paused container and `unpause` on a running one are not 304
+    but 500 -- `"..." is already paused: container state improper` --
+    which croaks as before, and a restart answers 204 whatever the
+    container was doing; the Docker Engine API documents no 304 for those
+    three either. They report through the same mapping rather than
+    specially, so an engine that does answer 304 is not read as a change.
+    The no-op keeps the falsy value these methods always returned, 0 where
+    it used to be undef, so a caller that ignores the return or tests it
+    for falseness is unaffected -- only one testing `defined` sees a
+    difference. `API::Docker::Container`'s start/stop/restart/pause/
+    unpause forward the value.
+  - `API::Docker::Role::HTTP::_request` hands the status line and the
+    response headers out through a new `response` option: pass a HashRef
+    and it is filled with `status`, `reason` and `headers` (names
+    lowercased, as `_read_response` collects them). Until now both were
+    dropped once the body had been decoded. The return value is unchanged
+    for every existing caller, and the hash is filled before the `>= 400`
+    croak, so an eval-ing caller can still read the status of a request
+    that failed. Passing anything but a HashRef croaks while the request
+    is assembled, before a socket is opened.
+  - New `head` verb on the HTTP role, beside `get`, `post`, `put` and
+    `delete_request`. It returns undef by definition -- a HEAD response
+    has no body -- so what it answers comes out through `response`. The
+    body is not read even when the response announces one: a HEAD response
+    repeats the header fields the equivalent GET would send,
+    Content-Length among them, and then sends nothing, so reading it waits
+    for bytes that never arrive. Measured on Podman 5.4.2,
+    `HEAD /containers/{id}/archive` answers 200 with no Content-Length at
+    all and the whole payload base64-encoded in
+    `X-Docker-Container-Path-Stat` -- so on that engine no branch would
+    have blocked; an engine that does announce a length is not waited on
+    either. Docker itself is not installed here and was not measured.
+  - Test::API::Docker::Mock: a route can carry a status and headers via the
+    new `mock_response(status => 304, ...)` helper, so the 304 path is
+    testable without a daemon. A route that says nothing gets the status
+    the daemon would have sent for its body: 200 with one, 204 without.
+  - `API::Docker::Role::HTTP::_request` gained three streaming options --
+    `on_event`, `on_frame` and `on_chunk` -- so a request whose response
+    never closes on its own can be read as it arrives instead of first
+    being buffered whole. Until now `containers->logs(follow => 1)`,
+    `system->events` with no `until` and `containers->stats` with no
+    `stream => 0` never returned, because the transport reads the whole
+    response before parsing any of it and none of those endpoints ever
+    close the connection themselves. A callback is invoked as
+    `$cb->($unit, $stop)` for each newline-delimited JSON event,
+    demultiplexed frame, or raw chunk as it arrives; calling `$stop->()`
+    ends the stream early. With a callback, `_request` returns a summary
+    HashRef instead of the body -- `{ delivered => N, stopped => 0|1 }` --
+    because nothing is accumulated along the way: an unbounded feed must
+    not cost memory in proportion to how long it runs, and the caller has
+    already been handed every unit. `$stop` is a closure rather than a
+    truthy return value on purpose -- a container event's own `status`
+    field is literally `"stop"`, and a callback that just collects units
+    returns a count, so any return-value convention has an accidental way
+    to truncate the stream. Only one of the three options may be given;
+    passing two croaks before the request is sent. `on_frame` needs the
+    stream to be framed and, unlike the buffered path, cannot decide that
+    by walking the whole body first, so an undeclared stream that turns
+    out not to be framed croaks instead of silently being handed back raw
+    -- pass `tty => 1` when the container was created with one, the same
+    option the buffered `logs` already took as a hint; with a callback it
+    is a promise the transport takes at its word rather than a hint.
+    `croak_on_error` still applies to `on_event` as it does to
+    `ndjson => 1` (see the 0.003 entry on `API::Docker::Error::Stream`),
+    but the check now runs per event instead of once at the end: a failed
+    build croaks at the event that reports it, and `$err->events` then
+    carries only that one event, not the whole stream -- the rest already
+    reached the callback as it arrived.
+
+    Wired into thirteen resource methods, plus one new one:
+    `system->events`, `containers->logs`, `containers->stats`,
+    `exec->start`, `images->build`, `images->pull`, `images->push`,
+    `images->load`, `images->get`, `images->get_all`, `plugins->install`,
+    `plugins->upgrade` and `plugins->push` all accept the callback now.
+    `containers->logs` also gained the `follow` option it had no way to
+    use before, and `containers->stats` now passes `stream` through
+    instead of hardcoding `stream => 0, one-shot => 1` on every call. New
+    `containers->attach`, the one-way half of `POST
+    /containers/{id}/attach`: per the Engine API reference and the code
+    path it shares with `logs`, sent without `Upgrade: tcp` the engine
+    answers 200 and streams the same multiplexed frames `logs` does, so it
+    returns the same ArrayRef of `{ stream => ..., data => ... }` frames,
+    or the summary HashRef with `on_frame` -- tested here against the
+    captured `logs` fixture, not against a real attach stream (karr #36
+    tracks capturing one). Nothing can be written to stdin through it, and
+    without a callback it blocks until the stream ends; the upgraded 101
+    variant that lets a caller type into the container and
+    `/containers/{id}/attach/ws` are both still not implemented -- this
+    client buffers a whole response before returning it, and neither of
+    those is a request/response exchange.
+  - `containers->stats` keeps the loud stream error check that every
+    streaming endpoint but `/events` gets, and now on a measurement rather
+    than on the analogy. The question was whether a stats stream can
+    legitimately carry an `errorDetail` object, which the check would turn
+    into a croak. Measured against the rootless Podman socket (5.4.2, API
+    1.41): a running container's stream carries only complete readings, and
+    killing and then removing the container while the stream was open ended
+    it on a whole reading with nothing appended after it. `errorDetail` is
+    the `jsonmessage` shape the engine uses for `/build`, `/images/create`
+    and `/images/{name}/push`, and it was never observed here -- so the
+    check has no legitimate reading it could turn into a croak.
+  - Document that a stopped container is answered differently, and that
+    neither guard catches it: measured on the same engine, `stats` for a
+    stopped container answers HTTP 200 with a chunked body of
+    `{"cause":"container is stopped","message":"container is stopped",
+    "response":500}`. The `>= 400` croak cannot see it because the status
+    is 200, and the `errorDetail` scan cannot because the object is keyed
+    `cause`/`message`/`response` instead -- so `stats($id)` hands that
+    HashRef back where a reading was expected.
+  - `tls => 1` now speaks actual TLS instead of croaking "not
+    implemented" (the 0.003 state). The `tcp://` branch of the socket
+    builder opens an `IO::Socket::SSL` connection in place of the plain
+    `IO::Socket::INET` one and changes nothing above the socket -- same
+    request writer, same reader. `cert_path` names a directory in the
+    layout the `docker` CLI writes: `ca.pem` as the trust anchor,
+    `cert.pem` and `key.pem` as this client's own certificate, each used
+    if present. One of `cert.pem`/`key.pem` without the other croaks,
+    since half a client certificate proves nothing; a `cert_path` naming
+    nothing croaks too, since it is read only once TLS was asked for. With
+    no certificates at all the connection is still encrypted and verified,
+    against the system trust store -- not an error, and not a silent
+    downgrade to unverified: `tls` asks for an authenticated far end, not
+    for authenticating this client, and a terminator (nginx, stunnel,
+    Traefik) in front of the daemon with a publicly trusted certificate is
+    a real deployment with nothing for `cert_path` to point at. New
+    `tls_insecure` attribute turns verification off (`SSL_VERIFY_NONE`,
+    no hostname check) for a self-signed daemon certificate whose CA is
+    not to hand; setting it without `tls` croaks. `tls => 1` on a
+    `unix://` host still croaks at construction, as it has since 0.003.
+    `IO::Socket::SSL` is a recommended, not a required, cpanfile
+    dependency -- it pulls in `Net::SSLeay`, XS compiled against libssl,
+    and the `unix://` default (local Docker, rootless Podman) never needs
+    any of it -- loaded when the first TLS connection opens; without it
+    installed, `tls => 1` croaks naming the module. Tested end to end
+    against a local `IO::Socket::SSL` server with generated self-signed
+    certificates (t/tls.t), not against a live daemon: there is no `tcp://`
+    engine, TLS or otherwise, on this machine to measure against.
+    `DOCKER_TLS_VERIFY`, which the `docker` CLI reads to turn TLS on from
+    the environment, is deliberately not consulted -- `tls` still defaults
+    to 0 regardless of what the environment exports.
+  - New `API::Docker::Role::Filters`, a `Moo::Role` consumed by all eight
+    resource classes and applied at every one of the fourteen call sites
+    that accept a `filters` option (`list` and `prune` on containers,
+    images, networks and volumes, plus `secrets->list`, `configs->list`,
+    `plugins->list`, `images->build_prune`, `images->search` and
+    `system->events`). The engine wants `filters` as a JSON map of
+    string to array of string, and the transport already encodes a
+    HashRef value correctly -- the *shape* was never checked, and the
+    shape is what callers get wrong, because Perl has no "array of
+    string" and a wrong shape does not error: the daemon either ignores
+    the filter or matches nothing, and the caller gets a plausible empty
+    list back with no signal that anything was misspelled. Measured
+    against the rootless Podman socket (5.4.2, API 1.41, `GET
+    /v1.41/images/json`), a wrong shape is in fact loud there -- a `500`
+    carrying a Go unmarshal message, naming neither the option nor the
+    key -- so `_normalise_filters` repairs what it can rather than
+    forwarding the caller's mistake into that: a bare value is wrapped
+    into an ArrayRef, each element is stringified, and `JSON->true` /
+    `JSON->false` / `\1` / `\0` become the strings `"true"`/`"false"` (the
+    engine's own spelling for a filter boolean) -- but only when the value
+    carries that claim; a plain `1` becomes `"1"`, not `"true"`, because
+    the rewrite is bound to the value's type and not to the filter name or
+    its truthiness. `undef`, an empty string, any other kind of reference,
+    or an empty filter name croaks instead of being repaired; an empty
+    ArrayRef passes through unchanged. Filter *names* are deliberately not
+    validated client-side -- the accepted set is per endpoint and
+    undocumented in general, though `plugins->list` documents its own (see
+    below) -- and revisiting that decision wants evidence, not guessing.
+    `Networks::list`/`prune` and `Volumes::list`/`prune` accepted
+    `filters` all along but never documented it; they do now.
+  - `_request`'s query-parameter encoder now expands an ArrayRef value
+    into one repeated `k=v` pair per element (`names => ['a', 'b']`
+    becomes `names=a&names=b`), instead of stringifying it to
+    `ARRAY(0x...)`. That spelling is not optional for `GET /images/get`:
+    measured against the rootless Podman socket (5.4.2, API 1.41), the
+    comma-joined form is read as one image reference and answered `500`
+    (`parsing reference "alpine:3,registry:2": invalid reference
+    format`), and Go's own `r.Form["names"]` reads repeated pairs the
+    same way on Docker. `images->get_all` does not yet use this directly
+    -- it still builds its query string by hand through a private
+    `_names_query`, which duplicates `_uri_encode`'s rule that `/` and
+    `:` stay raw so an image reference survives, and is left as a
+    follow-up (karr #43) rather than touched here.
+  - A response body that is a bare JSON scalar -- `null`, `true`,
+    `false`, a number, or a quoted string -- is now decoded instead of
+    being handed back as its raw bytes. The guard used to be "starts with
+    `{` or `[`", which is not the whole of JSON: `GET
+    /plugins/privileges` for a plugin that demands no privileges answers
+    a bare `null` (a nil Go slice reaching the wire from
+    `computePrivileges`), and that arrived at the caller as the
+    four-character string `'null'` rather than `undef` -- indistinguishable
+    from a real string and, before `plugins->privileges` guarded against
+    it locally, exactly what would have been posted straight back to
+    `/plugins/pull` as a JSON string where the engine expects an array.
+    Whether a body decodes is still decided by attempting `decode_json`
+    and checking the eval's success, not its result, because
+    `decode_json('null')` is a successful decode to `undef`; a plain-text
+    body that happens to start with a digit or a quote and fails to parse
+    is still returned as itself. Any other endpoint answering a nil-able
+    Go slice or pointer as its whole body benefits the same way.
+  - The empty-body check in `_request` used to run before the `raw` and
+    `ndjson` option branches, so it won -- an endpoint that legitimately
+    answers with zero bytes broke its own promised return shape:
+    `raw => 1` promises the response bytes verbatim, and a caller doing
+    `length` on the result got a warning on `undef` instead of `0` on
+    `''`; `ndjson => 1` promises an ArrayRef even for a stream carrying a
+    single object, and an empty stream came back as `undef` rather than
+    `[]`. The check now runs after both branches: `raw` returns `''` and
+    `ndjson` returns `[]` for a zero-byte body, while `204` and a body
+    that is genuinely absent (as opposed to present and empty) still
+    return `undef` as before. Reachable through `images->load`: an engine
+    whose `quiet` option suppresses the progress stream entirely would
+    have returned `undef` where the method's own POD promises an
+    ArrayRef. Not observable on Podman -- measured 5.4.2 (API 1.41),
+    `quiet` unset, `0` and `1` all answer with the identical single
+    `{"stream":"Loaded image: ..."}` object, so `quiet` is ignored there
+    outright -- but the transport no longer depends on that.
+  - New `images->get`, `images->get_all` and `images->load`: the image tar
+    roundtrip, and the only way in or out of a daemon that does not go
+    through a registry. `get` and `get_all` return the export as raw bytes
+    and never decode it -- exporting `alpine:3` through `get` produced bytes
+    md5-identical to what `curl --unix-socket` wrote for the same request,
+    all 8705536 of them. `get_all` sends `names` as a repeated query
+    parameter, which is the only spelling either engine accepts: measured
+    against the rootless Podman socket (5.4.2, API 1.41), the comma-joined
+    form answers 500, `parsing reference "alpine:3,registry:2": invalid
+    reference format`, and no names at all answers 400, `no images to
+    download`. `load` sends the archive as the request body and returns the
+    progress stream as an ArrayRef of events, the shape `build` and `pull`
+    already return. Its `quiet` option changes how much the engine says, not
+    the return shape -- and Podman ignores it outright: unset, 0 and 1 all
+    produced the identical single `{"stream":"Loaded image: ..."}` object.
+    A failed load croaks by whichever route the engine chooses, the same
+    split `pull` and `push` already have: Docker reports `errorDetail`
+    inside a 200 stream, Podman answers 500 with `failed to load image:
+    payload does not match any of the supported image formats`. All three
+    accept the new `on_event`/`on_chunk` streaming options above; `get` and
+    `get_all` additionally avoid buffering the whole archive in memory when
+    given `on_chunk`.
+  - New `images->commit`, POST /commit: turns a container into an image,
+    the one image-producing path that does not go through a build context.
+    Takes container, repo, tag, comment, author, pause and changes as query
+    parameters and an optional ContainerConfig as the body. `changes` takes
+    a string or an ArrayRef; an ArrayRef is joined with newlines because the
+    engine parses each value as a Dockerfile snippet and a snippet may span
+    lines -- measured against the rootless Podman socket (5.4.2, API 1.41),
+    one newline-joined value and two repeated `changes=` pairs produce the
+    same image. The response is 201 Created with an `Id`, and on Podman that
+    id is a bare hex digest with no `sha256:` prefix where Docker prefixes
+    it, so do not compare it literally against an id from `inspect`.
+  - New `images->build_prune`, POST /build/prune: clears the BuildKit build
+    cache, which is a different store from the dangling images
+    `images->prune` deletes -- neither touches the other's storage. Options
+    `keep_storage`, `all` and `filters` (the last normalised through
+    `API::Docker::Role::Filters`, above); the engine spells the first one
+    `keep-storage` and that is what goes on the wire, but the underscore
+    form is the documented spelling because an unquoted `keep-storage => $n`
+    is not valid Perl. Podman does not implement the endpoint: measured
+    against the rootless socket (5.4.2, API 1.41), it answers 404 Not Found
+    with a text/plain body of `Not Found` -- not the JSON `{"message":...}`
+    its other errors use -- at every version prefix tried and with no libpod
+    equivalent, so the croak carries that plain body verbatim.
+  - New `containers->get_archive`, `->put_archive` and `->stat_archive`:
+    the GET, PUT and HEAD sides of `/containers/{id}/archive`, which
+    is what `docker cp` is built on. `stat_archive` decodes the
+    `X-Docker-Container-Path-Stat` header -- base64-encoded JSON
+    -- into a HashRef rather than handing the caller the base64;
+    `get_archive` takes an optional `stat => \%hash`, because the
+    engine sends the same header on the GET and a second round trip
+    is not needed for it. New `containers->changes` and `->export`:
+    `changes` documents its `Kind` numbers -- `0` modified, `1` added,
+    `2` deleted -- and returns an empty ArrayRef where the engine answers
+    an unchanged container with a JSON `null` (now decoded to `undef`
+    by the transport itself, see above, and normalised the rest of the
+    way to `[]` here); `export` returns the container's filesystem as a
+    raw, undecoded tar. New `containers->resize`, form-identical to the
+    `resize` `API::Docker::API::Exec` already had, so the two classes
+    no longer disagree about the same capability. `containers->attach`
+    is documented above, alongside the streaming transport it depends
+    on. Measured against Podman 5.4.2 (API 1.41): all these routes are
+    served, and an unknown container answers 404 on archive, `export`,
+    `resize` and `attach` but 500 `"layer not known"` on `changes` -- so
+    the status code alone does not identify "no such container" there. HEAD
+    on archive announces a Content-Length while sending no body -- which
+    is why the transport gained a `head` verb that never waits for one
+    (see above). `API::Docker::Container` forwards all seven new methods
+    (`get_archive`, `put_archive`, `stat_archive`, `attach`, `changes`,
+    `export`, `resize`).
+  - New `API::Docker::API::Plugins`, reachable as `$docker->plugins`:
+    `list`, `privileges`, `install`, `inspect`, `remove`, `enable`,
+    `disable`, `upgrade`, `push` and `configure` for the managed-plugin
+    endpoints under `/plugins`. `list` and `inspect` return the
+    daemon's raw Plugin objects rather than entity objects -- there is no
+    `API::Docker::Plugin` (karr #31, deferred; no consumer depends on the
+    shape yet). `install` and `upgrade` require the privilege list the
+    plugin demands and croak without it, since the daemon compares what is
+    sent against what it computes from the plugin's own config and refuses
+    a mismatch with `"incorrect privileges"` while treating a missing body
+    as an empty list -- fetch it with `plugins->privileges` and pass it
+    back, or pass `accept_privileges => 1` to grant whatever the plugin
+    asks for. `enable` always sends `timeout`, defaulting to 0: the daemon
+    parses the raw query value with Go's `strconv.Atoi` and has no default
+    of its own, so an omitted `timeout` fails with `'strconv.Atoi: parsing
+    "": invalid syntax'` -- the Engine API reference documents a default
+    of 0 that does not exist. `list`'s filters take `enabled`, not the
+    `enable` the Engine API reference documents; the daemon validates
+    plugin filter names against `{enabled, capability}` and rejects an
+    unknown one outright, so the documented spelling fails the request
+    rather than harmlessly matching nothing. `privileges`, `install`,
+    `upgrade` and `push` send `X-Registry-Auth` only when `auth` is given,
+    unlike `images->push` which must always send one: the plugin router
+    discards an undecodable auth header, and the reference documents the
+    header on neither `privileges` nor `push` though the daemon reads
+    it on both. `install`, `upgrade` and `push` also accept the new
+    `on_event` streaming option above. The whole family needs a real
+    Docker daemon: measured against the rootless Podman socket (5.4.2,
+    API 1.41), none of it exists there -- `GET /v1.41/plugins` answers
+    404 `"Path /v1.41/plugins is not supported"`, and every other path
+    in the family answers a bare text/plain 404.
+  - New `API::Docker::API::System::auth`, POST /auth: check a set of
+    registry credentials without pulling or pushing anything, so a consumer
+    building and tagging an image can find out about a stale credential
+    before doing that work rather than partway through a push. Takes either
+    the AuthConfig keys directly (username, password, email, serveraddress,
+    identitytoken) or `auth => $config`, the same argument `images->push`
+    takes, but croaks if both are given -- which one would win is a silent
+    choice about someone's credentials. A rejected credential croaks,
+    which is what makes a plain successful call usable as a pre-flight
+    check; `response => \%res` is filled before the croak for a caller that
+    wants to eval and read the status. Passing no credentials at all croaks
+    before the request is even sent, stricter than the engine, which would
+    otherwise answer an empty AuthConfig with a prompt-for-stdin error
+    that reads like a real rejection. Measured against rootless Podman
+    5.4.2 (API 1.41): the endpoint exists, but a failed check answers 500,
+    not Docker's 401, with the registry's own text wrapped by Podman's;
+    an empty AuthConfig answers 500 `"cannot prompt for username without
+    stdin"`. No login was ever attempted against a real registry --
+    probes used an unreachable serveraddress (127.0.0.1:1).
+  - New `API::Docker::API::Distribution::inspect` and `->exists`,
+    GET /distribution/{name}/json: ask a registry for an image manifest
+    without pulling, which `../p5-dist-zilla-plugin-docker-api` needs for
+    its `fail_if_tag_exists` option (previously a stub always answering
+    `"no"`). `inspect` is the endpoint and croaks on any status `>= 400`,
+    404 included, like every other method in this distribution; `exists`
+    is the question and answers it without needing eval -- `1`, `0`, or a
+    croak. `exists` cannot simply read 404 as `"no"`: measured against the
+    rootless Podman socket (5.4.2, API 1.41), the engine itself serves no
+    route at all here (404, `"Path /v1.41/distribution/nginx:latest/json
+    is not supported"`), and reading that the same as the registry's own
+    `"no such reference"` 404 would answer false for every image on that
+    engine -- reintroducing the stubbed constant `"no"` one layer down,
+    where it looks like a real answer. `exists` tells the two apart
+    by wording (`"is not supported"` / `"page not found"` means the
+    engine, not the registry, is answering) and croaks on the former;
+    live-verified against the Podman socket, `exists('nginx:latest')`
+    croaks rather than returning `0`. Registry auth is sent only when
+    `auth` is given, unlike `images->push`, which always sends one --
+    an anonymous lookup of a public image sends no header at all.
+  - New `API::Docker::API::Secrets` and `API::Docker::API::Configs`:
+    `list`, `create`, `inspect`, `update` and `remove` on `/secrets` and
+    `/configs` -- both were scaffolding-only classes before, and neither
+    wraps its results in an entity object yet (karr #35, deferred, for
+    the same reason as plugins above). Secrets and configs take `Data`
+    as raw bytes and base64-encode it for the caller. Measured against
+    Podman 5.4.2: the daemon does not validate what it decodes, and a
+    `Data` of the plain text `"hello there!"` was accepted with HTTP
+    200 while storing three bytes of garbage. The alphabet is standard
+    base64, not the URL-safe one the Engine API reference names -- four
+    bytes sent as `-v_--w==` were rejected 500 where `+v/++w==` stored
+    correctly. `update` takes the current `Version.Index` as a mandatory
+    second argument and croaks without it, rather than letting the daemon
+    reject the request; it comes from `inspect($id)->{Version}{Index}` and
+    is an optimistic-concurrency token. Finally, the scope decision the
+    two were carved out of: `/swarm`, `/nodes`, `/services` and `/tasks`
+    remain deliberately absent. Podman implements none of them and no
+    consumer asks for them. Measured: Podman 5.4.2 does serve `/secrets`
+    from its own local secret store with no swarm anywhere in sight,
+    answers 501 `"update is not supported"` to `/secrets/{id}/update`,
+    and serves no `/configs` at all (404, plain text) -- so secrets and
+    configs stand on their own rather than on an orchestrator, and are
+    covered despite belonging to the same Engine API family Swarm does.
 
 0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the

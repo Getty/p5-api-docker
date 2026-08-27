@@ -76,14 +76,21 @@ the source of truth, not this file.
 
 ```
 lib/API/Docker.pm                       # main client, version negotiation
-lib/API/Docker/Role/HTTP.pm             # HTTP/1.1 transport (unix:// + tcp://)
-lib/API/Docker/API/System.pm            # /version, /info, /_ping
-lib/API/Docker/API/Containers.pm        # container endpoints
-lib/API/Docker/API/Images.pm            # image endpoints (build, pull, push, ...)
+lib/API/Docker/Role/HTTP.pm             # HTTP/1.1 transport (unix:// + tcp://, TLS)
+lib/API/Docker/Role/RegistryAuth.pm     # X-Registry-Auth / AuthConfig encoding
+lib/API/Docker/Role/Filters.pm          # the `filters` query parameter, shape-normalised
+lib/API/Docker/API/System.pm            # /version, /info, /_ping, /auth, /events
+lib/API/Docker/API/Containers.pm        # container endpoints (incl. archive, attach)
+lib/API/Docker/API/Images.pm            # image endpoints (build, pull, push, tar, commit, ...)
 lib/API/Docker/API/Networks.pm          # network endpoints
 lib/API/Docker/API/Volumes.pm           # volume endpoints
 lib/API/Docker/API/Exec.pm              # exec endpoints
+lib/API/Docker/API/Distribution.pm      # /distribution registry manifest lookups
+lib/API/Docker/API/Secrets.pm           # /secrets
+lib/API/Docker/API/Configs.pm           # /configs
+lib/API/Docker/API/Plugins.pm           # /plugins
 lib/API/Docker/{Container,Image,Network,Volume}.pm  # entity classes
+lib/API/Docker/Error/Stream.pm          # croaked on a failed build/pull/push stream
 t/                                      # tests (prove -lr t/)
 t/lib/Test/API/Docker/Mock.pm           # fixture-driven mock helper
 t/fixtures/*.json                       # captured daemon responses
@@ -116,9 +123,11 @@ testing nothing:
 API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock prove -lr t/
 ```
 
-That run is currently not green: `t/system.t`'s `events` subtest asserts a
-shape a real daemon does not return for an empty window. It is on the board,
-not a new finding.
+That run is green (26 files, 289 tests). `t/system.t`'s `events` subtest used
+to assert a shape a real daemon does not return for an empty window; the live
+branch was made tolerant of it in `1ad2c28`, and the underlying cause is now
+fixed too — `_request` returns `[]` rather than `undef` for a zero-byte
+`ndjson` body.
 
 ## Delegation
 

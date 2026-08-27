@@ -96,17 +96,6 @@ names a specific item to handle.
   missing socket with `skip_all`. A live run pointed at the default therefore reports
   success while testing nothing. The real endpoint is
   `API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock` (announces API 1.41).
-- **The suite is not green against a live daemon.** `t/system.t`'s `events` subtest
-  asserts `ref eq 'ARRAY'` outside its `is_live()` guard; a real daemon with no events in
-  the requested window returns an empty body, `_request` returns undef, and the test
-  fails. It is ticketed — do not rediscover it as a new finding and do not fix it
-  opportunistically.
-- **`containers->logs` hands frame headers to the caller.** A container created without
-  a TTY produces an 8-byte-framed stream (`01 00 00 00 00 00 00 04` + payload, stream
-  type in byte 0, big-endian length in bytes 4-7) and the method returns it undecoded;
-  with a TTY the stream is raw and looks correct, so hand-testing interactively hides it.
-  `exec->start` shares the problem and there is no `attach` at all. Ticketed — it is a
-  public return-shape change, not a passing fix.
 - **Live write tests mutate the real engine.** `API_DOCKER_TEST_WRITE=1` creates and
   removes actual containers, images, networks and volumes; cleanup runs in an `END`
   block, so an interrupted run leaves them behind. Run only when the task is about live
@@ -114,15 +103,22 @@ names a specific item to handle.
 - **`images->push` publishes.** With credentials it writes to a real registry under the
   maintainer's account. Never run it — nor any test that does — without explicit
   instruction.
-- **Streaming endpoints block until the daemon closes.** `_request` buffers whole
-  responses, so `system->events` or `containers->stats` without a bound never returns.
-  Always bound the window, and wrap manual probes in `timeout`.
-- **`tls` and `cert_path` are attributes with no implementation.** `Role::HTTP` never
-  reads them; `tcp://` is always plaintext. Wiring TLS is new work with an ADR-grade
-  decision behind it, not a repair.
+- **Streaming endpoints block until the daemon closes, unless given a callback.**
+  `_request` still buffers a whole response by default, so `system->events` or
+  `containers->stats` without a bound and without `on_event`/`on_frame`/`on_chunk` never
+  returns. Bound the window, pass a callback, or wrap a manual probe in `timeout` — a
+  callback still needs `$stop->()` called from somewhere, or it runs until the daemon
+  closes the connection on its own.
 - **`../p5-dist-zilla-plugin-docker-api` consumes this API.** A public signature or
   return-shape change is a cross-repo change: verify that repo, or file a ticket on its
   board before landing.
+- **`[@Author::GETTY]` gathers through `Git::GatherDir`, which sees only tracked
+  files.** A new `.pm`, test file or fixture is invisible to `dzil build`/`dzil test`
+  until it is `git add`-ed — while `prove -lr t/` stays green the whole time, because it
+  reads `lib/` and `t/` directly rather than through the gathered file list. A `dzil
+  build` failure that looks like a missing module, or a passing `prove` next to a
+  failing `dzil test`, is this before anything else: check `git status` for an untracked
+  file first.
 
 ## Perl specifics — reference, don't restate
 
