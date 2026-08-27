@@ -30,12 +30,22 @@ check_live_access();
 # GET /containers/{id}/archive?path=/etc/hostname, captured from a running
 # apidocker-fixture-archive container on Podman 5.4.2 (API 1.41) -- karr #36
 # replaced the hand-built ustar that stood in here before. Measured
-# differences from the hand-built version: uname/gname are populated
-# ('root'/'root', not empty), devmajor/devminor are the ASCII string
-# '0000000' rather than left as raw NUL bytes, and mode reflects the file's
-# real permissions (0644, not the guessed 0664). Block size (512), the two
-# trailing all-zero blocks that end the archive, the ustar magic/version, and
-# the empty prefix field were already right in the hand-built one.
+# differences from the hand-built version: uname/gname were populated
+# ('root'/'root', not empty) on that 5.4.2 socket, devmajor/devminor are the
+# ASCII string '0000000' rather than left as raw NUL bytes, and mode reflects
+# the file's real permissions (0644, not the guessed 0664). Block size (512),
+# the two trailing all-zero blocks that end the archive, the ustar
+# magic/version, and the empty prefix field were already right in the
+# hand-built one.
+#
+# karr #62 re-measured the same archive live on Podman 5.8.4 (API 1.44):
+# uname/gname now come back NUL rather than 'root', byte-identical to a
+# Docker 29.7.2 capture of the same file -- Podman changed to match Docker
+# here, so this is no longer a difference between the two engines. The
+# fixture below is kept as the 5.4.2 capture rather than recaptured: nothing
+# in this file asserts uname/gname (only length, the ustar magic, the member
+# name and byte-exact roundtrip through the transport are checked), so the
+# 5.4.2 bytes still exercise exactly what this file tests.
 my $TAR = load_fixture_raw('containers_archive.tar');
 
 # The one-way attach stream is byte-identical to the logs stream, which is the
@@ -65,8 +75,9 @@ my $TAR = load_fixture_raw('containers_archive.tar');
 # "from the time the request was made onwards" and its only terminator is the
 # container ending, which for a stopped container already happened. So this
 # client now follows the engine's own default of stream=0 and defaults logs=1
-# instead. Docker is unverified: there is no Docker daemon here, and the
-# reference promises a close in neither direction.
+# instead. Docker was unverified when this was written; it has since been
+# measured (29.7.2, API 1.55) and hangs identically, so the hang is not a
+# Podman quirk but behaviour the reference leaves unspecified for both.
 #
 # The live subtests below still never call attach: the transport buffers, and
 # an explicit stream => 1 is still a hang waiting to happen.

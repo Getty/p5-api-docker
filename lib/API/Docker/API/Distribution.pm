@@ -63,7 +63,9 @@ that cannot fail loudly would have reintroduced it one layer up.
 Measured against the rootless Podman socket (5.4.2, API 1.41):
 C<< GET /v1.41/distribution/nginx:latest/json >> answers C<404 Not Found>
 with
-C<< {"cause":"","message":"Path /v1.41/distribution/nginx:latest/json is not supported","response":0} >>,
+C<< {"cause":"","message":"Path /v1.41/distribution/nginx:latest/json is not supported","response":0} >>
+(the C<1.41> there is this client's negotiated API version, echoed back from
+the request path -- it moves with negotiation, not a fixed string),
 and so does every other reference, escaped or not -- the compat layer has no
 route for this endpoint. This class therefore needs a real Docker daemon.
 
@@ -154,7 +156,10 @@ written into, as for L<API::Docker::Role::HTTP/get>
 
 # The engine's own "I have no such route" 404 versus the registry's "I do not
 # have that reference" 404. Measured on Podman 5.4.2 (API 1.41), which has no
-# route: 'Path /v1.41/distribution/nginx:latest/json is not supported'.
+# route: 'Path /v1.41/distribution/nginx:latest/json is not supported'. That
+# '1.41' is the negotiated API version echoed back from the request path, not
+# a fixed string -- it moves with negotiation, which is why the regex below
+# matches on wording rather than on a version number.
 # Docker's own unknown-route answer is 'page not found'. Anything not
 # recognised as the engine talking about itself is taken as the registry's
 # answer, so an unfamiliar wording degrades to plain "404 means no" rather

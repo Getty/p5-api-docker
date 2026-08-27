@@ -541,9 +541,34 @@ point L</host> at it:
     systemctl --user enable --now podman.socket
     export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
 
-The socket announces API version 1.41, which L</negotiate_version> picks up
+The socket announces API version 1.44, which L</negotiate_version> picks up
 like any other daemon. Multi-stage builds are passed through unchanged,
 C<target> included, down to skipping the stages the target does not depend on.
+
+=head2 Engines and versions behind the measurements in this POD
+
+Where this distribution's documentation says what an engine does rather than
+what the Engine API reference says it should do, that statement was measured
+against a real socket, not assumed. Three engines stand behind the
+measurements found throughout this POD:
+
+=over
+
+=item * Podman 5.4.2, API 1.41
+
+=item * Podman 5.8.4, API 1.44
+
+=item * Docker 29.7.2, API 1.55
+
+=back
+
+Podman statements have been checked against both 5.4.2 and 5.8.4. Where an
+individual statement names no version, it holds for both. A version named at
+one particular measurement -- C<"Measured against Podman 5.4.2 (API 1.41):
+...">, for instance -- names the engine that measurement was taken I<on>, not
+the only engine it is claimed to hold for; read it as provenance, not as a
+scope limit. Where a measurement genuinely is version-specific -- superseded
+by a later one, or not re-checked on the other version -- the text says so.
 
 =head2 Socket discovery
 

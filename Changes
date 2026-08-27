@@ -508,10 +508,12 @@ Revision history for API-Docker
     string `0000000` rather than raw NUL bytes, and uname/gname are
     populated `root`/`root` rather than empty; block size, the trailing
     zero blocks and the ustar magic were already right. That last field is
-    the one place the engines differ -- Docker 29.7.2 leaves uname and
-    gname NUL, so `tar -tvf` renders the same member as `0/0` there and
-    `root/root` on Podman. Everything else in the header is byte-identical
-    between the two.
+    the one the engines were measured to disagree on at the time: Docker
+    29.7.2 leaves uname and gname NUL, where Podman 5.4.2 wrote
+    `root`/`root`, so `tar -tvf` rendered the same member as `0/0` there
+    and `root/root` here. Podman 5.8.4 writes NUL as well, so on the
+    current pair the header is byte-identical throughout and the fixture
+    is a capture of the older behaviour.
   - `X-Docker-Container-Path-Stat` is measured on both engines, and they
     disagree on two of its keys. `mode` is Go's `os.FileMode` on both, not
     a POSIX `st_mode` word -- the two coincide for a regular file, which
@@ -632,10 +634,12 @@ Revision history for API-Docker
     a failed assertion. It now skips on that status and re-raises anything
     else, and Podman keeps running the assertion for real. The two
     `configs` subtests skipped with a reason that was Podman's alone
-    (`Podman serves no /configs route`); measured, Podman answers 404 with
-    no such route while Docker answers the same swarm 503 it gives
-    `/secrets`, so the reason now names both and the scope decision behind
-    them.
+    (`Podman serves no /configs route`); measured, Docker answers the same
+    swarm 503 it gives `/secrets`, while Podman answers 404 for the
+    collection itself -- and, measured later on 5.8.4, a 503 of its own
+    (`Podman does not support service`) for every path below it. So the
+    reason now names both engines and the scope decision behind them
+    rather than one engine's answer.
   - `t/stream_error.t`'s live build-failure subtest matched Podman's prose
     against whatever engine it was pointed at, and failed against Docker,
     which words the same failure `returned a non-zero code: 7` rather than
@@ -725,6 +729,39 @@ Revision history for API-Docker
     (`read` = `0001-01-01T00:00:00`) every second indefinitely. An idle
     timeout never fires on a stream that keeps producing, so that case still
     needs the caller's own `$stop->()`.
+  - Which engines the measurements in this release were taken on, since
+    nearly every entry above names one: Podman 5.4.2 (API 1.41), Podman
+    5.8.4 (API 1.44) and Docker 29.7.2 (API 1.55), all rootless on the same
+    machine except Docker. Where an entry names a single version, that is
+    the engine the measurement was taken on and not the only one it holds
+    for: the Podman claims were re-measured against 5.8.4 after the socket
+    moved to it, 51 of them, and 47 came back unchanged. Four did not, and
+    each is described where it belongs rather than only here: the announced
+    API version (1.41 to 1.44), the archive tar's uname/gname (`root` to
+    NUL, which removes the one difference from Docker), `/configs` below
+    the collection (404 to a 503 of Podman's own), and a sixth lifecycle
+    action in `/events` (`cleanup`, between `die` and `remove`). No code had
+    to change for any of them -- the error-object check in
+    `containers->stats` and the 304 the state changes read as a no-op both
+    still measure exactly as documented; what the four moved in `lib/` was
+    prose, and `API::Docker` now carries a section naming the engines these
+    measurements were taken on so a single version stamped on one passage
+    is not read as the only one it holds for.
+  - Test comments corrected against the same re-measurement, without
+    touching a fixture or an assertion: the archive tar's uname/gname claim
+    is scoped to the 5.4.2 capture the fixture is, the `/events` sample is
+    labelled as five actions where the engine now sends six, the `/configs`
+    skip reason distinguishes the collection from the item routes, and the
+    three places quoting a `Path /vX.YZ/... is not supported` message say
+    that the version in it is the requested prefix echoed back. Both
+    fixtures were deliberately kept rather than recaptured: nothing asserts
+    the fields that moved, the regressions they guard do not depend on
+    them, and recapturing would trade a dated capture for a number that
+    goes stale at the next engine bump. One comment in
+    `t/containers_endpoints.t` said Docker was unverified because no Docker
+    daemon was available; it has since been measured and hangs identically,
+    so the attach hang is unspecified behaviour on both engines rather than
+    a Podman quirk.
 
 0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the

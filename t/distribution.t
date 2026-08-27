@@ -22,7 +22,12 @@ use Test::API::Docker::Mock;
 #   -> 404 {"cause":"","message":"Path /v1.41/distribution/nginx:latest/json
 #           is not supported","response":0}
 #
-# and the same for a bare name and for a percent-escaped reference. So the
+# and the same for a bare name and for a percent-escaped reference. That
+# version number just echoes the requested path prefix, not a fixed daemon
+# constant -- re-measured live on 5.8.4 / API 1.44 the same request gets
+# "/v1.44/distribution/..." back instead (karr #62). $PODMAN_404 below reads
+# "/v1.41/..." because fake_client() always negotiates api_version 1.41; no
+# assertion matches the number either way, only qr/is not supported/. So the
 # daemon is faked below the socket instead, and the real _request runs. The
 # success payload is the Engine API reference's own example descriptor.
 #

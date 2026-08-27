@@ -18,10 +18,14 @@ my $REQUEST_SHAPE = 'asserts the outgoing request; only the mock can see it';
 
 # The Engine API reference's shape for a config, kept inline instead of in
 # t/fixtures/: the files there are captured from a real daemon, and no engine
-# reachable from this repo serves /configs. Podman answers 404 with a
-# plain-text "Not Found" to every path under it (measured, 5.4.2 / API 1.41)
-# and there is no Docker on this machine, so a configs_list.json would be a
-# hand-rolled file dressed up as a capture.
+# reachable from this repo serves /configs. Podman answers the collection GET
+# (/configs) with a plain-text "Not Found" 404, unchanged since it was first
+# measured on 5.4.2 / API 1.41 -- but every item-scoped route under it
+# (create, inspect, update, remove) answers 503 JSON instead, not the same
+# 404 (re-measured live, Podman 5.8.4 / API 1.44, karr #62; see the
+# $CONFIGS_UNSERVED comment below for the detail). There is no Docker on this
+# machine, so a configs_list.json would be a hand-rolled file dressed up as a
+# capture.
 my $CONFIG = {
   ID        => 'ktnbjxoalbkvbvedmg1urrz8h',
   Version   => { Index => 11 },
@@ -332,23 +336,29 @@ subtest 'secrets remove' => sub {
 
 # --- configs: the same five endpoints, one different return -----------------
 #
-# Podman has no /configs route at all: it answers 404 Not Found, plain text
-# body "Not Found", to every request under it -- the same blanket 404 any
-# unimplemented path gets (measured live, Podman 5.4.2 / API 1.41). Docker
-# does serve /configs, but only inside an initialised swarm manager; outside
-# one it answers 503 with a JSON body, "This node is not a swarm manager. Use
-# \"docker swarm init\" or \"docker swarm join\" to connect this node to
-# swarm and try again." -- the same gate /secrets sits behind (measured live,
-# Docker 29.7.2 / API 1.55). Unlike /secrets, which Podman serves from its
-# own local store with no swarm involved, /configs has no swarm-free path on
-# either engine, and swarm orchestration is out of scope for this
-# distribution (see API::Docker's own POD, and `docker swarm init` is a real
-# change to the host's networking that no test may make besides). So neither
-# live engine reachable from this suite ever actually answers /configs, and
+# Podman has no /configs route: GET /configs (the collection) answers the
+# same blanket 404 Not Found, plain text body "Not Found", that any
+# unimplemented path gets (measured live, Podman 5.4.2 / API 1.41, and
+# unchanged on 5.8.4 / API 1.44 -- karr #62). Every item-scoped route under
+# it -- create, inspect, update, remove -- instead answers 503 with a JSON
+# body, {"cause":"Podman does not support service: <path>","message":"...",
+# "response":503} (re-measured live on 5.8.4 / API 1.44, karr #62; not
+# checked against 5.4.2). Docker does serve /configs, but only inside an
+# initialised swarm manager; outside one it answers 503 with a JSON body,
+# "This node is not a swarm manager. Use \"docker swarm init\" or \"docker
+# swarm join\" to connect this node to swarm and try again." -- the same
+# gate /secrets sits behind (measured live, Docker 29.7.2 / API 1.55).
+# Unlike /secrets, which Podman serves from its own local store with no
+# swarm involved, /configs has no swarm-free path on either engine, and
+# swarm orchestration is out of scope for this distribution (see
+# API::Docker's own POD, and `docker swarm init` is a real change to the
+# host's networking that no test may make besides). So neither live engine
+# reachable from this suite ever actually answers /configs with data, and
 # both subtests below skip unconditionally on is_live() for that reason --
 # not because of a Podman-specific gap.
-my $CONFIGS_UNSERVED = 'no live engine here serves /configs: Podman has no such route (404), '
-  . 'Docker gates it behind swarm (503) and swarm is out of scope for this distribution';
+my $CONFIGS_UNSERVED = 'no live engine here serves /configs: Podman has no route for it '
+  . '(404 on the collection, 503 on everything else), Docker gates it behind swarm (503) '
+  . 'and swarm is out of scope for this distribution';
 
 subtest 'configs list' => sub {
   plan skip_all => $CONFIGS_UNSERVED if is_live();

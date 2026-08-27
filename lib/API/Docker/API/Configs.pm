@@ -130,14 +130,31 @@ engine behaviour, not a fault at this end -- the daemon needs
 C<docker swarm init>, or a manager to talk to, and a single-node install that
 has never run it is the ordinary case, not an edge one.
 
-B<Podman does not serve C</configs> at all.> Measured against Podman 5.4.2
-(API 1.41): every path under it answers B<404> with the plain-text body
-C<Not Found>, not a JSON error, so the croak from this client reads
-C<Docker API error (404): Not Found>. There is no Podman-side equivalent to
-fall back on and no socket setting that enables it. This is the one class in
-the distribution that cannot be exercised against the engine the rest of it is
-tested on -- L<API::Docker::API::Secrets>, the same five endpoints, is served
-by Podman from its own local secret store.
+B<Podman does not serve C</configs>,> though what it answers for "not served"
+differs by path. Measured against the rootless socket on Podman 5.8.4 (API
+1.44): C<GET /configs> -- the collection listing -- still answers B<404> with
+the plain-text body C<Not Found>, not a JSON error, so the croak from this
+client reads C<Docker API error (404): Not Found>. Every other path under it
+-- C<GET /configs/{id}>, C<POST /configs/create>, C<DELETE /configs/{id}> and
+C<POST /configs/{id}/update> -- answers B<503> instead, with a JSON body
+naming the route it refuses, e.g. C<< {"cause":"Podman does not support
+service: /v1.44/configs/xyz","message":"...","response":503} >>.
+
+An earlier pass measured every path here as a flat 404 against Podman 5.4.2
+(API 1.41). That measurement is not reproducible on this machine any more --
+5.4.2 is gone from it -- so whether 5.8.4 actually changed this or the
+original pass only ever exercised the collection endpoint is not something
+this distribution can decide from here; it is recorded as what 5.8.4 answers,
+not as a change from 5.4.2. Either way, the split this section used to draw
+between the two engines -- Docker's 503 "not a swarm manager" against a flat
+Podman 404 -- no longer holds cleanly: most C</configs> paths on Podman answer
+503 too now, just with a different body and for a different reason.
+
+There is no Podman-side equivalent to fall back on and no socket setting that
+enables it. This remains the one class in the distribution that cannot be
+exercised for real against the engine the rest of it is tested on --
+L<API::Docker::API::Secrets>, the same five endpoints, is served by Podman
+from its own local secret store.
 
 =cut
 

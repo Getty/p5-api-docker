@@ -17,10 +17,13 @@ use Test::API::Docker::FakeTransport;
 # none of /plugins -- measured, 2026-08-27, rootless Podman 5.4.2 (API 1.41):
 # GET /v1.41/plugins answers 404 with
 # {"cause":"","message":"Path /v1.41/plugins is not supported","response":0}
-# and every other path in the family answers a bare text/plain 404, i.e. the
-# compat layer has no route for them at all. A live run of this file would
-# therefore be red, and a skip_all would leave the whole class untested on
-# the machine that actually runs the suite.
+# (that version number just echoes the requested path prefix, not a fixed
+# daemon constant -- re-measured live on 5.8.4 / API 1.44 the same message
+# reads "/v1.44/plugins", karr #62) and every other path in the family
+# answers a bare text/plain 404, i.e. the compat layer has no route for them
+# at all. A live run of this file would therefore be red, and a skip_all
+# would leave the whole class untested on the machine that actually runs the
+# suite.
 #
 # So the daemon is faked below the socket instead, in both modes. Most of
 # what is worth pinning about this endpoint family is in the request rather

@@ -135,8 +135,10 @@ C<"update is not supported">, with or without a C<version> parameter.
 
 =back
 
-L<API::Docker::API::Configs> gets none of this -- Podman serves no C</configs>
-route whatsoever.
+L<API::Docker::API::Configs> gets none of this -- Podman does not serve
+C</configs> from a real store the way it does C</secrets>; see
+L<API::Docker::API::Configs/"Swarm, and Podman"> for what it answers instead,
+which is not simply "no route" on every path.
 
 =cut
 

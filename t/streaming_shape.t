@@ -65,8 +65,14 @@ subtest 'a multi-object stream is an ArrayRef of every event' => sub {
 };
 
 subtest 'the /events stream decodes to an ArrayRef' => sub {
-  # Captured from podman for one container create/init/start/died/remove
-  # cycle. The whole body is not valid JSON on its own -- only line by line.
+  # Captured from Podman 5.4.2 (API 1.41) for one container
+  # create/init/start/died/remove cycle. karr #62 re-measured the identical
+  # flow live on 5.8.4 (API 1.44) and found a sixth action, "cleanup",
+  # between die and remove -- this fixture predates that and is not
+  # recaptured for it: the point of this subtest is that a multi-line body
+  # decodes to one ArrayRef entry per line, which five lines demonstrate as
+  # well as six would. The whole body is not valid JSON on its own -- only
+  # line by line.
   my $body = load_fixture_raw('system_events_stream.ndjson');
   is eval { JSON::MaybeXS::decode_json($body) }, undef,
     'the body does not decode as a single JSON document';

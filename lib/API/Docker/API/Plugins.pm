@@ -71,7 +71,10 @@ The same applies to L</upgrade>, which takes the same body.
 Measured against the rootless Podman socket (5.4.2, API 1.41): B<none> of the
 C</plugins> endpoints exist there. C<< GET /v1.41/plugins >> answers
 C<404 Not Found> with
-C<< {"cause":"","message":"Path /v1.41/plugins is not supported","response":0} >>,
+C<< {"cause":"","message":"Path /v1.41/plugins is not supported","response":0} >>
+(the C<1.41> there is this client's negotiated API version, echoed back from
+the request path -- it moves with negotiation, not a fixed string in the
+daemon's error text),
 and every other path in this family -- C</plugins/privileges>,
 C</plugins/pull>, C</plugins/{name}/json>, C</plugins/{name}/enable> and the
 rest -- answers a bare C<404 Not Found> as C<text/plain>, meaning the compat

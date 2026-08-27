@@ -1585,28 +1585,43 @@ decodes. Its keys are the engine's, passed through as they arrive:
 
 =over
 
-=item * C<name> - The path's basename
+=item * C<name> - The path's basename. For a symlink the two engines
+disagree: Docker reports the requested path's own basename, Podman the
+resolved target's
 
 =item * C<size> - Size in bytes
 
-=item * C<mode> - Go's C<os.FileMode> bits, B<not> a POSIX mode word. The
-permission bits are the low nine (C<< $stat->{mode} & 0777 >>); the type bits
-above them are Go's own numbering, so C<0x80000000> is a directory rather than
-C<S_IFDIR>
+=item * C<mode> - Go's C<os.FileMode> bits, B<not> a POSIX mode word, on both
+engines. The permission bits are the low nine (C<< $stat->{mode} & 0777 >>);
+the type bits above them are Go's own numbering, so a directory's C<mode> is
+C<os.ModeDir> (C<< 1<<31 >>) plus the permission bits -- C<2147484141> for a
+C<0755> directory -- rather than POSIX's C<S_IFDIR>, which for the same
+directory would give C<16877>
 
 =item * C<mtime> - Modification time, RFC 3339
 
-=item * C<linkTarget> - Target of a symlink, empty otherwise
+=item * C<linkTarget> - The symlink target. Docker sends the literal,
+unresolved link content, and leaves this empty for anything that is not a
+symlink exactly as the Engine API reference documents; Podman sends the
+fully I<resolved> path instead, and was measured populating it even for a
+plain regular file, where Docker leaves it empty
+
+=item * C<isDir> - Boolean, true when the path is a directory. B<Podman
+only> -- Docker was measured never sending this key, not even for a
+directory, so it is not part of the Docker Engine API's own answer
 
 =back
 
-Those key names are the Docker Engine API's. They are not verified against
-Podman here: reading them needs a container to stat, and the work that added
-this method was held to read-only probes. What B<was> measured against Podman
-5.4.2 (API 1.41) is that the route is served, that it answers an unknown
-container with 404, and that its 404 announces a C<Content-Length> while
-sending no body -- which is why L<API::Docker::Role::HTTP/head> never reads
-one.
+This shape is confirmed against Podman, not assumed: measured against the
+rootless socket, C<stat_archive> on Podman returns exactly these six keys.
+For a symlink such as F<hnlink> pointing at F</etc/hostname>, Docker reports
+C<name> as C<hnlink> (the link's own basename) and C<linkTarget> as
+C</etc/hostname> (the raw, unresolved content); Podman reports C<name> as
+C<hostname> (the resolved target's basename) and the fully resolved path in
+C<linkTarget>. The route itself was measured the same way on Podman: an
+unknown container answers 404, and that 404 announces a C<Content-Length>
+while sending no body -- which is why L<API::Docker::Role::HTTP/head> never
+reads one.
 
 Options:
 
