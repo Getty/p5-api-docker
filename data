@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-08-27T23:31:55Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T23:31:55Z
+created: 2026-08-27T23:14:50Z
+id: 67
+priority: high
+started: 2026-08-27T23:31:55Z
+status: done
+tags:
+- docs
+- release-blocker
+title: 'README.md: tls option still documented as ''default 0'' unconditionally, stale
+  against the DOCKER_TLS_VERIFY default'
+updated: 2026-08-27T23:31:55Z
+---
+
+README.md line ~97: '`tls` — speak TLS on a `tcp://` connection (default `0`, plaintext; croaks on a `unix://` host).' This is now wrong: lib/API/Docker.pm's own =attr tls (correct and thorough) documents that tls defaults to 1 when $ENV{DOCKER_TLS_VERIFY} is any non-empty value and host is tcp://. Only lib/API/Docker.pm was updated for the DOCKER_TLS_VERIFY change; README.md's option list was not. Found during release audit while checking README.md against lib/API/Docker.pm's SYNOPSIS/attrs. Fix: update the tls bullet in README.md (and check cert_path/tls_insecure bullets nearby for the same drift) to match lib/API/Docker.pm's =attr tls text.
