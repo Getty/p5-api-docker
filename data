@@ -1,0 +1,70 @@
+---
+claimed_at: 2026-08-27T06:34:34Z
+claimed_by: registry-worker
+class: standard
+completed: 2026-08-27T06:34:34Z
+created: 2026-08-27T04:07:40Z
+id: 15
+priority: low
+started: 2026-08-27T05:07:39Z
+status: done
+tags:
+- api
+- registry
+title: No registry lookup - GET /distribution/{name}/json is not exposed
+updated: 2026-08-27T06:34:34Z
+---
+
+API::Docker has resource classes for images, containers, networks, volumes,
+system and exec, but nothing for the distribution endpoint:
+
+  GET /distribution/{name}/json
+
+The daemon uses it to query a *registry* for an image manifest without
+pulling - 200 with the descriptor when the reference exists there, 404 when
+it does not. Registry auth goes through the same X-Registry-Auth header as
+push.
+
+Requested by ../p5-dist-zilla-plugin-docker-api (its karr #6): the plugin
+has a fail_if_tag_exists option whose remote_tag_exists is a stub returning
+a constant "no", because there is no way to ask. It is documented as not
+implemented until this exists.
+
+Not urgent - the consumer ships with the option documented as a no-op.
+
+2026-08-27 05:20 Implemented as two methods on API::Docker::API::Distribution, and the
+"Scaffolding only" paragraph is gone.
+
+  $docker->distribution->inspect($ref, auth => $auth, response => \%res)
+  $docker->distribution->exists($ref, auth => $auth)
+
+The 404 question, resolved as a split rather than a single choice:
+
+  inspect  is the endpoint and croaks on any status >= 400, 404 included, like
+           every other method here. response => \%res is filled before the
+           croak, so an eval-ing caller reaches the status.
+  exists   is the question and answers it: 1, 0, or a croak -- callable
+           without eval, because everything it returns is an answer from the
+           registry and everything else is loud.
+
+Why exists cannot simply read 404 as "no": measured, rootless Podman 5.4.2
+(API 1.41) serves NO route for this endpoint at all --
+  GET /v1.41/distribution/nginx:latest/json
+  -> 404 {"cause":"","message":"Path ... is not supported","response":0}
+-- and the same for a bare name and a percent-escaped reference. A naive
+"404 means no" would answer no for every image on that engine, i.e. exactly
+the constant "no" of the consumer stub, reintroduced one layer down where it
+looks like an answer. exists tells the engine talking about itself apart from
+the registry talking about the reference ("is not supported" / "page not
+found") and croaks on the former. An unrecognised wording degrades to false,
+which is what a plain 404-means-no would have done anyway.
+
+Live-verified against the Podman socket: exists("nginx:latest") croaks with
+"cannot ask this engine", it does not return 0.
+
+Registry auth is sent only when auth was given (anonymous lookup of a public
+image sends no header), unlike images->push which always sends one.
+
+Tests: t/distribution.t (fixture-driven, no socket). prove -lr t/ and dzil
+test green; ../p5-dist-zilla-plugin-docker-api still green. No Changes entry
+written -- lines handed to the orchestrating agent.
