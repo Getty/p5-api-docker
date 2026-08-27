@@ -1,0 +1,47 @@
+---
+claimed_at: 2026-08-27T06:35:51Z
+claimed_by: transport-worker-2
+class: standard
+completed: 2026-08-27T06:35:51Z
+created: 2026-08-27T05:05:00Z
+id: 34
+priority: low
+started: 2026-08-27T05:18:58Z
+status: done
+tags:
+- transport
+title: An empty body returns undef before the raw and ndjson branches
+updated: 2026-08-27T06:35:51Z
+---
+
+_request short-circuits on an empty body:
+
+    if ($status_code == 204 || !defined($body) || $body eq '') {
+      return undef;
+    }
+
+    return $body if $opts{raw};
+    if ($opts{ndjson}) { ... return $events }
+
+So the early return wins over both option branches, and an endpoint that
+legitimately answers with zero bytes breaks its own documented return shape:
+
+  * `raw => 1` promises the response bytes verbatim, but a zero-byte body comes
+    back as undef rather than ''. A caller doing `length $tar` on the result
+    warns instead of getting 0.
+  * `ndjson => 1` promises an ArrayRef of events even for a one-object stream
+    (karr #3), but an empty stream comes back as undef rather than [].
+
+Reachable today through images->load (karr #20). Docker's `quiet` on
+POST /images/load suppresses progress detail, and on an engine that suppresses
+the stream entirely the body is empty, so load returns undef where its POD
+promises an ArrayRef. Podman does not expose it -- measured 5.4.2 (API 1.41),
+quiet unset, 0 and 1 all return the identical single
+{"stream":"Loaded image: ..."} object, so `quiet` is ignored there outright --
+but the transport should not depend on that.
+
+The load POD documents the undef case rather than papering over it. The fix is
+to move the empty-body check below the two option branches, so 204 and a
+genuinely absent body still return undef while `raw` returns '' and `ndjson`
+returns []. That changes a return value, so it needs its own regression test in
+t/streaming_shape.t and a Changes line.
