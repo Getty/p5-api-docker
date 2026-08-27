@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-08-27T06:36:10Z
+claimed_by: doc-writer
+class: standard
+completed: 2026-08-27T06:36:10Z
+created: 2026-08-27T05:38:05Z
+id: 41
+priority: medium
+started: 2026-08-27T05:58:47Z
+status: done
+tags:
+- docs
+- transport
+title: 'Stale no-TLS prose outside the transport after karr #26'
+updated: 2026-08-27T06:36:10Z
+---
+
+TLS is wired (karr #26). Three places still describe the state before it, all outside the files that change was allowed to touch:
+
+* README.md line 79: '`tls` -- enable TLS (experimental)'. It is not experimental and not a flag on its own: tls => 1 verifies, cert_path supplies ca.pem/cert.pem/key.pem, tls_insecure => 1 turns verification off, and IO::Socket::SSL is a recommended dependency. Line 80's cert_path entry says 'path to TLS certs', which is right but says nothing about the layout.
+
+* t/system.t lines 112-118: the live branch of the events subtest still reads 'the body is empty and _request returns undef rather than an arrayref'. After karr #34 an empty window returns []; measured against the rootless Podman socket, events(since => now-5, until => now-1) returns an ARRAY of 0 elements where it returned undef before. The ok(!defined($events) || ref($events) eq 'ARRAY') passes on its second arm now, so the undef arm and its comment are dead.
+
+* t/containers_endpoints.t line 431: 'The transport only tries decode_json on a body starting with { or [, so a null body reaches this method as the four-character string null'. After karr #30 it reaches the method as undef. The subtest itself still passes -- it asserts the normalised [] -- so this is prose only.
+
+Also worth a look: API::Docker::API::Plugins::privileges and Containers::changes both guard with 'unless ref $result eq ARRAY', which stays correct for undef and needs no change, but their comments name the old transport behaviour.
