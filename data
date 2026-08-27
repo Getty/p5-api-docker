@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-08-27T15:55:35Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T15:55:35Z
+created: 2026-08-27T05:06:34Z
+id: 35
+priority: low
+started: 2026-08-27T15:34:18Z
+status: done
+tags:
+- scope
+- coverage
+title: No API::Docker::Secret / ::Config entity classes - secrets and configs list/inspect
+  return raw
+updated: 2026-08-27T15:55:35Z
+---
+
+Deliberate for now, recorded so the deviation is visible rather than
+forgotten. The distribution invariant is that list and inspect return entity
+objects (_wrap / _wrap_list); API::Docker::API::Secrets and
+API::Docker::API::Configs return the daemon hashrefs instead, because ticket
+#27 scoped the work to the two API classes only and there is no
+API::Docker::Secret or API::Docker::Config to wrap into.
+
+Both POD blocks say so explicitly under =method list and =method inspect, so
+a caller is not surprised. Same shape as #31 for plugins.
+
+If entity classes are added, note that a Secret carries no payload at all
+while a Config carries Spec.Data as base64 - a Config entity is the natural
+place to offer a decoded accessor, which the API class deliberately does not
+do (it never rewrites a daemon response).
