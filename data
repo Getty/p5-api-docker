@@ -1,0 +1,29 @@
+---
+claimed_at: 2026-08-27T06:35:12Z
+claimed_by: containers-worker
+class: standard
+completed: 2026-08-27T06:35:12Z
+created: 2026-08-27T04:24:21Z
+id: 23
+priority: low
+started: 2026-08-27T05:02:53Z
+status: done
+tags:
+- containers
+- coverage
+title: Container inspection gaps - changes, export, resize
+updated: 2026-08-27T06:35:12Z
+---
+
+Three small ones, grouped because they are each a single method:
+
+  GET  /containers/{id}/changes  - filesystem diff against the image, an
+       arrayref of {Path, Kind} with Kind 0 modified, 1 added, 2 deleted
+  GET  /containers/{id}/export   - the container filesystem as a tar stream
+       (raw body, same requirement as the archive and images->get tickets)
+  POST /containers/{id}/resize   - resize the TTY, w and h query parameters
+
+resize is the odd one out: Exec has resize and Containers does not, so the
+two resource classes disagree about the same capability for no reason.
+
+2026-08-27 05:15 Implemented containers->changes, ->export and ->resize. resize is form-identical to Exec::resize (same %params shape, same w/h handling) and the test asserts both spell the query the same way. changes documents Kind 0=modified, 1=added, 2=deleted, and normalises the engine's JSON null answer to an empty ArrayRef -- the transport hands a null body back as the literal string 'null'. export uses raw => 1. Measured against Podman 5.4.2 (API 1.41): all three routes served; changes answers an unknown container with 500 'layer not known' rather than the 404 the others give, which is written into the POD.
