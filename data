@@ -1,0 +1,42 @@
+---
+claimed_at: 2026-08-27T06:36:30Z
+claimed_by: doc-final
+class: standard
+completed: 2026-08-27T06:36:30Z
+created: 2026-08-27T06:27:07Z
+id: 48
+priority: low
+started: 2026-08-27T06:29:28Z
+status: done
+tags:
+- docs
+- changes
+title: Changes miscounts Role::Filters call sites as twelve; it is fourteen
+updated: 2026-08-27T06:36:30Z
+---
+
+The Role::Filters paragraph in Changes under {{$NEXT}} says:
+
+  '... applied at every one of the twelve call sites that accept a filters
+  option (list and prune on containers, images, networks, volumes, secrets,
+  configs and plugins, plus images->build_prune).'
+
+That enumeration is 2 (containers) + 2 (images) + 2 (networks) + 2 (volumes)
++ 1 (secrets) + 1 (configs) + 1 (plugins) + 1 (build_prune) = 12, and grepping
+_normalise_filters in lib/ finds 12 matching call sites plus two more the
+sentence does not mention: images->search (Images.pm) and system->events
+(System.pm). Both are real, both are correctly wired (client->_normalise_filters
+called, and each method's own POD says so -- 'Shape-checked and normalised by
+L<API::Docker::Role::Filters>' appears on both), so this is not a functional
+gap. It is the summary sentence in Changes undercounting by two and omitting
+two of the fourteen call sites from its own list -- 'every ... call site' is
+therefore not quite true as written.
+
+'eight resource classes' in the same paragraph is correct (containers, images,
+networks, volumes, secrets, configs, plugins, system all `with` the role).
+
+Fix: twelve -> fourteen, and add images->search and system->events to the
+parenthetical list. No code change.
+
+Found during the pre-release audit; not fixed here per the audit's own scope
+(report only).
