@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-08-27T15:55:35Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T15:55:35Z
+created: 2026-08-27T05:38:22Z
+id: 42
+priority: low
+started: 2026-08-27T15:34:18Z
+status: done
+tags:
+- transport
+- tls
+title: DOCKER_TLS_VERIFY is not read; tls defaults to 0 regardless
+updated: 2026-08-27T15:55:35Z
+---
+
+Deliberately out of scope while karr #26 was implemented, recorded so it is a decision rather than an oversight.
+
+The docker CLI turns TLS on from the environment: DOCKER_TLS_VERIFY=1 means 'use TLS and verify', usually paired with DOCKER_CERT_PATH. API::Docker reads DOCKER_HOST and DOCKER_CERT_PATH but not DOCKER_TLS_VERIFY, so a shell set up for the CLI reaches a tcp:// daemon in the clear unless the caller passes tls => 1 in code.
+
+Defaulting tls from $ENV{DOCKER_TLS_VERIFY} would close that gap and match the CLI. It is a behaviour change on machines that export it (a plaintext tcp:// client would start speaking TLS), and t/tls.t asserts the default is 0 in two places, so it wants its own ticket, its own Changes line and a measurement of what a CLI-configured shell actually exports.
