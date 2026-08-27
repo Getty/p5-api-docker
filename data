@@ -1,0 +1,43 @@
+---
+claimed_at: 2026-08-27T06:35:56Z
+claimed_by: test-writer
+class: standard
+completed: 2026-08-27T06:35:56Z
+created: 2026-08-27T05:37:50Z
+id: 40
+priority: high
+started: 2026-08-27T05:43:55Z
+status: done
+tags:
+- transport
+- tests
+title: 't/plugins.t pins the karr #30 defect as the transport contract'
+updated: 2026-08-27T06:35:56Z
+---
+
+t/plugins.t line 214, in subtest 'privileges: a plugin that demands nothing answers null':
+
+  is $c->get('/plugins/privileges', params => { remote => 'x' }), 'null',
+    'the transport hands `null` back as the four-character string';
+
+karr #30 is fixed: _request now decodes a body that is a bare JSON scalar, so
+that call returns undef and the assertion fails (got: undef, expected: 'null').
+It is the only red test in the suite, fixture and live alike.
+
+The claim is the defect, written down as the contract. The second half of the
+same subtest -- is_deeply $c->plugins->privileges(...), [] -- still passes, so
+API::Docker::API::Plugins is unaffected and needs no change.
+
+The line the fix wants, keeping the subtest's purpose (that the local guard
+survives whatever the transport does):
+
+  is $c->get('/plugins/privileges', params => { remote => 'x' }), undef,
+    'the transport decodes the bare null to undef (karr #30)';
+
+t/plugins.t was locked to another agent while the transport work ran, so this
+was reported rather than changed. t/containers_endpoints.t's equivalent
+subtest ('changes: a container with nothing changed is an empty ArrayRef')
+asserts only the normalised result and stays green; its comment about the
+transport returning the string 'null' is now stale prose, not a failure.
+
+2026-08-27 05:45 Fixed: t/plugins.t line 214 now asserts undef (karr #30's fix), comment rewritten to match. t/containers_endpoints.t's stale 'null' string prose updated too. prove -lr t/ is fully green: 25 files, 271 tests, no failures, no skips beyond the usual live-only ones. Plugins::privileges' guard (return [] unless ref $result eq 'ARRAY') still correct and still needed -- ref(undef) eq '' same as ref('null') eq '', so it now normalises undef instead of the string 'null', but its comment (and Containers::changes' identical comment) is now stale prose describing the old defect, not a bug. Not touched, per lock on lib/.
