@@ -133,7 +133,11 @@ sub start {
 
     $container->start;
 
-Start the container. Delegates to L<API::Docker::API::Containers/start>.
+    say 'was already running' unless $container->start;
+
+Start the container. Returns 1 when it was started and 0 when it was already
+running. Delegates to L<API::Docker::API::Containers/start>, which documents
+what that 0 replaces.
 
 =cut
 
@@ -146,7 +150,8 @@ sub stop {
 
     $container->stop(timeout => 10);
 
-Stop the container. Delegates to L<API::Docker::API::Containers/stop>.
+Stop the container. Returns 1 when it was stopped and 0 when it was already
+stopped. Delegates to L<API::Docker::API::Containers/stop>.
 
 =cut
 
@@ -159,7 +164,8 @@ sub restart {
 
     $container->restart;
 
-Restart the container.
+Restart the container. Returns 1/0 as L<API::Docker::API::Containers/restart>
+does; no engine measured here answers a restart with 304, so it is 1.
 
 =cut
 
@@ -198,7 +204,31 @@ sub logs {
 
     my $logs = $container->logs(tail => 100);
 
-Get container logs.
+    # or follow it, one frame at a time
+    $container->logs(follow => 1, tail => 0,
+        on_frame => sub { print $_[0]{data} });
+
+Get container logs. Every option goes to
+L<API::Docker::API::Containers/logs>, C<follow> and C<on_frame> included; with
+a callback the return value is that method's summary HashRef rather than the
+frames.
+
+=cut
+
+sub attach {
+  my ($self, %opts) = @_;
+  return $self->client->containers->attach($self->Id, %opts);
+}
+
+=method attach
+
+    my $frames = $container->attach;
+
+Attach to the container's output and return its frames. This is the one-way
+attach and, without a callback, it blocks until the stream ends -- see
+L<API::Docker::API::Containers/attach> before reaching for it on a container
+that keeps running. C<on_frame> is passed through and reads the stream as it
+arrives instead.
 
 =cut
 
@@ -224,7 +254,9 @@ sub pause {
 
     $container->pause;
 
-Pause all processes in the container.
+Pause all processes in the container. Returns 1/0 as
+L<API::Docker::API::Containers/pause> does; an already-paused container is an
+error there, not a 0.
 
 =cut
 
@@ -237,7 +269,8 @@ sub unpause {
 
     $container->unpause;
 
-Unpause the container.
+Unpause the container. Returns 1/0 as
+L<API::Docker::API::Containers/unpause> does.
 
 =cut
 
@@ -263,7 +296,93 @@ sub stats {
 
     my $stats = $container->stats;
 
-Get resource usage statistics.
+    # or follow the readings
+    $container->stats(stream => 1, on_event => sub { ... });
+
+Get resource usage statistics. Every option goes to
+L<API::Docker::API::Containers/stats>, C<stream> and C<on_event> included;
+with a callback the return value is that method's summary HashRef rather than
+the readings.
+
+=cut
+
+sub changes {
+  my ($self) = @_;
+  return $self->client->containers->changes($self->Id);
+}
+
+=method changes
+
+    for my $change (@{ $container->changes }) { ... }
+
+Paths that differ from the image, as C<< { Path => ..., Kind => ... } >>.
+Delegates to L<API::Docker::API::Containers/changes>, which documents what the
+three C<Kind> numbers mean.
+
+=cut
+
+sub export {
+  my ($self) = @_;
+  return $self->client->containers->export($self->Id);
+}
+
+=method export
+
+    my $tar = $container->export;
+
+The container's filesystem as raw tar bytes.
+
+=cut
+
+sub resize {
+  my ($self, %opts) = @_;
+  return $self->client->containers->resize($self->Id, %opts);
+}
+
+=method resize
+
+    $container->resize(h => 40, w => 120);
+
+Resize the container's TTY.
+
+=cut
+
+sub get_archive {
+  my ($self, %opts) = @_;
+  return $self->client->containers->get_archive($self->Id, %opts);
+}
+
+=method get_archive
+
+    my $tar = $container->get_archive(path => '/etc/hostname');
+
+Read a path out of the container as raw tar bytes.
+
+=cut
+
+sub put_archive {
+  my ($self, $tar, %opts) = @_;
+  return $self->client->containers->put_archive($self->Id, $tar, %opts);
+}
+
+=method put_archive
+
+    $container->put_archive($tar, path => '/opt/app');
+
+Unpack a tar archive into a directory in the container.
+
+=cut
+
+sub stat_archive {
+  my ($self, %opts) = @_;
+  return $self->client->containers->stat_archive($self->Id, %opts);
+}
+
+=method stat_archive
+
+    my $stat = $container->stat_archive(path => '/etc/hostname');
+
+Stat a path in the container without transferring it.
 
 =cut
 

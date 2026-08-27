@@ -433,4 +433,181 @@ subtest '_request: >= 400 croaks' => sub {
   };
 };
 
+# ---------------------------------------------------------------------------
+# karr #16: a HEAD response repeats the header fields the equivalent GET would
+# send -- Content-Length among them -- and then sends no body at all. Reading
+# one waits for bytes that never arrive. The bytes after the blank line below
+# stand in for whatever comes next on the connection: consuming them as a body
+# is exactly the bug, and an in-memory filehandle that simply hits EOF would
+# hide it (the old code returned '' there too, from a read that failed rather
+# than from one it never made).
+subtest '_read_response: a HEAD response has no body, whatever it announces' => sub {
+  subtest 'an announced content-length is not read' => sub {
+    my $raw = "HTTP/1.1 200 OK\r\n"
+      . "Content-Length: 13\r\n"
+      . "X-Docker-Container-Path-Stat: e30=\r\n"
+      . "\r\n"
+      . 'NOT-THE-BODY!';
+    open my $fh, '<', \$raw or die $!;
+    my $resp = $client->_read_response($fh, 'HEAD');
+
+    is $resp->[3], '', 'body is empty';
+    is $resp->[2]{'content-length'}, '13',
+      'the announced length is still collected as a header';
+    is $resp->[2]{'x-docker-container-path-stat'}, 'e30=',
+      'and so is the header a HEAD response carries its payload in';
+    is do { local $/; <$fh> }, 'NOT-THE-BODY!',
+      'the bytes after the headers were left on the handle, not swallowed as '
+      . 'a body that was never sent';
+  };
+
+  subtest 'a chunked announcement is not read either' => sub {
+    my $raw = "HTTP/1.1 200 OK\r\n"
+      . "Transfer-Encoding: chunked\r\n"
+      . "\r\n"
+      . "5\r\nhello\r\n0\r\n\r\n";
+    open my $fh, '<', \$raw or die $!;
+    my $resp = $client->_read_response($fh, 'HEAD');
+
+    is $resp->[3], '', 'body is empty';
+    is do { local $/; <$fh> }, "5\r\nhello\r\n0\r\n\r\n",
+      'the chunk framing was not consumed';
+  };
+
+  subtest 'every other method still reads its body' => sub {
+    my $raw = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}";
+    open my $fh, '<', \$raw or die $!;
+    is $client->_read_response($fh, 'GET')->[3], '{}', 'a GET body is read';
+
+    open my $fh2, '<', \$raw or die $!;
+    is $client->_read_response($fh2)->[3], '{}',
+      'and so is one read without a method argument at all';
+  };
+};
+
+# ---------------------------------------------------------------------------
+# karr #16: _request used to drop the status line and the response headers, so
+# 304 ("it was already in that state") and 204 ("changed it") were both undef,
+# and a header carrying the whole payload was unreachable.
+subtest '_request: the response out-parameter' => sub {
+  my $t = Test::RoleHTTP::FakeTransport->new(
+    host        => 'unix:///nonexistent.sock',
+    api_version => '1.41',
+  );
+
+  subtest '204 and 304 are told apart' => sub {
+    $t->canned([204, 'No Content', {}, '']);
+    my %changed;
+    is $t->_request('POST', '/containers/abc/start', response => \%changed), undef,
+      'the return value is unchanged -- an empty body is still undef';
+    is $changed{status}, 204, 'the status code is handed out';
+    is $changed{reason}, 'No Content', 'and the reason phrase with it';
+
+    $t->canned([304, 'Not Modified', {}, '']);
+    my %unchanged;
+    is $t->_request('POST', '/containers/abc/start', response => \%unchanged), undef,
+      'a 304 carries no body either';
+    is $unchanged{status}, 304,
+      '304 is reported as 304 -- the two are indistinguishable by return '
+      . 'value, and this is the only thing that separates them';
+  };
+
+  subtest 'the response headers are handed out, lowercased' => sub {
+    $t->canned([200, 'OK', { 'x-docker-container-path-stat' => 'e30=' }, '']);
+    my %res;
+    $t->_request('HEAD', '/containers/abc/archive', response => \%res);
+    is $res{headers}{'x-docker-container-path-stat'}, 'e30=',
+      'the header a HEAD response carries its payload in is reachable';
+  };
+
+  subtest 'the hash is filled before the >= 400 croak' => sub {
+    $t->canned([404, 'Not Found', {}, encode_json({ message => 'no such container: abc' })]);
+    my %res;
+    eval { $t->_request('GET', '/containers/abc/json', response => \%res) };
+    like $@, qr/\ADocker API error \(404\)/, 'still croaks';
+    is $res{status}, 404,
+      'and the status survives the croak -- an eval-ing caller is not left '
+      . 'with an empty hash';
+  };
+
+  subtest 'the hash is overwritten, not merged' => sub {
+    $t->canned([200, 'OK', {}, '{}']);
+    my %res = (status => 999, stale => 'from an earlier call');
+    $t->_request('GET', '/containers/abc/json', response => \%res);
+    is $res{status}, 200, 'the status of this call, not the previous one';
+    ok !exists $res{stale}, 'nothing of the previous call is left behind';
+  };
+
+  subtest 'anything but a HashRef is a caller bug' => sub {
+    my $t2 = Test::RoleHTTP::FakeTransport->new(
+      host        => 'unix:///nonexistent.sock',
+      api_version => '1.41',
+    );
+    eval { $t2->_request('GET', '/containers/json', response => []) };
+    like $@, qr/response option must be a HashRef/, 'croaked on an ArrayRef';
+    is $t2->_sink, undef,
+      'no socket was opened -- checked while the request is assembled, like a '
+      . 'header name, so nothing reached the daemon';
+  };
+
+  subtest 'without the option nothing changes' => sub {
+    $t->canned([200, 'OK', {}, '{"Id":"abc"}']);
+    is_deeply $t->_request('GET', '/containers/abc/json'), { Id => 'abc' },
+      'the default return shape is untouched';
+  };
+};
+
+# ---------------------------------------------------------------------------
+subtest 'head: sends HEAD, returns undef, payload comes out of the headers' => sub {
+  my $t = Test::RoleHTTP::FakeTransport->new(
+    host        => 'unix:///nonexistent.sock',
+    api_version => '1.41',
+  );
+  # Captured from Podman 5.4.2 (API 1.41):
+  # HEAD /v1.41/containers/{id}/archive?path=/etc/hostname
+  my $stat = 'eyJuYW1lIjoiaG9zdG5hbWUiLCJzaXplIjoxMywibW9kZSI6NDIwfQ==';
+  $t->canned([200, 'OK', { 'x-docker-container-path-stat' => $stat }, '']);
+
+  my %res;
+  is $t->head('/containers/abc/archive',
+    params   => { path => '/etc/hostname' },
+    response => \%res,
+  ), undef, 'a HEAD response has no body, so there is nothing to return';
+
+  my ($request_line) = $t->written =~ /\A([^\r\n]+)\r\n/;
+  is $request_line,
+    'HEAD /v1.41/containers/abc/archive?path=/etc/hostname HTTP/1.1',
+    'HEAD on the versioned path, query parameters appended as for any verb';
+  is $res{status}, 200, 'the status line is reachable';
+  is $res{headers}{'x-docker-container-path-stat'}, $stat,
+    'and the header the whole payload rides in';
+};
+
+# ---------------------------------------------------------------------------
+# karr #16, end to end: t/containers.t drives these through the mock, which
+# replaces _request wholesale. This drives the real transport, so a _request
+# that stopped passing the status on would fail here while the mocked test
+# still passed.
+subtest 'containers: 204 means it changed, 304 means it was already so' => sub {
+  my $t = Test::RoleHTTP::FakeTransport->new(
+    host        => 'unix:///nonexistent.sock',
+    api_version => '1.41',
+  );
+
+  $t->canned([204, 'No Content', {}, '']);
+  is $t->containers->start('abc'), 1, 'start: 204 -> it was started';
+  is $t->containers->stop('abc'), 1, 'stop: 204 -> it was stopped';
+  is $t->containers->restart('abc'), 1, 'restart: 204 -> it was restarted';
+  is $t->containers->pause('abc'), 1, 'pause: 204 -> it was paused';
+  is $t->containers->unpause('abc'), 1, 'unpause: 204 -> it was unpaused';
+
+  $t->canned([304, 'Not Modified', {}, '']);
+  is $t->containers->start('abc'), 0,
+    'start: 304 -> it was already running (this is what used to be undef)';
+  is $t->containers->stop('abc'), 0, 'stop: 304 -> it was already stopped';
+  ok !$t->containers->start('abc'),
+    'and 0 is still false, so a caller that only tests truth or ignores the '
+    . 'value sees exactly what it saw before';
+};
+
 done_testing;

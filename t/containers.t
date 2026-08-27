@@ -3,6 +3,7 @@ use warnings;
 use Test::More;
 use lib 't/lib';
 use Test::API::Docker::Mock;
+use API::Docker::Container;
 
 check_live_access();
 
@@ -88,8 +89,8 @@ subtest 'container lifecycle' => sub {
     die $@ if $@ && $@ !~ /\(404\)/;
   }) if is_live();
 
-  $docker->containers->start($id);
-  pass('container started');
+  is($docker->containers->start($id), 1,
+    'container started -- 204, a state change that happened');
 
   my $container = $docker->containers->inspect($id);
   isa_ok($container, 'API::Docker::Container');
@@ -102,16 +103,59 @@ subtest 'container lifecycle' => sub {
   ok($stats->{cpu_stats}, 'has cpu_stats');
   ok($stats->{memory_stats}, 'has memory_stats');
 
-  $docker->containers->pause($id);
-  pass('container paused');
-  $docker->containers->unpause($id);
-  pass('container unpaused');
+  is($docker->containers->pause($id), 1, 'container paused');
+  is($docker->containers->unpause($id), 1, 'container unpaused');
 
-  $docker->containers->stop($id, timeout => 3);
-  pass('container stopped');
+  is($docker->containers->stop($id, timeout => 3), 1, 'container stopped');
 
   $docker->containers->remove($id);
   pass('container removed');
+};
+
+# --- 304 Not Modified (fixture-only, no daemon) ---
+
+# karr #16: the engine answers a state change with 204 and a no-op state
+# change with 304 Not Modified. Both carry an empty body, so both used to come
+# back as undef and "started it" could not be told from "it was
+# already running".
+#
+# Fixture-only on purpose: reaching a real 304 means driving a real container
+# into the target state first, which is what the write tests above are for.
+# The 1/0 mapping over the real transport is covered without a daemon in
+# t/role_http.t; what this proves is that the mapping survives the whole
+# containers->start call, route table included.
+subtest 'a state change reports whether it changed anything' => sub {
+  plan skip_all => 'fixture-only: a live 304 needs a container already in the '
+    . 'target state (see t/role_http.t for the transport-level check)'
+    if is_live();
+
+  my $docker = test_docker(
+    'POST /containers/running/start' => mock_response(status => 304),
+    'POST /containers/running/stop'  => mock_response(status => 204),
+    'POST /containers/exited/start'  => mock_response(status => 204),
+    'POST /containers/exited/stop'   => mock_response(status => 304),
+  );
+
+  is $docker->containers->start('exited'), 1,
+    'start on a stopped container: 204, so it changed something';
+  is $docker->containers->start('running'), 0,
+    'start on a running one: 304, so it did not -- and this is the value that '
+    . 'used to be undef, indistinguishable from the 204 above';
+
+  is $docker->containers->stop('running'), 1, 'stop on a running container: 204';
+  is $docker->containers->stop('exited'), 0, 'stop on a stopped one: 304';
+
+  ok !$docker->containers->start('running'),
+    'the no-op stays false, so a caller testing truth is unaffected by the '
+    . 'change from undef to 0';
+
+  # The entity class forwards the value rather than swallowing it.
+  my $container = API::Docker::Container->new(
+    client => $docker,
+    Id     => 'running',
+  );
+  is $container->start, 0, '$container->start reports the 304 too';
+  is $container->stop, 1, 'and $container->stop the 204';
 };
 
 # --- Validation Tests (always run, no Docker needed) ---
