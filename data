@@ -1,0 +1,37 @@
+---
+claimed_at: 2026-08-27T06:34:48Z
+claimed_by: containers-worker
+class: standard
+completed: 2026-08-27T06:34:48Z
+created: 2026-08-27T04:23:40Z
+id: 18
+priority: medium
+started: 2026-08-27T05:02:44Z
+status: done
+tags:
+- containers
+- coverage
+title: No container archive endpoints - docker cp has no equivalent
+updated: 2026-08-27T06:34:48Z
+---
+
+Three endpoints, none exposed:
+
+  GET  /containers/{id}/archive?path=  - read a path out as a tar stream
+  PUT  /containers/{id}/archive?path=  - write a tar stream into a path
+  HEAD /containers/{id}/archive?path=  - stat it, no body
+
+Together they are what "docker cp" is built on, and they are the only way to
+get a file in or out of a container without exec plus shell quoting.
+
+Notes for whoever takes it:
+- GET returns a raw tar stream, not JSON. _request decodes bodies; this one
+  must come back as bytes. Same requirement as images->get in the sibling
+  ticket, so solve the raw-body case once.
+- HEAD answers with an X-Docker-Container-Path-Stat header holding
+  base64-encoded JSON, and no body at all. A HEAD path through _request may
+  not exist yet.
+- PUT takes the tarball as the request body with a noOverwriteDirNonDir and
+  a copyUIDGID query parameter.
+
+2026-08-27 05:15 Implemented in lib/API/Docker/API/Containers.pm: get_archive / put_archive / stat_archive, plus forwards on API::Docker::Container. X-Docker-Container-Path-Stat is decoded (base64 -> JSON) rather than handed over as base64; stat_archive returns the HashRef, get_archive takes an optional stat => \%hash out-parameter because the engine sends the header on the GET too. Coverage in t/containers_endpoints.t, fixture t/fixtures/containers_archive.tar. prove -lr t/ green; dzil test green in an isolated copy. NOT measured: the real path-stat header keys -- that needs a container and this run was held to read-only probes. Follow-up ticket filed.
