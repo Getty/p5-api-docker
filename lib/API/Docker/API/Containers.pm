@@ -4,7 +4,8 @@ our $VERSION = '0.004';
 use Moo;
 with 'API::Docker::Role::Filters';
 use API::Docker::Container;
-use Carp qw( croak );
+use API::Docker::Error::HTTP;
+use Carp qw( croak shortmess );
 use JSON::MaybeXS qw( decode_json );
 use MIME::Base64 qw( decode_base64 );
 use namespace::clean;
@@ -40,7 +41,10 @@ use namespace::clean;
     my $frames = $docker->containers->logs($result->{Id}, tail => 100);
     my $text = join '', map { $_->{data} } @$frames;
 
-    # Attach to a container that exits by itself -- the same frames, one-way
+    # Attach one-way: replays the same frames and returns (stream => 0 by
+    # default -- stream => 1 on a stopped container never returns). On Podman,
+    # attaching to a container that has ALREADY EXITED destroys its exit
+    # status; use logs() for that case, see attach()
     my $attached = $docker->containers->attach($result->{Id});
 
     # Copy a file out, and a tar archive in (what docker cp is built on)
@@ -278,21 +282,62 @@ C<_request> croaks on any C<< status >= 400 >>, so the B<409> a non-running
 container gets back never reaches this method's C<return>. A boolean with a
 single possible value is not worth adding.
 
-More importantly, B<204 does not mean the container stopped.> Measured
-against Podman 5.4.2 (API 1.41): sending a signal the container traps or
-ignores -- C<< signal => 'SIGUSR1' >> against a process with a handler
-installed for it -- is delivered, the container keeps running, and the
-engine still answers 204 exactly as it does for a signal that does end the
-process. A caller that needs to know whether the container is still running
-after a C<kill> has to ask L</inspect>; that is also why this returns nothing
-rather than a plain C<1> -- a 1 here would claim a state change that a
-trapped signal never made.
+More importantly, B<204 does not mean the container stopped.> Measured on
+B<both> engines -- Docker 29.7.2 (API 1.55) and rootless Podman 5.4.2 (API
+1.41), same machine, identical behavior: sending a signal the container traps
+or ignores -- C<< signal => 'SIGUSR1' >> against a process with a handler
+installed for it -- is delivered, the container keeps running, the handler's
+output turns up in L</logs>, and the engine still answers 204 exactly as it
+does for a signal that does end the process. A caller that needs to know
+whether the container is still running after a C<kill> has to ask
+L</inspect>; that is also why this returns nothing rather than a plain C<1>
+-- a 1 here would claim a state change that a trapped signal never made.
+
+B<A paused container is where the two engines part.> Both answer 204 to
+C<< signal => 'SIGUSR1' >> against a paused container, and then:
+
+=over
+
+=item * B<Docker unpauses it as a side effect.> L</inspect> reports C<running>
+straight afterwards and the handler has already run. A caller that paused the
+container and means to unpause it later gets a croak instead: the following
+L</unpause> answers B<500> C<Container E<lt>idE<gt> is not paused>
+
+=item * B<Podman leaves it paused> and queues the signal. The state stays
+C<paused>, the handler produces nothing until an explicit L</unpause>, and
+that L</unpause> succeeds
+
+=back
+
+So C<kill> is a state change for a paused container on Docker and is not one
+on Podman -- with the same 204 on both.
 
 Killing a container that is not running -- stopped, exited or just created --
-croaks (B<409>, C<container state improper>); it does not return a falsy
-value. An unknown container ID croaks B<404>. Neither is reachable through a
-return value, and no case answers 304: moby's swagger for this endpoint
-(C<operationId: ContainerKill>) documents only 204, 404, 409 and 500.
+croaks B<409>; it does not return a falsy value. An unknown container ID
+croaks B<404>. Neither is reachable through a return value, and no case
+answers 304: moby's swagger for this endpoint (C<operationId: ContainerKill>)
+documents only 204, 404, 409 and 500.
+
+The B<text> of either is engine prose, so branch on
+L<API::Docker::Error::HTTP/status> and not on the message. For one and the
+same stopped container:
+
+=over
+
+=item * Docker -- C<cannot kill container: E<lt>nameE<gt>: container E<lt>idE<gt> is
+not running>
+
+=item * Podman -- C<can only kill running containers. E<lt>idE<gt> is in state
+exited: container state improper>. C<container state improper> is Podman's
+separate C<cause> field, reachable as C<< $err->data->{cause} >>, not a
+phrase Docker uses anywhere
+
+=back
+
+The 404 differs too, and on Docker it differs I<per endpoint>: C<kill>
+against a missing ID answers C<cannot kill container: E<lt>nameE<gt>: No such
+container: E<lt>nameE<gt>> where L</inspect> answers the bare C<No such container:
+E<lt>nameE<gt>>. Podman sends one sentence for both.
 
 Options:
 
@@ -456,11 +501,11 @@ sub attach {
   my ($self, $id, %opts) = @_;
   croak "Container ID required" unless $id;
   my %params;
-  $params{stream} = defined $opts{stream} ? ($opts{stream} ? 1 : 0) : 1;
+  $params{stream} = $opts{stream} ? 1 : 0;
+  $params{logs}   = defined $opts{logs}   ? ($opts{logs}   ? 1 : 0) : 1;
   $params{stdout} = defined $opts{stdout} ? ($opts{stdout} ? 1 : 0) : 1;
   $params{stderr} = defined $opts{stderr} ? ($opts{stderr} ? 1 : 0) : 1;
   $params{stdin}  = $opts{stdin} ? 1 : 0 if defined $opts{stdin};
-  $params{logs}   = $opts{logs}  ? 1 : 0 if defined $opts{logs};
   return $self->client->stream_frames('POST', "/containers/$id/attach",
     params => \%params,
     defined $opts{tty} ? ( tty => $opts{tty} ) : (),
@@ -484,6 +529,36 @@ A container created without a TTY multiplexes its output into one framed
 stream, which this method demultiplexes; one created with a TTY arrives as a
 single C<< stream => 'raw' >> frame. See L</logs> and
 L<API::Docker::Role::HTTP/"Detecting a framed stream">.
+
+=head2 On Podman this destroys a stopped container's exit status
+
+B<Attaching to a container that has already exited loses its exit code on
+Podman, and nothing reports it.> Measured before and after a single attach
+against one container that exited with 4, on Podman 5.4.2 (API 1.41) and
+Docker 29.7.2 (API 1.55), same machine:
+
+    PODMAN  before   inspect: exited 4    wait: { StatusCode => 4 }
+    PODMAN  after    inspect: created 0   wait: { StatusCode => -1 }
+    DOCKER  before   inspect: exited 4    wait: { StatusCode => 4 }
+    DOCKER  after    inspect: exited 4    wait: { StatusCode => 4 }
+
+Podman reverts the container to C<created>, resets C<ExitCode> to 0, and
+answers a later L</wait> with the sentinel C<-1> inside a 200. The real value
+is gone from the engine; there is nothing to read it back from. B<All three
+variants do it> -- C<< stream => 1 >> with and without C<logs>, and the
+C<< stream => 0, logs => 1 >> this method now sends by default, which is the
+one that returns cleanly in milliseconds. It is the call that does it, not
+the hang.
+
+L</logs> does B<not> do it, and Docker does not do it at all. So on Podman
+the sequence "attach to collect the output, then L</wait> for the exit code"
+cannot work: read the output with L</logs> instead, or take the exit code
+before attaching.
+
+This client does not refuse the call. The behavior is the engine's, it does
+not apply to a container that is still running, and telling the two engines
+apart costs a round trip of its own (C<< $docker->system->version >>), so
+this is documented rather than guarded.
 
 =head2 This is the one-way attach
 
@@ -509,9 +584,11 @@ supplied. Use L<API::Docker::API::Exec> to run something interactive-shaped,
 or wait for the upgraded variant
 
 =item * B<Without a callback it returns when the stream ends, not before.>
-Attaching to a container that keeps running blocks until it exits or the
-daemon closes the connection. Pass C<on_frame> to read it as it arrives and
-stop where you like, exactly as L</logs> does under
+With C<< stream => 1 >>, attaching to a container that keeps running blocks
+until it exits or the daemon closes the connection -- and on a container that
+is B<not> running it never returns at all, see
+L</"The defaults follow the engine"> below. Pass C<on_frame> to read the
+stream as it arrives and stop where you like, exactly as L</logs> does under
 L</"Following the log">; the return value is then the summary HashRef
 C<< { delivered => N, stopped => 0|1 } >> rather than the frames, and C<tty>
 becomes a declaration the transport takes at its word -- an undeclared
@@ -523,14 +600,73 @@ L</logs> with C<tail> reads the same output and returns immediately
 C</containers/{id}/attach/ws>, the WebSocket variant, is not implemented
 either.
 
+=head2 The defaults follow the engine
+
+C<stream> defaults to B<0> -- the engine's own default -- and C<logs> to
+B<1>, which is the one flag that keeps the call useful without it. So
+C<< $containers->attach($id) >> B<replays> what the container has written and
+returns.
+
+B<This is a change.> Up to and including the previous release C<stream>
+defaulted to 1, so the same call opened an open-ended subscription; a caller
+who wants the live stream now has to ask for it with C<< stream => 1 >>.
+
+The reason is that the subscription has exactly one terminator: the container
+ending. C<stream> means I<stream attached streams from the time the request
+was made onwards>, so on a container that has B<already exited> that
+terminator is in the past and will not happen again. attach also hijacks the
+connection -- the response carries no C<Content-Length> and no chunked
+terminator -- so HTTP framing cannot signal the end either. The transport
+reads until EOF, there is no EOF, and the call hangs. C<on_frame> does not
+help: nothing will ever call C<< $stop->() >>.
+
+Measured on Podman 5.4.2 (API 1.41), all four against one and the same
+container:
+
+=over
+
+=item * C<?logs=1&stdout=1&stderr=1&stream=0>, exited container -- 200, the
+frames, connection closed after 13 ms
+
+=item * C<?logs=1&stdout=1&stderr=1&stream=1>, exited container -- 200, the
+same frames, then hangs
+
+=item * the same with C<Upgrade: tcp> -- 101 UPGRADED, the same frames, still
+hangs
+
+=item * C<?stream=1> while the container is still B<running> and exits three
+seconds later -- closes cleanly after 3 s
+
+=back
+
+B<Docker does exactly the same, and that is measured now too.> Against Docker
+29.7.2 (API 1.55): C<?logs=1&stdout=1&stderr=1&stream=1> on an exited
+container was still open when a 10 s probe gave up, and
+C<?logs=1&stdout=1&stderr=1&stream=0> answered 200 with byte-identical frames
+and closed in half a millisecond. So the hang is not a Podman quirk to be
+worked around -- it is what both engines do with a subscription whose only
+terminator is already in the past, on an endpoint whose reference promises a
+close in neither direction. It is unspecified behavior on both, which is the
+case for the C<< stream => 0 >> default rather than an argument against it.
+
+One more measured difference: Podman refuses C<< stream => 0 >> together with
+C<< logs => 0 >> outright, with B<400> C<at least one of Logs or Stream must
+be set>, rather than answering an empty 200.
+
 Options:
 
 =over
 
-=item * C<stream> - Stream output as the container produces it. Default 1.
-B<The engine defaults it to false>, and with both C<stream> and C<logs> false
-the response is empty -- so this method defaults it on, the way L</logs>
-defaults its stdout and stderr on. Pass 0 to turn it off
+=item * C<stream> - Subscribe to what the container writes from the time of
+the request onwards. Default B<0>, which is the engine's own default.
+C<< stream => 1 >> on a container that is not running never returns; see
+L</"The defaults follow the engine">
+
+=item * C<logs> - Replay what the container has already written. Default
+B<1>, so the call returns something without subscribing; combined with
+C<< stream => 1 >> the replay comes first and then transitions seamlessly
+into the live output. C<< logs => 0 >> without C<< stream => 1 >> is the
+combination the engine refuses (400 on Podman)
 
 =item * C<stdout> - Attach stdout. Default 1 (engine default: false)
 
@@ -538,9 +674,6 @@ defaults its stdout and stderr on. Pass 0 to turn it off
 
 =item * C<stdin> - Attach stdin. Sent as asked, but nothing can be written to
 it here; see above
-
-=item * C<logs> - Replay what the container has already written before
-streaming what comes next
 
 =item * C<tty> - Set to 1 when the container was created with a TTY and its
 output is binary, to skip demultiplexing. Same meaning as in L</logs>, and
@@ -569,6 +702,95 @@ List running processes in a container. Returns hashref with C<Titles> and C<Proc
 
 =cut
 
+# The Podman compatibility path, and deliberately only that. Podman answers
+# GET /containers/{id}/stats for a container that is not running with an error
+# object inside a response it has already committed to 200 --
+# {"cause":"container is stopped","message":"container is stopped",
+# "response":500}, chunked, for the one-shot call and for stream => 1 alike
+# (measured on Podman 5.4.2, API 1.41). Neither guard in the transport sees
+# it: the >= 400 croak reads the status line, which says 200, and the stream
+# check triggers on errorDetail, which this object does not carry. Docker
+# 29.7.2 (API 1.55) answers the same call with a real, zero-filled reading and
+# never produces this shape at all -- so this belongs here, next to the one
+# endpoint and the one engine it was measured on, and not in Role::HTTP, where
+# it would be a heuristic on daemon prose sitting under all twelve modules.
+#
+# All four clauses have to hold. The narrowness is the point, not an accident:
+#
+#   1. the status was 2xx. True by construction on both paths this guards:
+#      _request croaks before returning for >= 400, and
+#      _read_streaming_response reads such a body whole rather than handing it
+#      to a callback, so nothing that failed the status line reaches here
+#   2. the decoded value is a HashRef
+#   3. it carries all three of cause, message and response, exactly
+#      lower-cased. Never case-insensitively, and this is the counter-example
+#      that fixes it: POST /containers/{id}/wait answers its SUCCESS case with
+#      a top-level `Error` key -- Podman sends "Error":null on every wait --
+#      so a rule matching /error/i would turn every successful wait into a
+#      failure. Measured over fifteen read endpoints per engine and every
+#      fixture in t/fixtures: no 2xx body on either engine carries even one of
+#      these three lower-cased at the top level
+#   4. `response` is a non-ref scalar reading as an integer >= 400. That is
+#      what makes the rule self-evidencing rather than a guess about prose:
+#      the object is an error because Podman says so inside it. Known miss:
+#      Podman's GET /plugins answers {"cause":"","message":"Path ... is not
+#      supported","response":0}, which clause 4 rejects -- but it arrives with
+#      404 on the status line and the transport croaks it long before this
+#      runs, so the miss goes in the conservative direction and costs nothing
+#
+# A bare {message => ...} deliberately does not trigger: that is the ordinary
+# Docker error body, and treating one inside a 2xx as a failure would be a
+# guess about prose rather than a reading of what the engine said.
+sub _podman_error_object {
+  my ($self, $value) = @_;
+
+  return unless ref $value eq 'HASH';
+  return unless exists $value->{cause}
+    && exists $value->{message}
+    && exists $value->{response};
+
+  my $response = $value->{response};
+  return if ref $response;
+  return unless defined $response && $response =~ /\A[0-9]+\z/;
+  return unless $response >= 400;
+
+  return $value;
+}
+
+# API::Docker::Error::HTTP rather than ::Stream: the one-shot call is not a
+# stream at all, so "Docker API stream error" would be the wrong sentence for
+# it and ->events would be a fabricated list. What the caller wants instead is
+# exactly what this class carries -- ->status for the code Podman named, and
+# ->data for the object, whose `cause` key that attribute's own POD already
+# points at. Two of its attributes are left at their defaults on this path, on
+# purpose: ->reason, because the status line's reason phrase was "OK" and
+# putting that on a 500 would mislead, and ->body, because the bytes were
+# decoded by the transport before this check ever saw them.
+sub _assert_no_podman_error {
+  my ($self, $endpoint, $value) = @_;
+
+  my $error = $self->_podman_error_object($value) or return $value;
+
+  my $reason = $error->{message};
+  $reason = $error->{cause}    unless defined $reason && length $reason;
+  $reason = 'no message given' unless defined $reason && length $reason;
+  # Carp appends no location to a message that already ends in a newline.
+  $reason =~ s/\s+\z//;
+
+  # The object goes into a variable first: `croak CLASS->new(...)` is indirect
+  # object syntax and parses as CLASS->croak(new(...)). Carp hands a reference
+  # straight back rather than decorating it, so the location is captured by
+  # hand, naming the frame a croak of a plain string would have named.
+  my $err = API::Docker::Error::HTTP->new(
+    message  => 'Docker API error (' . $error->{response} . '): ' . $reason
+      . ' -- reported inside a 200 response to ' . $endpoint,
+    location => shortmess(''),
+    status   => $error->{response},
+    data     => $error,
+  );
+  croak $err;
+}
+
 sub stats {
   my ($self, $id, %opts) = @_;
   croak "Container ID required" unless $id;
@@ -578,12 +800,42 @@ sub stats {
   # only means anything to a single reading. It is sent for the one-shot call
   # alone, the way it always was, and never beside stream => 1.
   $params{'one-shot'} = 1 unless $stream;
-  return $self->client->get("/containers/$id/stats",
+
+  my $endpoint = 'GET /containers/' . $id . '/stats';
+
+  # The guard has to sit on both sides of the callback split, because the same
+  # body arrives either way: buffered it is the return value, streamed it goes
+  # to the callback and is never returned at all. Wrapping puts the check in
+  # front of the caller's callback, so no caller is handed the error object as
+  # though it were a reading. Only a CodeRef is wrapped -- anything else is
+  # passed through untouched, so the transport still raises its own "on_event
+  # option must be a CodeRef" instead of this method dying on a closure it
+  # built around a non-callback.
+  my $on_event = $opts{on_event};
+  if (exists $opts{on_event} && ref $on_event eq 'CODE') {
+    my $cb = $on_event;
+    $on_event = sub {
+      my ($reading, $stop) = @_;
+      $self->_assert_no_podman_error($endpoint, $reading);
+      return $cb->($reading, $stop);
+    };
+  }
+
+  my $result = $self->client->get("/containers/$id/stats",
     params => \%params,
-    exists $opts{on_event} ? ( on_event => $opts{on_event} )
+    exists $opts{on_event} ? ( on_event => $on_event )
       : $stream            ? ( ndjson   => 1 )
       : (),
   );
+
+  # A HashRef for the one-shot call and an ArrayRef of readings for
+  # stream => 1 without a callback -- both are the buffered body and both can
+  # be that error object. With a callback the return value is the summary
+  # HashRef, which carries none of the three keys and passes untouched.
+  $self->_assert_no_podman_error($endpoint, $_)
+    for ref $result eq 'ARRAY' ? @$result : ($result);
+
+  return $result;
 }
 
 =method stats
@@ -593,6 +845,12 @@ sub stats {
 Get container resource usage statistics (CPU, memory, network, I/O). With no
 options this is the one-shot call it always was: a single reading, returned as
 a HashRef.
+
+For a container that is B<not running> the two engines answer differently and
+neither says so in the status line -- on Podman this method croaks, on Docker
+it returns zeros that look like a reading. See
+L</"A container that is not running: a croak on Podman, zeros on Docker">
+before calling it on a container that may have stopped.
 
 =head2 Following the stats
 
@@ -651,21 +909,75 @@ of them being collected and returned; see above
 
 =back
 
-=head2 A container that is not running answers 200 with an error object
+=head2 A container that is not running: a croak on Podman, zeros on Docker
 
-Podman refuses the stats of a stopped container B<inside> a 200 response, and
-not in the shape the error check looks for:
+Neither engine answers this with an HTTP error, and they agree on nothing
+else. Measured on Podman 5.4.2 (API 1.41) and Docker 29.7.2 (API 1.55), same
+machine, one container that had exited.
+
+B<Podman sends an error object inside the 200> -- chunked, for the one-shot
+call and for C<< stream => 1 >> alike:
 
     { cause    => 'container is stopped',
       message  => 'container is stopped',
       response => 500 }
 
-Measured for the one-shot call and for C<< stream => 1 >> alike: chunked, with
-the status line already committed to 200. The stream check triggers on
-C<errorDetail> and on nothing else, so this passes it -- the one-shot call
-returns that HashRef where a reading was expected, and a callback is handed it
-as though it were a reading. Where the container may have stopped, test for
-C<read> or C<cpu_stats> before using what comes back.
+B<This method now croaks on it>, with an L<API::Docker::Error::HTTP> carrying
+C<< ->status == 500 >> -- the code Podman named in C<response> -- and the
+object itself as C<< ->data >>, so C<< $err->data->{cause} >> stays readable.
+That is a B<change>: up to and including the previous release the one-shot
+call returned this HashRef where a reading was expected, and an C<on_event>
+callback was handed it as though it were one. The check runs on the buffered
+return value and in front of the callback alike, and only on that exact
+shape -- a HashRef inside a 2xx carrying all three of C<cause>, C<message>
+and C<response> lower-cased, with C<response> reading as an integer >= 400.
+Nothing else in this distribution, in its fixtures, or in a sweep of fifteen
+read endpoints per engine carries even one of those keys lower-cased at the
+top level. The rule is deliberately B<not> case-insensitive: a I<successful>
+L</wait> answers with a top-level C<Error> key, and a looser rule would
+report every one of those as a failure.
+
+B<Docker sends a structurally valid reading with everything zeroed> -- 200,
+about 825 bytes, no error anywhere in it:
+
+    { id => '...', name => '/...', os_type => 'linux',
+      read      => '0001-01-01T00:00:00Z',
+      cpu_stats => { cpu_usage => { total_usage => 0, ... }, ... },
+      memory_stats => {}, pids_stats => {}, num_procs => 0, ... }
+
+So the advice this section used to give -- test for C<read> or C<cpu_stats>
+before using what comes back -- is B<wrong on Docker>: both keys are present,
+both look plausible, the test passes, and the caller uses zeros as though
+they were a measurement. The only markers in that body are Go's zero time in
+C<read> (C<0001-01-01T00:00:00Z>), a C<num_procs> of 0 and an empty
+C<memory_stats>, and those are Docker's shape rather than anybody's contract.
+The engine-independent question is not about the reading at all: ask
+L</inspect> whether the container is running. Treat the zero timestamp as a
+cheap Docker-specific second opinion, not as the test.
+
+=head2 C<< stream => 1 >> on a container that is not running
+
+The same call in follow mode fails in B<opposite> directions on the two
+engines, and the standing advice for a streaming endpoint -- bound the
+window -- does not help, because there is no window to bound:
+
+=over
+
+=item * B<Podman> sends the one error object above and closes at once. Without
+a callback that arrives as a one-element ArrayRef; either way this method
+croaks it
+
+=item * B<Docker> streams one zero-filled reading B<per second, forever>.
+Measured: 5 objects in a 5 s probe, 12 in a 12 s probe, the connection never
+closed by the engine. No container exit will ever end it -- the container had
+already exited when the call was made
+
+=back
+
+C<< stream => 1 >> without a callback therefore never returns on Docker for a
+container that is not running. C<on_event> plus a C<< $stop->() >> is the
+only way out, and there the callback has to decide for itself that a reading
+is not one: that stream carries nothing to croak on.
 
 =cut
 
@@ -786,9 +1098,78 @@ sub wait {
 
 =method wait
 
-    my $result = $containers->wait($id, condition => 'not-running');
+    my $result = $containers->wait($id);
+    my $code   = $result->{StatusCode};
 
-Block until container stops, then return exit code. Optional C<condition> parameter.
+    $containers->wait($id, condition => 'not-running');
+
+Block until the container reaches a condition, then return B<a HashRef> --
+not the exit code. C<StatusCode> is the exit status of the container's main
+process, and it is the one key both engines always send:
+
+    { StatusCode => 4 }                    # Docker 29.7.2 (API 1.55)
+    { StatusCode => 4, Error => undef }    # Podman 5.4.2 (API 1.41)
+
+B<The C<Error> key diverges, and C<exists> is the wrong test for it.>
+Measured on successful waits on both engines: Docker B<omits> the key
+entirely, Podman sends C<"Error": null> on every wait, which decodes to
+C<undef>. So C<< exists $result->{Error} >> is false on Docker and true on
+Podman for one and the same outcome, while C<< defined $result->{Error} >> is
+false on both. Ask C<defined>, never C<exists>, and take C<StatusCode> as the
+answer.
+
+A B<non-null> C<Error> was not produced on either engine by any probe behind
+this documentation. The Engine API reference documents it as an object
+carrying C<Message>; that shape is B<documented but not measured here>, which
+is not the same as unreachable -- do not write code that assumes it cannot
+appear, and do not trust its shape without checking.
+
+The call blocks in the client for as long as the engine takes to answer: this
+endpoint answers only once the condition is met, and the whole response is
+read before anything is parsed. There is no timeout, on this method or in the
+transport.
+
+Measured on both engines:
+
+=over
+
+=item * A container that has B<already exited> answers immediately with its
+real exit status -- with no condition and with C<not-running> alike
+
+=item * A container that was B<created and never started> answers immediately
+with an invented one: Docker C<< StatusCode => 0 >>, Podman
+C<< StatusCode => -1 >>. There is no exit status to report and the two
+engines make up different ones, so a C<0> from this call is not proof that
+anything ran
+
+=item * C<< condition => 'next-exit' >> and C<< condition => 'removed' >>
+against an exited container B<block> on both engines: the awaited event is in
+the future and may never happen
+
+=item * An unrecognised condition croaks B<400> on both (Docker C<invalid
+condition: "...">, Podman C<failed to parse query parameter 'condition' ...>),
+and an unknown container ID croaks B<404>
+
+=back
+
+Podman also answers C<< StatusCode => -1 >> for a container whose exit status
+L</attach> has destroyed -- see
+L</"On Podman this destroys a stopped container's exit status">. The value is
+that engine's sentinel for "no status", not an exit code.
+
+This endpoint is also the reason the error check on L</stats> matches
+C<cause>, C<message> and C<response> case-sensitively: a I<successful> wait
+is a 2xx body with a top-level C<Error> key in it, and a rule matching
+C<error> case-insensitively would turn every one of them into a failure.
+
+Options:
+
+=over
+
+=item * C<condition> - What to wait for: C<not-running> (the engine's own
+default), C<next-exit> or C<removed>. Sent only when given
+
+=back
 
 =cut
 

@@ -1,8 +1,11 @@
 use strict;
 use warnings;
 use Test::More;
+use FindBin;
+use lib "$FindBin::Bin/lib";
 use JSON::MaybeXS qw( decode_json );
 use API::Docker;
+use Test::API::Docker::FakeTransport;
 
 # POST /auth -- checking a set of registry credentials without pulling or
 # pushing anything (karr #17).
@@ -30,35 +33,15 @@ use API::Docker;
 # croak is what both engines have in common, which is why this file asserts
 # the croak and not the number.
 
-package Test::SystemAuth::FakeTransport;
-use Moo;
-extends 'API::Docker';
-
-has canned => (is => 'rw', default => sub { [200, 'OK', {}, ''] });
-has _sink  => (is => 'rw');
-
-sub _build__socket {
-  my ($self) = @_;
-  my $sink = '';
-  $self->_sink(\$sink);
-  open my $fh, '>', \$sink or die "open: $!";
-  return $fh;
-}
-
-sub _read_response { return $_[0]->canned }
-
 # The socket is built lazily by the first request, so a call that croaked
 # before sending has no sink at all -- which is itself the assertion in
-# several subtests below.
-sub written { my $sink = $_[0]->_sink; return defined $sink ? $$sink : '' }
-
-package main;
-
+# several subtests below. Test::API::Docker::FakeTransport's ->written
+# guards for exactly that.
 my $SUCCESS = '{"Status":"Login Succeeded","IdentityToken":""}';
 
 sub fake_client {
   my ($body, $status) = @_;
-  return Test::SystemAuth::FakeTransport->new(
+  return Test::API::Docker::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',
     api_version => '1.41',
     canned      => [$status // 200, 'OK', {}, $body // $SUCCESS],

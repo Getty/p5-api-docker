@@ -513,6 +513,18 @@ This client speaks the Docker Engine HTTP API over a socket. It never shells
 out to the C<docker> binary, so any engine serving that API works, whether or
 not Docker itself is installed.
 
+=head2 Installing Docker
+
+Where the engine is Docker itself, prefer the official packages from
+L<https://docs.docker.com/engine/install/> over a distribution package such as
+Debian/Ubuntu's C<docker.io>, which is typically a good deal older. The reason
+that matters here: L</negotiate_version> only negotiates within whatever API
+version the daemon itself reports, so an older daemon still works, but
+endpoints and query parameters that need a newer API version are then simply
+not there. This is a recommendation about which Docker package to install, not
+Docker instead of Podman -- Podman remains fully supported, see L</Podman>
+below.
+
 =head2 Podman
 
 Podman ships a Docker-compatible API service. Enable its rootless socket and
@@ -599,6 +611,12 @@ encoding
 =item * L<API::Docker::API::Configs> - Swarm configs
 
 =item * L<API::Docker::API::Plugins> - Managed plugins
+
+=item * L<API::Docker::Error::HTTP> - Raised for a status of 400 or above,
+carries the status code
+
+=item * L<API::Docker::Error::Stream> - Raised for a failure reported inside a
+200 event stream
 
 =back
 

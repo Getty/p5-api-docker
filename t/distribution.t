@@ -1,51 +1,37 @@
 use strict;
 use warnings;
 use Test::More;
+use FindBin;
+use lib "$FindBin::Bin/lib";
 use JSON::MaybeXS qw( decode_json );
 use API::Docker;
+use Test::API::Docker::FakeTransport;
+use Test::API::Docker::Mock;
 
 # GET /distribution/{name}/json -- asking a registry for an image manifest
 # without pulling it (karr #15).
 #
 # Nothing here opens a socket or reaches a daemon, and nothing is gated on
-# is_live(). Test::API::Docker::Mock is deliberately not used for two
-# reasons: under API_DOCKER_TEST_HOST it ignores its route table and returns
-# a real client, and the only engine reachable here is Podman, which serves
-# no route for this endpoint at all -- measured, rootless Podman 5.4.2
-# (API 1.41):
+# is_live() except the one subtest that says so. Test::API::Docker::Mock is
+# deliberately not used for the bulk of this file: under API_DOCKER_TEST_HOST
+# it ignores its route table and returns a real client, and the only engine
+# reachable here is Podman, which serves no route for this endpoint at all --
+# measured, rootless Podman 5.4.2 (API 1.41):
 #
 #   GET /v1.41/distribution/nginx:latest/json
 #   -> 404 {"cause":"","message":"Path /v1.41/distribution/nginx:latest/json
 #           is not supported","response":0}
 #
-# and the same for a bare name and for a percent-escaped reference. Second,
-# the mock replaces _request wholesale and so never croaks on a status at or
-# above 400, which is precisely the behaviour under test here.
+# and the same for a bare name and for a percent-escaped reference. So the
+# daemon is faked below the socket instead, and the real _request runs. The
+# success payload is the Engine API reference's own example descriptor.
 #
-# So the daemon is faked below the socket instead, in both modes, and the
-# real _request runs. The success payload is the Engine API reference's own
-# example descriptor.
-
-package Test::Distribution::FakeTransport;
-use Moo;
-extends 'API::Docker';
-
-has canned => (is => 'rw', default => sub { [200, 'OK', {}, ''] });
-has _sink  => (is => 'rw');
-
-sub _build__socket {
-  my ($self) = @_;
-  my $sink = '';
-  $self->_sink(\$sink);
-  open my $fh, '>', \$sink or die "open: $!";
-  return $fh;
-}
-
-sub _read_response { return $_[0]->canned }
-
-sub written { my $sink = $_[0]->_sink; return defined $sink ? $$sink : '' }
-
-package main;
+# The one exception is the karr #38 subtest near the end, which drives the
+# same ->exists 404-handling through Mock's route table instead of the real
+# transport, now that Mock honours a >= 400 mock_response the way _request
+# does. It is skipped live for the same reason as the rest of this file would
+# be if it used Mock: no engine reachable here serves the route to check it
+# against.
 
 my $DESCRIPTOR = <<'JSON';
 {"Descriptor":{"MediaType":"application/vnd.docker.distribution.manifest.v2+json","digest":"sha256:c0537ff6a5218ef531ece93d4984efc99bbf3f7497c0a7726c88e2bb7584dc96","size":3987},"Platforms":[{"architecture":"amd64","os":"linux"}]}
@@ -53,7 +39,7 @@ JSON
 
 sub fake_client {
   my ($body, $status) = @_;
-  return Test::Distribution::FakeTransport->new(
+  return Test::API::Docker::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',
     api_version => '1.41',
     canned      => [$status // 200, 'Not Found', {}, $body // $DESCRIPTOR],
@@ -153,6 +139,59 @@ subtest 'exists fills a response HashRef the caller passed through' => sub {
   my %res;
   ok !$c->distribution->exists('nginx:latest', response => \%res), 'no';
   is $res{status}, 404, 'the caller sees the status behind the answer';
+};
+
+# ---------------------------------------------------------------------------
+# karr #38: before Mock honoured a >= 400 mock_response, a route table could
+# not exercise ->exists's status-driven branching at all -- mock_response
+# set the status but the mock returned $response->{data} unconditionally, so
+# every mocked call looked like success. This is the same three outcomes as
+# the FakeTransport subtests above, driven through the route table instead of
+# the real transport.
+subtest 'exists through a mocked route table (karr #38)' => sub {
+  plan skip_all => 'fixture-only: no engine reachable from this repo serves '
+    . '/distribution at all (see the file header)'
+    if is_live();
+
+  my $found = test_docker(
+    'GET /distribution/nginx:latest/json' => decode_json($DESCRIPTOR),
+  );
+  is $found->distribution->exists('nginx:latest'), 1,
+    'a mocked 200 is yes, through the route table';
+
+  my $no = test_docker(
+    'GET /distribution/nginx:latest/json' =>
+      mock_response(status => 404, data => decode_json($REGISTRY_404)),
+  );
+  ok !$no->distribution->exists('nginx:latest'),
+    'a mocked registry 404 is no, not an exception -- the mock croaks and '
+    . '->exists catches it, same as it does over the real transport';
+
+  my $unsupported = test_docker(
+    'GET /distribution/nginx:latest/json' =>
+      mock_response(status => 404, data => decode_json($PODMAN_404)),
+  );
+  ok !eval { $unsupported->distribution->exists('nginx:latest'); 1 },
+    'a mocked "not supported" 404 still croaks rather than answering no';
+  like $@, qr/cannot ask this engine/, 'same message as the transport-level '
+    . 'test above';
+  like $@, qr/is not supported/, 'quoting what the mocked engine said';
+
+  my $boom = test_docker(
+    'GET /distribution/nginx:latest/json' =>
+      mock_response(status => 500, data => { message => 'server error' }),
+  );
+  ok !eval { $boom->distribution->exists('nginx:latest'); 1 },
+    'a mocked 500 propagates too';
+  my $err = $@;
+  like $err, qr/server error/,
+    'and carries the message the mock croak now extracts from the body';
+  # karr #50: the mock raises the exception class as well, not only the text.
+  # If it went back to croaking a plain string, every ->status assertion in
+  # the suite would have to be gated on is_live() to keep passing.
+  isa_ok $err, 'API::Docker::Error::HTTP';
+  is $err->status, 500, 'with the status the mocked route answered';
+  is $err->reason, 'Internal Server Error', 'and that status line\'s reason';
 };
 
 done_testing;

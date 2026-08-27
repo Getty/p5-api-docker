@@ -224,11 +224,13 @@ sub attach {
 
     my $frames = $container->attach;
 
-Attach to the container's output and return its frames. This is the one-way
-attach and, without a callback, it blocks until the stream ends -- see
-L<API::Docker::API::Containers/attach> before reaching for it on a container
-that keeps running. C<on_frame> is passed through and reads the stream as it
-arrives instead.
+Attach to the container's output and return the frames, one-way. Every option
+goes to L<API::Docker::API::Containers/attach>, C<on_frame> included; with a
+callback the return value is that method's summary HashRef rather than the
+frames. Without options it replays what the container already wrote and
+returns; C<< stream => 1 >> on a container that is not running never
+returns -- not even with a callback -- see
+L<API::Docker::API::Containers/"The defaults follow the engine">.
 
 =cut
 

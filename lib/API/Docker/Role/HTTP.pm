@@ -8,6 +8,7 @@ use JSON::MaybeXS qw( encode_json decode_json );
 use Path::Tiny;
 use Carp qw( croak shortmess );
 use Log::Any qw( $log );
+use API::Docker::Error::HTTP;
 use API::Docker::Error::Stream;
 use namespace::clean;
 
@@ -491,9 +492,10 @@ sub _request {
 
   if ($status_code >= 400) {
     my $error_msg = $body;
+    my $data;
     if ($body && $body =~ /^\s*[\{\[]/) {
       eval {
-        my $data = decode_json($body);
+        $data = decode_json($body);
         # Docker answers with {"message":...}. Podman answers a failed push
         # with the stream shape instead -- {"errorDetail":{"message":...},
         # "error":...} and no message key at all -- so without these two
@@ -503,7 +505,22 @@ sub _request {
         $error_msg = $data->{message} // $detail // $data->{error} // $body;
       };
     }
-    croak "Docker API error ($status_code): $error_msg";
+
+    # Carp hands a reference straight back rather than decorating it, so this
+    # croak is a die with an object -- hence the location captured by hand,
+    # which names the same frame a croak of a plain string would have named.
+    # message . location is byte for byte what the string croak produced,
+    # newline-terminated engine messages included: Carp appends the suffix
+    # after the newline rather than skipping it (karr #50).
+    my $error = API::Docker::Error::HTTP->new(
+      message  => "Docker API error ($status_code): $error_msg",
+      location => shortmess(''),
+      status   => $status_code,
+      reason   => $status_text,
+      body     => $body // '',
+      data     => $data,
+    );
+    croak $error;
   }
 
   # A streamed request has handed every unit to the callback already and kept
@@ -1107,6 +1124,29 @@ L<API::Docker::API::Containers/start>. And C<< HEAD /containers/{id}/archive >>
 carries its whole payload in the C<X-Docker-Container-Path-Stat> header, with
 no body to return at all.
 
+=head2 Failure on the status line
+
+A status of 400 or above croaks with an L<API::Docker::Error::HTTP>. The
+message is the engine's C<message> field, its C<errorDetail.message>, its flat
+C<error> key or the raw body, in that order of preference, wrapped as
+C<Docker API error (STATUS): REASON> -- the same text this croak has always
+carried, and the object stringifies to it byte for byte, Carp's location
+suffix included. Code that catches C<$@> as a string cannot tell the
+difference and needs no change.
+
+What the object adds is C<< $err->status >>. The message is engine-specific
+prose: killing a stopped container answers 409 with C<can only kill running
+containers ... container state improper> on rootless Podman 5.4.2, while
+Docker's own example for that case reads C<Container E<lt>idE<gt> is not
+running>. Anything that had to tell "no such container" from "wrong state"
+apart was matching on that prose; the status code is the same distinction
+without it. C<< ->reason >>, C<< ->body >> and C<< ->data >> carry the rest of
+what the engine said.
+
+This is B<not> a replacement for the C<response> option above, which stays the
+only way to the status of a request that did not fail -- a 304, or a header
+carrying the whole payload of a successful C<HEAD>.
+
 =head2 Failure inside a 200 response
 
 C</build>, C</images/create> (pull) and C</images/{name}/push> report a failed
@@ -1383,6 +1423,9 @@ sub _demux_frames {
 =over
 
 =item * L<API::Docker> - Main client using this role
+
+=item * L<API::Docker::Error::HTTP> - Raised for a status of 400 or above;
+carries the status code
 
 =item * L<API::Docker::Error::Stream> - Raised for a failure reported inside
 a 200 event stream

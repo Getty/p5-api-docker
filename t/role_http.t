@@ -1,8 +1,11 @@
 use strict;
 use warnings;
 use Test::More;
+use FindBin;
+use lib "$FindBin::Bin/lib";
 use JSON::MaybeXS qw( encode_json decode_json );
 use API::Docker;
+use Test::API::Docker::FakeTransport;
 
 # API::Docker::Role::HTTP sits below _request as far as Test::API::Docker::Mock
 # is concerned -- the mock replaces _request wholesale, so request-line
@@ -60,32 +63,6 @@ sub READ {
 }
 
 sub CLOSE { 1 }
-
-package main;
-
-# ---------------------------------------------------------------------------
-# A client whose socket is a captured in-memory sink and whose response is
-# canned, so _request's request-assembly and >=400 handling can be driven
-# without a daemon on the other end. Mirrors the Test::FakeTransport pattern
-# in t/streaming_shape.t, plus capturing what got written to the "socket".
-package Test::RoleHTTP::FakeTransport;
-use Moo;
-extends 'API::Docker';
-
-has canned => (is => 'rw', default => sub { [200, 'OK', {}, ''] });
-has _sink  => (is => 'rw');
-
-sub _build__socket {
-  my ($self) = @_;
-  my $sink = '';
-  $self->_sink(\$sink);
-  open my $fh, '>', \$sink or die "open: $!";
-  return $fh;
-}
-
-sub _read_response { return $_[0]->canned }
-
-sub written { return ${ $_[0]->_sink } }
 
 package main;
 
@@ -207,7 +184,7 @@ subtest '_uri_encode: what it escapes and what it leaves alone' => sub {
 
 # ---------------------------------------------------------------------------
 subtest '_request: assembles the request line, headers and body' => sub {
-  my $t = Test::RoleHTTP::FakeTransport->new(
+  my $t = Test::API::Docker::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',
     api_version => '1.41',
   );
@@ -271,7 +248,7 @@ subtest '_request: assembles the request line, headers and body' => sub {
 
 # ---------------------------------------------------------------------------
 subtest '_request: a CR/LF in a header value cannot inject a second header' => sub {
-  my $t = Test::RoleHTTP::FakeTransport->new(
+  my $t = Test::API::Docker::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',
     api_version => '1.41',
   );
@@ -294,7 +271,7 @@ subtest '_request: a CR/LF in a header value cannot inject a second header' => s
 # API::Docker::Role::HTTP under "Header names are rejected, header values are
 # stripped".
 subtest '_request: an invalid header name is refused, not rewritten' => sub {
-  my $t = Test::RoleHTTP::FakeTransport->new(
+  my $t = Test::API::Docker::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',
     api_version => '1.41',
   );
@@ -357,7 +334,7 @@ subtest '_request: an invalid header name is refused, not rewritten' => sub {
 
 # ---------------------------------------------------------------------------
 subtest '_request: >= 400 croaks' => sub {
-  my $t = Test::RoleHTTP::FakeTransport->new(
+  my $t = Test::API::Docker::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',
     api_version => '1.41',
   );
@@ -421,6 +398,42 @@ subtest '_request: >= 400 croaks' => sub {
     eval { $t->_request('POST', '/images/x/push') };
     like $@, qr/\ADocker API error \(500\): the message key at /,
       'message is consulted first, errorDetail only fills its absence';
+  };
+
+  # karr #50: the croak text is engine-specific prose -- Podman and Docker
+  # word the same 409 differently -- so a caller telling 404 from 409 apart
+  # had to match on it. The status code goes on the exception instead, and
+  # the exception has to stay indistinguishable from the string it replaces.
+  subtest 'the exception carries the status and is still that exact string' => sub {
+    my $body = encode_json({
+      cause    => 'container state improper',
+      message  => 'can only kill running containers. abc is in state stopped',
+      response => 409,
+    });
+    $t->canned([409, 'Conflict', {}, $body]);
+    my $err = do { local $@; eval { $t->_request('POST', '/containers/abc/kill') }; $@ };
+
+    isa_ok $err, 'API::Docker::Error::HTTP';
+    is $err->status, 409, 'the status code, as the thing to branch on';
+    is $err->reason, 'Conflict', 'the reason phrase off the status line';
+    is $err->body, $body, 'the response body verbatim';
+    is $err->data->{cause}, 'container state improper',
+      'and decoded, so an engine-specific extra key is reachable';
+
+    is "$err", $err->message . $err->location,
+      'stringification is the message plus Carp\'s location, nothing else';
+    like "$err", qr/\ADocker API error \(409\): can only kill running containers\. abc is in state stopped at \S+ line \d+\.\n\z/,
+      'which is byte for byte what the plain croak produced before';
+    unlike $err->message, qr/ at \S+ line \d+/,
+      'the message alone carries no location';
+    ok $err, 'and the boolean overload is true even before stringifying';
+  };
+
+  subtest 'a body that could not be decoded leaves data undef' => sub {
+    $t->canned([400, 'Bad Request', {}, '{not actually json']);
+    my $err = do { local $@; eval { $t->_request('POST', '/containers/create') }; $@ };
+    is $err->data, undef, 'nothing is invented where decode_json failed';
+    is $err->body, '{not actually json', 'while the raw body is still there';
   };
 
   subtest '204 and other success codes still return undef/decode normally' => sub {
@@ -490,7 +503,7 @@ subtest '_read_response: a HEAD response has no body, whatever it announces' => 
 # 304 ("it was already in that state") and 204 ("changed it") were both undef,
 # and a header carrying the whole payload was unreachable.
 subtest '_request: the response out-parameter' => sub {
-  my $t = Test::RoleHTTP::FakeTransport->new(
+  my $t = Test::API::Docker::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',
     api_version => '1.41',
   );
@@ -539,7 +552,7 @@ subtest '_request: the response out-parameter' => sub {
   };
 
   subtest 'anything but a HashRef is a caller bug' => sub {
-    my $t2 = Test::RoleHTTP::FakeTransport->new(
+    my $t2 = Test::API::Docker::FakeTransport->new(
       host        => 'unix:///nonexistent.sock',
       api_version => '1.41',
     );
@@ -559,7 +572,7 @@ subtest '_request: the response out-parameter' => sub {
 
 # ---------------------------------------------------------------------------
 subtest 'head: sends HEAD, returns undef, payload comes out of the headers' => sub {
-  my $t = Test::RoleHTTP::FakeTransport->new(
+  my $t = Test::API::Docker::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',
     api_version => '1.41',
   );
@@ -589,7 +602,7 @@ subtest 'head: sends HEAD, returns undef, payload comes out of the headers' => s
 # that stopped passing the status on would fail here while the mocked test
 # still passed.
 subtest 'containers: 204 means it changed, 304 means it was already so' => sub {
-  my $t = Test::RoleHTTP::FakeTransport->new(
+  my $t = Test::API::Docker::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',
     api_version => '1.41',
   );

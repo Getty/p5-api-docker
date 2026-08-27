@@ -1,9 +1,12 @@
 use strict;
 use warnings;
 use Test::More;
+use FindBin;
+use lib "$FindBin::Bin/lib";
 use JSON::MaybeXS qw( decode_json is_bool );
 use MIME::Base64 qw( decode_base64 );
 use API::Docker;
+use Test::API::Docker::FakeTransport;
 
 # Nothing here opens a socket or reaches a daemon, and nothing here is gated
 # on is_live().
@@ -30,34 +33,9 @@ use API::Docker;
 # t/fixtures: a hand-rolled file there would claim a provenance it does not
 # have.
 
-# ---------------------------------------------------------------------------
-# A client whose socket is an in-memory sink and whose response is canned, so
-# _request assembles a real request line, query string, headers and body with
-# nothing on the other end. Same pattern as t/role_http.t.
-package Test::Plugins::FakeTransport;
-use Moo;
-extends 'API::Docker';
-
-has canned => (is => 'rw', default => sub { [200, 'OK', {}, ''] });
-has _sink  => (is => 'rw');
-
-sub _build__socket {
-  my ($self) = @_;
-  my $sink = '';
-  $self->_sink(\$sink);
-  open my $fh, '>', \$sink or die "open: $!";
-  return $fh;
-}
-
-sub _read_response { return $_[0]->canned }
-
-sub written { return ${ $_[0]->_sink } }
-
-package main;
-
 sub fake_client {
   my ($body, $status) = @_;
-  return Test::Plugins::FakeTransport->new(
+  return Test::API::Docker::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',
     api_version => '1.41',
     canned      => [$status // 200, 'OK', {}, $body // ''],

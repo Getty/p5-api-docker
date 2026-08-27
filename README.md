@@ -157,6 +157,19 @@ asks for it. `secrets` and `configs` are covered despite belonging to
 that same Engine API family, because they stand on their own rather than
 on an orchestrator.
 
+## Container engines
+
+This client speaks the Docker Engine HTTP API over a socket and never
+shells out to the `docker` binary, so any engine serving that API works
+— Podman included, which needs nothing but `DOCKER_HOST`. Where the
+engine is Docker itself, prefer the official packages from
+[docs.docker.com/engine/install](https://docs.docker.com/engine/install/)
+over a distribution package such as Debian/Ubuntu's `docker.io`, which is
+typically a good deal older: API version negotiation only negotiates
+within whatever version the daemon itself reports, so an older daemon
+still works, but endpoints and query parameters that need a newer API
+version are then simply not there.
+
 ## License
 
 This library is free software; you can redistribute it and/or modify it under the same terms as Perl itself.

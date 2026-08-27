@@ -1,9 +1,12 @@
 use strict;
 use warnings;
 use Test::More;
+use FindBin;
+use lib "$FindBin::Bin/lib";
 use JSON::MaybeXS qw( decode_json encode_json );
 use MIME::Base64 qw( decode_base64 );
 use API::Docker;
+use Test::API::Docker::FakeTransport;
 
 # API::Docker::Role::RegistryAuth: one AuthConfig encoding, shared by every
 # class that talks to a registry. It used to exist twice -- a bare sub
@@ -30,30 +33,9 @@ use API::Docker;
 # neither /plugins nor /distribution, so a live run of this file could only
 # be red or skipped.
 
-package Test::RegistryAuth::FakeTransport;
-use Moo;
-extends 'API::Docker';
-
-has canned => (is => 'rw', default => sub { [200, 'OK', {}, ''] });
-has _sink  => (is => 'rw');
-
-sub _build__socket {
-  my ($self) = @_;
-  my $sink = '';
-  $self->_sink(\$sink);
-  open my $fh, '>', \$sink or die "open: $!";
-  return $fh;
-}
-
-sub _read_response { return $_[0]->canned }
-
-sub written { return ${ $_[0]->_sink } }
-
-package main;
-
 sub fake_client {
   my ($body, $status) = @_;
-  return Test::RegistryAuth::FakeTransport->new(
+  return Test::API::Docker::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',
     api_version => '1.41',
     canned      => [$status // 200, 'OK', {}, $body // ''],

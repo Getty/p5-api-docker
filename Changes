@@ -1,6 +1,7 @@
 Revision history for API-Docker
 
 {{$NEXT}}
+
   - `containers->start`, `->stop`, `->restart`, `->pause` and `->unpause`
     now return 1 when the call changed the container's state and 0 when it
     was already in the state asked for, instead of always returning undef.
@@ -41,7 +42,7 @@ Revision history for API-Docker
     all and the whole payload base64-encoded in
     `X-Docker-Container-Path-Stat` -- so on that engine no branch would
     have blocked; an engine that does announce a length is not waited on
-    either. Docker itself is not installed here and was not measured.
+    either. Docker was not measured for this endpoint.
   - Test::API::Docker::Mock: a route can carry a status and headers via the
     new `mock_response(status => 304, ...)` helper, so the 304 path is
     testable without a daemon. A route that says nothing gets the status
@@ -111,14 +112,40 @@ Revision history for API-Docker
     the `jsonmessage` shape the engine uses for `/build`, `/images/create`
     and `/images/{name}/push`, and it was never observed here -- so the
     check has no legitimate reading it could turn into a croak.
-  - Document that a stopped container is answered differently, and that
-    neither guard catches it: measured on the same engine, `stats` for a
-    stopped container answers HTTP 200 with a chunked body of
+  - `containers->stats` croaks with an `API::Docker::Error::HTTP` when the
+    engine reports a failure inside a response it has already answered
+    with 200, instead of handing that error object back as though it were
+    a reading. Measured on rootless Podman 5.4.2 (API 1.41): the stats of
+    a container that is not running are answered 200 chunked with
     `{"cause":"container is stopped","message":"container is stopped",
-    "response":500}`. The `>= 400` croak cannot see it because the status
-    is 200, and the `errorDetail` scan cannot because the object is keyed
-    `cause`/`message`/`response` instead -- so `stats($id)` hands that
-    HashRef back where a reading was expected.
+    "response":500}`, for the one-shot call and for `stream => 1` alike.
+    Neither guard in the transport saw it -- the status line says 200, and
+    the stream check triggers on `errorDetail`. The exception carries
+    `->status` 500, the code Podman named in `response`, and the whole
+    object as `->data`, so `->data->{cause}` stays readable. The check runs
+    on the buffered return value and in front of an `on_event` callback,
+    never on `on_frame`, `on_chunk` or a raw body, and it is local to this
+    endpoint rather than a transport rule: it triggers only on a HashRef
+    inside a 2xx carrying all three of `cause`, `message` and `response`
+    lower-cased, with `response` reading as an integer >= 400. It is
+    deliberately not case-insensitive -- a successful `containers->wait`
+    answers with a top-level `Error` key. Docker 29.7.2 (API 1.55) never
+    sends this shape at all, so this is a Podman compatibility path. A
+    caller that inspected the returned HashRef for `cause` has to catch
+    instead.
+  - `containers->stats` documents what Docker does with the same call,
+    which is the opposite: 29.7.2 (API 1.55) answers a stopped container
+    with a structurally valid, zero-filled reading, every key present. The
+    advice this POD used to give -- test for `read` or `cpu_stats` before
+    using what comes back -- therefore passes on Docker and lets a caller
+    use zeros as a measurement. The only markers are Go's zero time in
+    `read` (`0001-01-01T00:00:00Z`), `num_procs` of 0 and an empty
+    `memory_stats`; the POD now says to ask `inspect` whether the container
+    is running instead. Also newly documented: `stream => 1` on a container
+    that is not running is an unbounded stream on Docker -- one zero-filled
+    reading per second, forever, measured as 5 objects in 5s and 12 in 12s
+    -- where Podman sends one error object and closes. Only `on_event` with
+    `$stop->()` gets out of it.
   - `tls => 1` now speaks actual TLS instead of croaking "not
     implemented" (the 0.003 state). The `tcp://` branch of the socket
     builder opens an `IO::Socket::SSL` connection in place of the plain
@@ -398,16 +425,19 @@ Revision history for API-Docker
     entity carries the six top-level fields the daemon encodes -- `Id`,
     `Name`, `Enabled`, `PluginReference`, `Config` and `Settings` -- and
     threads `Name` back through `inspect`, `enable`, `disable`, `remove`,
-    `configure`, `upgrade` and `push`. That field set was checked against
-    moby v20.10.24's `swagger.yaml`, which declares API 1.41, and against
-    the Go struct it describes -- not against a running engine, because
-    nothing reachable from here serves `/plugins` at all: rootless Podman
-    5.4.2 answers `GET /v1.41/plugins` with `Path /v1.41/plugins is not
-    supported`. There is no `Tag`/`Active` pair -- that is a stale
-    pre-1.25 example block, contradicted by the schema three lines above
-    it and gone from 1.41 -- and no top-level `Description`.
-    `PluginReference` is omitted by the engine unless the plugin came from
-    a registry, so it reads as `undef`, never null.
+    `configure`, `upgrade` and `push`. That field set was derived from
+    moby's `swagger.yaml` and the Go struct it describes, because Podman
+    serves no `/plugins` at all (`GET /v1.41/plugins` answers `Path
+    /v1.41/plugins is not supported`), and then confirmed against a real
+    Docker 29.7.2 (API 1.55) daemon with `vieux/sshfs` installed: exactly
+    those six keys, in both the list and the inspect response and in both
+    the enabled and the disabled state. There is no `Tag`/`Active` pair --
+    that is a stale pre-1.25 example block, contradicted by the schema
+    three lines above it and gone from 1.41 -- and no top-level
+    `Description`. `PluginReference` is present for a plugin pulled from a
+    registry and omitted otherwise, so it reads as `undef`, never null.
+    `Settings.Env` is a flat list of `KEY=value` strings while `Config.Env`
+    is a list of HashRefs, one level apart under the same key name.
   - `secrets->list`/`inspect` and `configs->list`/`inspect` return
     `API::Docker::Secret` and `API::Docker::Config` entities instead of
     the raw daemon hashrefs, restoring the same invariant. Both carry
@@ -416,11 +446,11 @@ Revision history for API-Docker
     `inspect`/`update`/`remove` delegating by ID. `create` still returns
     the daemon's `{ ID => ... }`: that is all it answers with, and an
     entity built from it would carry no `Spec` and no `Version`.
-  - `API::Docker::Config->decoded_data` base64-decodes `Spec.Data` and
-    leaves `Spec` verbatim. `API::Docker::Secret` has no such accessor on
-    purpose: in the `GET /secrets` response captured from Podman 5.4.2
-    (API 1.41) the `Spec` carries `Name`, `Driver` and `Labels` and no
-    `Data` key at all, so a secret has nothing to decode.
+    `API::Docker::Config->decoded_data` base64-decodes `Spec.Data` and
+    leaves `Spec` verbatim; `API::Docker::Secret` has no such accessor on
+    purpose, because in the `GET /secrets` response captured from Podman
+    5.4.2 the `Spec` carries `Name`, `Driver` and `Labels` and no `Data`
+    key at all, so a secret has nothing to decode.
   - `tls` now defaults from `$ENV{DOCKER_TLS_VERIFY}` instead of always
     being 0, so a shell set up for the `docker` CLI reaches a `tcp://`
     daemon over TLS rather than in the clear. The rule taken is the CLI's,
@@ -450,42 +480,134 @@ Revision history for API-Docker
     reachable outcome, 204, since `_request` croaks on the 409 a
     non-running container answers with -- so a 1/0 shape does not apply
     and it keeps returning nothing. More importantly the POD now says
-    plainly that 204 does not mean the container stopped: measured against
-    Podman 5.4.2 (API 1.41), `signal => 'SIGUSR1'` against a process with
-    a handler installed for it is delivered, the container keeps running,
-    and the engine answers 204 exactly as it does for a signal that ends
-    the process. `->inspect` is the only way to know afterwards. No code
+    plainly that 204 does not mean the container stopped: `signal =>
+    'SIGUSR1'` against a process with a handler installed for it is
+    delivered, the container keeps running, and the engine answers 204
+    exactly as it does for a signal that ends the process. Measured on
+    both engines -- Podman 5.4.2 (API 1.41) and Docker 29.7.2 (API 1.55)
+    -- with identical results, so `->inspect` is the only way to know
+    afterwards on either. The 409 for a stopped container is given for
+    both rather than quoting one as though it were generic: Docker says
+    `cannot kill container: <name>: container <id> is not running`, Podman
+    `can only kill running containers. <id> is in state exited: container
+    state improper`, whose `container state improper` is the `cause` field
+    and reachable as `$err->data->{cause}`. Newly documented, and the one
+    place the engines genuinely part: a signal sent to a *paused*
+    container is answered 204 by both, but Docker unpauses it as a side
+    effect -- the handler runs at once and a following `unpause` then
+    croaks 500 `Container <id> is not paused` -- while Podman leaves it
+    paused and queues the signal until an explicit `unpause`. No code
     change.
   - `t/fixtures/containers_archive.tar` is a real capture of `GET
     /containers/{id}/archive?path=/etc/hostname` measured against the
     rootless Podman socket (5.4.2, API 1.41) rather than a hand-built
     ustar archive -- the only tar fixture in the suite that had been.
-    Differences from the hand-built one: uname/gname are populated
-    (`root`/`root`, not empty), devmajor/devminor are the ASCII string
-    `0000000` rather than raw NUL bytes, and mode reflects the file's real
-    0644 rather than the guessed 0664; block size, the trailing zero
-    blocks and the ustar magic were already right.
-    `X-Docker-Container-Path-Stat`'s `mode` is confirmed to be Go's
-    `os.FileMode`, not a POSIX `st_mode` word -- the two coincide for a
-    regular file, which proves nothing, so the proof is a directory:
-    `/etc` reports `2147484141`, Go's `os.ModeDir` (`1<<31`) plus 0755,
-    where POSIX `S_IFDIR` would give `16877`. `mode & 0777` recovers the
-    permission bits either way, but the raw value must not be compared
-    against a POSIX constant. The header also carries an undocumented
-    sixth key, `isDir`, and `linkTarget` is populated even for a plain
-    regular file rather than left empty as the Docker reference says.
-    `t/containers_endpoints.t` asserts the real key set and the FileMode
-    distinction instead of noting them.
-  - The one-way `attach` stream is confirmed byte-identical to `logs` on
-    the same engine, as documented rather than assumed when the attach
-    subtests were written. The measurement found a related hazard, left
-    unfixed and recorded: attaching to a container that has already exited
-    never closes the connection on Podman -- 200,
-    `application/vnd.docker.raw-stream`, no Content-Length, no chunked
-    encoding, and no close even when the client sends `Connection: close`,
-    which `_request` always does. The buffered frames arrive and the
-    socket then hangs. A live attach closes cleanly when the container
-    exits mid-stream.
+    Differences from the hand-built one: mode reflects the file's real
+    0644 rather than the guessed 0664, devmajor/devminor are the ASCII
+    string `0000000` rather than raw NUL bytes, and uname/gname are
+    populated `root`/`root` rather than empty; block size, the trailing
+    zero blocks and the ustar magic were already right. That last field is
+    the one place the engines differ -- Docker 29.7.2 leaves uname and
+    gname NUL, so `tar -tvf` renders the same member as `0/0` there and
+    `root/root` on Podman. Everything else in the header is byte-identical
+    between the two.
+  - `X-Docker-Container-Path-Stat` is measured on both engines, and they
+    disagree on two of its keys. `mode` is Go's `os.FileMode` on both, not
+    a POSIX `st_mode` word -- the two coincide for a regular file, which
+    proves nothing, so the proof is a directory: `/etc` reports
+    `2147484141`, Go's `os.ModeDir` (`1<<31`) plus 0755, where POSIX
+    `S_IFDIR` would give `16877`. `mode & 0777` recovers the permission
+    bits either way, but the raw value must not be compared against a
+    POSIX constant. Podman adds a sixth key `isDir` that Docker never
+    sends, not even for a directory, and populates `linkTarget` for a
+    plain regular file where Docker leaves it empty exactly as the Engine
+    API reference says. On a symlink the two disagree again: for
+    `/tmp/hnlink -> /etc/hostname` Docker reports the requested basename
+    and the literal link content, Podman the resolved target's basename
+    and the fully resolved path, which for `/proc/mounts` means
+    `/proc/self/mounts`. `t/containers_endpoints.t` asserts the shared
+    facts once and branches on the engine for the rest, through a new
+    `live_engine()` helper that reads the `Components` list from
+    `GET /version`.
+  - `containers->attach` now follows the engine's own default: `stream`
+    defaults to 0 and `logs` to 1, where before `stream` defaulted to 1
+    and `logs` had no default at all. `attach($id)` therefore replays what
+    the container has written and returns, instead of opening an unbounded
+    subscription -- a public behaviour change for any caller that relied
+    on the default to get a live stream, which must now pass
+    `stream => 1`. `stream` is defined as streaming "from the time the
+    request was made onwards" and its only terminator is the container
+    ending, which for a stopped container already happened; attach also
+    hijacks the connection, so there is neither a Content-Length nor a
+    chunked terminator to signal the end, and a callback does not help
+    because nothing will ever call `$stop->()`. Measured against one
+    exited container on both engines: `?logs=1&stdout=1&stderr=1&stream=0`
+    answers 200, sends the frames and closes at once (Docker 0.5ms, Podman
+    2.2ms), while the same request with `stream=1` sends identical bytes
+    and was still open when a 10s probe gave up -- on Docker as much as on
+    Podman, and on Podman also when sent with `Upgrade: tcp`, which
+    answers 101 UPGRADED and hangs the same way. The hang is unspecified
+    behaviour rather than a Podman quirk, which is the case for the new
+    default. One further correction the measurement forced: with `stream`
+    and `logs` both false the response is not empty, as the POD claimed,
+    but 400 `at least one of Logs or Stream must be set`; that combination
+    is still passed through as asked. `API::Docker::Container->attach`
+    inherits the new defaults.
+  - `containers->attach` documents that on Podman it destroys the exit
+    status of a container that has already exited. Measured before and
+    after one attach on a container that exited with 4: the container
+    reverts to `Status: created`, `ExitCode` becomes 0, and a later `wait`
+    answers `{"StatusCode":-1}` -- a sentinel inside a 200 with no error
+    signalled anywhere. All three variants do it, the new `stream => 0,
+    logs => 1` default included, which returns cleanly in milliseconds: it
+    is the call, not the hang. `containers->logs` does not do it and
+    Docker 29.7.2 does not do it at all. Documented rather than guarded,
+    and said where a reader looks before calling attach rather than in a
+    caveat further down. The one-way attach stream is separately confirmed
+    byte-identical to `logs` on both engines, as documented rather than
+    assumed when the attach subtests were written.
+  - A status of 400 or above now croaks with an `API::Docker::Error::HTTP`
+    rather than a plain string, so a caller can tell 404 from 409 without
+    matching on prose the engine picks. That prose really does differ:
+    for a kill against a stopped container Podman answers 409 `can only
+    kill running containers. <id> is in state stopped: container state
+    improper` with `cause`/`message`/`response` keys, while Docker answers
+    the same status with a bare `message` reading `cannot kill container:
+    <name>: container <id> is not running` -- and Docker's 404 text for a
+    missing container differs between `kill` and `inspect` where Podman
+    sends one sentence for both. The exception overloads stringification
+    and produces byte for byte what the string croak produced, text, Carp
+    location and named frame alike, verified against all seven fallback
+    cases and against a live 404, so eval-and-inspect-`$@`-as-text code
+    needs no change. It carries `status`, `reason`, `body` and the decoded
+    `data`. The `response` out-parameter is unaffected and remains the
+    only way to the status of a request that did not fail.
+  - `containers->wait` had a one-line description that was wrong twice: it
+    returns a HashRef, not an exit code, and the `Error` key diverges.
+    Docker omits it from a successful wait, Podman always sends
+    `Error: null`, so `exists $r->{Error}` answers differently per engine
+    while `defined` answers the same on both. Also documented: the
+    `condition` values, that a container created but never started answers
+    at once with an invented status (Docker 0, Podman -1), that
+    `next-exit` and `removed` block against an already-exited container,
+    and that a non-null `Error` was produced on neither engine and is
+    therefore documented rather than verified.
+  - Recommend the official Docker packages
+    (L<https://docs.docker.com/engine/install/>) over a distribution
+    package such as Debian's `docker.io`, in POD and README. Version
+    negotiation only negotiates within whatever API version the daemon
+    itself reports, so an older daemon still works but the endpoints and
+    query parameters of a newer API are simply not there. This is about
+    which Docker package to install, not Docker instead of Podman.
+  - Test harness: `Test::API::Docker::Mock` honours a `>= 400` mock
+    response and croaks the way the real transport does -- same fallback
+    order, same text, filled `response` out-parameter first -- so a route
+    table can exercise error handling instead of every error path being
+    tested below the socket. The `FakeTransport` subclass that five test
+    files each carried a copy of now lives in `t/lib` beside the mock; the
+    guarded `written` accessor of two of those copies was kept as the
+    canonical one, since it is a strict superset and the other three never
+    exercised the difference.
 
 0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the

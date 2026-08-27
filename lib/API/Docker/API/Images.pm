@@ -354,7 +354,8 @@ C<403 Forbidden> with C<< {"message":"denied: requested access to the resource
 is denied"} >>, and an existing repository with a missing tag answers
 C<404 Not Found> with C<< {"message":"manifest unknown: manifest unknown"} >>.
 Neither reaches the stream at all -- the transport's own status handling
-croaks with a plain string first.
+croaks with an L<API::Docker::Error::HTTP> -- which is that same string to
+anything inspecting C<$@> as text -- first.
 
 =back
 
@@ -449,9 +450,10 @@ Podman puts an C<errorDetail> body behind a real error status instead:
 measured against the rootless socket (5.4.2, API 1.41), a push to an
 unreachable registry answers C<500 Internal Server Error> with
 C<< {"errorDetail":{"message":"... connection refused"},"error":"..."} >>, so
-the transport's status handling croaks with a plain string before the stream
-is ever decoded. That body carries no C<message> key, so the whole JSON
-object ends up as the croak text.
+the transport's status handling croaks with an L<API::Docker::Error::HTTP> --
+which is that same string to anything inspecting C<$@> as text -- before the
+stream is ever decoded. That body carries no C<message> key, so the whole
+JSON object ends up as the croak text.
 
 Either way the failure is loud. Inspect C<$@> as a string rather than testing
 for the exception class, which only the first route produces.
@@ -790,8 +792,9 @@ carrying the events. Podman reports it in the status line instead: measured
 against 5.4.2, a body that is not an image archive answers C<500 Internal
 Server Error> with C<< {"message":"failed to load image: payload does not
 match any of the supported image formats: ..."} >>, and the transport's status
-handling croaks with a plain string before any stream is decoded. Inspect
-C<$@> as a string rather than testing for the exception class.
+handling croaks with an L<API::Docker::Error::HTTP> -- which is that same
+string to anything inspecting C<$@> as text -- before any stream is decoded.
+Inspect C<$@> as a string rather than testing for the exception class.
 
 The archive is sent as one buffered request body, so loading a large image
 costs its full size in RAM.

@@ -214,7 +214,7 @@ subtest 'load: a failure reported inside the 200 stream croaks' => sub {
   like "$err", qr/invalid tar header/, 'the reason survives stringification';
 };
 
-subtest 'load: a failure reported in the status line croaks as a string' => sub {
+subtest 'load: a failure reported in the status line croaks before the stream' => sub {
   my $t = fake_client();
   $t->canned([500, 'Internal Server Error', {},
     '{"cause":"payload does not match any of the supported image formats",'
@@ -224,7 +224,13 @@ subtest 'load: a failure reported in the status line croaks as a string' => sub 
   my $err = do { local $@; eval { $t->images->load('not a tar') }; $@ };
   like $err, qr/Docker API error \(500\)/, 'the status handling croaks first';
   like $err, qr/failed to load image/, 'with the message key, not the whole body';
-  is ref $err, '', 'a plain string, not an Error::Stream -- catch on $@ as text';
+  # The claim here is which of the two croak paths won, not what type the
+  # winner is. Since karr #50 a >= 400 status raises Error::HTTP rather than
+  # a bare string -- stringifying to the very text the two matches above
+  # still find -- so the type is what tells the paths apart now.
+  isa_ok $err, 'API::Docker::Error::HTTP';
+  ok !$err->isa('API::Docker::Error::Stream'),
+    'the status handling won: the 200-stream path was never reached';
 };
 
 # ---------------------------------------------------------------------------

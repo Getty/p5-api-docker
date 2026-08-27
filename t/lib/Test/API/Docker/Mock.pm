@@ -3,7 +3,8 @@ use strict;
 use warnings;
 use JSON::MaybeXS qw( decode_json encode_json );
 use Path::Tiny;
-use Carp qw( croak );
+use Carp qw( croak shortmess );
+use API::Docker::Error::HTTP;
 use Test::More;
 
 use Exporter 'import';
@@ -17,6 +18,7 @@ our @EXPORT = qw(
   skip_unless_write
   check_live_access
   register_cleanup
+  live_engine
 );
 
 my $FIXTURES_DIR = path(__FILE__)->parent->parent->parent->parent->parent->child('fixtures');
@@ -45,10 +47,20 @@ sub load_fixture_raw {
 # so without this a mocked route cannot say 304, and the very distinction
 # API::Docker::API::Containers/start now makes would be untestable offline.
 # A plain route keeps working and gets a status inferred from its value.
+#
+# The error phrases are here because API::Docker::Error::HTTP carries
+# `reason` as well: a mocked 404 falling through to 'Unknown' would put a
+# value on the exception that no engine ever sends.
 my %REASON = (
   200 => 'OK',
   204 => 'No Content',
   304 => 'Not Modified',
+  400 => 'Bad Request',
+  401 => 'Unauthorized',
+  403 => 'Forbidden',
+  404 => 'Not Found',
+  409 => 'Conflict',
+  500 => 'Internal Server Error',
 );
 
 sub mock_response {
@@ -103,6 +115,45 @@ sub _mock_stream {
   return { delivered => $delivered, stopped => $stopped ? 1 : 0 };
 }
 
+# Mirrors the >= 400 branch of API::Docker::Role::HTTP::_request byte for
+# byte: same fallback order (message, then errorDetail.message, then the flat
+# error key, then the raw body), the same croak text and the same
+# API::Docker::Error::HTTP carrying it. A route hands back
+# already-decoded Perl data rather than wire bytes, so a ref is JSON-encoded
+# first to reach the string _request would have started from; a route that
+# means to send a body the engine would not even recognise as JSON can pass a
+# plain string as `data` instead, same as the real 500-with-plain-text case.
+sub _mock_croak {
+  my ($status, $reason, $data) = @_;
+
+  my $body = ref $data ? encode_json($data) : $data;
+  $body = '' unless defined $body;
+
+  my $error_msg = $body;
+  my $decoded;
+  if ($body && $body =~ /^\s*[\{\[]/) {
+    eval {
+      $decoded = decode_json($body);
+      my $detail = ref $decoded->{errorDetail} eq 'HASH'
+        ? $decoded->{errorDetail}{message} : undef;
+      $error_msg = $decoded->{message} // $detail // $decoded->{error} // $body;
+    };
+  }
+
+  # The class too, not just the text: a mock that kept croaking strings would
+  # leave the whole fixture suite blind to the exception _request now raises,
+  # and every ->status assertion would have to be gated on is_live().
+  my $error = API::Docker::Error::HTTP->new(
+    message  => "Docker API error ($status): $error_msg",
+    location => shortmess(''),
+    status   => $status,
+    reason   => $reason // '',
+    body     => $body,
+    data     => $decoded,
+  );
+  croak $error;
+}
+
 sub is_live {
   return !!$ENV{API_DOCKER_TEST_HOST};
 }
@@ -136,6 +187,33 @@ sub check_live_access {
   if ($@) {
     plan skip_all => "Docker daemon not reachable at $host: $@";
   }
+}
+
+# Which daemon a live run is actually talking to. Docker and Podman diverge
+# in ways the Engine API reference does not document -- the X-Docker-
+# Container-Path-Stat isDir key and symlink resolution are the first two --
+# and picking those apart needs one place any live subtest can ask, rather
+# than each one re-deriving it from whatever field happens to be missing.
+# GET /version's Components carries an entry named "Podman Engine" on Podman
+# and never does on Docker, whose own engine entry is named plain "Engine"
+# (measured: Docker 29.7.2/API 1.55, Podman 5.4.2/API 1.41) -- a name check,
+# not a feature sniff, so a future divergence gets its own assertion instead
+# of being inferred from whether a response happens to carry an extra key.
+# Cached for the process: the engine on the other end of
+# $ENV{API_DOCKER_TEST_HOST} does not change mid-run.
+my $_live_engine;
+
+sub live_engine {
+  return $_live_engine if defined $_live_engine;
+  return '' unless is_live();
+
+  require API::Docker;
+  my $docker = API::Docker->new(host => $ENV{API_DOCKER_TEST_HOST});
+  my $version = eval { $docker->system->version } || {};
+  my @components = @{ $version->{Components} || [] };
+  my $is_podman = grep { ($_->{Name} // '') eq 'Podman Engine' } @components;
+
+  return $_live_engine = $is_podman ? 'podman' : 'docker';
 }
 
 sub register_cleanup {
@@ -222,6 +300,14 @@ sub _mock_docker {
         headers => $response->{headers},
       );
     }
+
+    # Filled above, croaked below -- the same order _request keeps, so an
+    # eval-ing caller can still read the status of a mocked failure. A >= 400
+    # route never reaches a streaming callback either: the real transport
+    # reads such a body whole before the croak (_read_streaming_response
+    # returns it with no summary), so the callback is not invoked here.
+    _mock_croak($response->{status}, $response->{reason}, $response->{data})
+      if $response->{status} >= 400;
 
     my @streaming = grep { exists $opts{$_} } qw( on_event on_frame on_chunk );
     croak "Mock route $key got more than one of on_event, on_frame, on_chunk: "

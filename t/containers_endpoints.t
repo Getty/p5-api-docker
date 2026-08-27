@@ -48,25 +48,49 @@ my $TAR = load_fixture_raw('containers_archive.tar');
 # rather than a second file holding the same bytes: it is real engine output,
 # and a copy made by hand would only look like one.
 #
-# A related hazard the measurement also turned up: attaching (even with
-# logs=1) to a container that has *already* exited still sends the same 24
-# bytes, but Podman never closes the connection afterward -- no
-# Content-Length, no chunked encoding, and no close even when the client
-# sends Connection: close itself, which _request always does. Reading blocks
-# until EOF, so that call hangs forever. One more reason the live subtests
-# below never call attach.
+# A related hazard the measurement also turned up: attaching with stream=1 to
+# a container that has *already* exited still sends the same 24 bytes, but
+# Podman never closes the connection afterward -- no Content-Length, no
+# chunked encoding, and no close even when the client sends Connection: close
+# itself, which _request always does. Reading blocks until EOF, so that call
+# hangs forever.
+#
+# karr #52 narrowed that down: it is stream=1 that hangs, not attach as such.
+# Re-measured on Podman 5.4.2 (API 1.41) against one exited container:
+# ?logs=1&stdout=1&stderr=1&stream=0 answers 200, sends the 24 bytes and
+# closes after 13ms; the same request with stream=1 sends the identical bytes
+# and hangs; with Upgrade: tcp it answers 101 UPGRADED and hangs the same
+# way; and stream=1 against a container still *running*, which exits three
+# seconds later, closes cleanly after 3s. The spec explains it -- stream is
+# "from the time the request was made onwards" and its only terminator is the
+# container ending, which for a stopped container already happened. So this
+# client now follows the engine's own default of stream=0 and defaults logs=1
+# instead. Docker is unverified: there is no Docker daemon here, and the
+# reference promises a close in neither direction.
+#
+# The live subtests below still never call attach: the transport buffers, and
+# an explicit stream => 1 is still a hang waiting to happen.
 my $FRAMES = load_fixture_raw('containers_logs_multiplexed.bin');
 
 # X-Docker-Container-Path-Stat for /etc/hostname, decoded from a real header
-# captured alongside the archive above (karr #36). Podman's key names match
-# the Docker Engine API reference for these five; it also sends a sixth,
-# isDir, which the live subtest below checks for separately. Two measured
-# surprises: linkTarget is populated even for a plain regular file (Podman
-# echoes the resolved path here rather than leaving it empty), and mode is
-# Go's os.FileMode, not a POSIX stat.st_mode word -- for this regular file
-# the two are numerically identical (0644, no type bits), but they diverge
-# for a directory; see the live subtest for the case that tells them apart.
+# captured alongside the archive above (karr #36) -- against the Podman
+# socket, so this models Podman's shape specifically, not "the" shape. A
+# later side-by-side against a real Docker daemon (29.7.2, API 1.55) on the
+# same file confirmed what had only been a guess here: Podman's key names
+# match the Docker Engine API reference for five of them (name, size, mode,
+# mtime, linkTarget); the sixth, isDir, is Podman's own addition -- Docker
+# never sends it, not even for a directory. Two more measured differences
+# from Docker: linkTarget is populated here even for a plain regular file
+# (Podman echoes the resolved path rather than leaving it empty, which is
+# what Docker does), and mode is Go's os.FileMode, not a POSIX stat.st_mode
+# word -- for this regular file the two are numerically identical (0644, no
+# type bits), but they diverge for a directory. See the live subtest below
+# for the Docker-side numbers next to these, and for the case that tells
+# FileMode and st_mode apart.
 my %STAT = (
+  # Podman's answer for /etc/hostname. Docker's answer for the same file
+  # omits isDir and reports linkTarget as '' rather than the resolved path;
+  # see the live subtest below.
   name       => 'hostname',
   size       => 13,
   mode       => 420,
@@ -367,22 +391,38 @@ subtest 'attach: the query parameters, and the defaults that differ from the eng
   my $t = fake_client();
   $t->canned([200, 'OK', {}, $FRAMES]);
 
+  # The default that matters: stream=0, the engine's own default, plus logs=1
+  # so the call still has something to return. Measured on Podman 5.4.2 (API
+  # 1.41) against one exited container: ?logs=1&stdout=1&stderr=1&stream=0
+  # answers 200 and closes after 13ms, while the same request with stream=1
+  # sends the identical 24 bytes and then never closes -- attach hijacks the
+  # connection, so there is no Content-Length and no chunked terminator, and
+  # stream's only terminator (the container ending) is already in the past.
+  # Turning stream back on by default puts every attach() on a stopped
+  # container back into that hang, which is what this assertion guards.
   $t->containers->attach('deadbeef');
   is $t->request_line,
-    'POST /v1.41/containers/deadbeef/attach?stderr=1&stdout=1&stream=1 HTTP/1.1',
-    'stream, stdout and stderr default on -- the engine defaults all three off, '
-    . 'and with stream and logs both off the response is empty';
+    'POST /v1.41/containers/deadbeef/attach?logs=1&stderr=1&stdout=1&stream=0 HTTP/1.1',
+    'stream defaults OFF as the engine does, logs defaults ON so the call replays';
 
   $t->containers->attach('deadbeef',
-    stream => 0, stdout => 0, stderr => 0, stdin => 1, logs => 1);
+    stream => 1, stdout => 0, stderr => 0, stdin => 1, logs => 0);
   is $t->request_line,
-    'POST /v1.41/containers/deadbeef/attach?logs=1&stderr=0&stdin=1&stdout=0&stream=0 HTTP/1.1',
+    'POST /v1.41/containers/deadbeef/attach?logs=0&stderr=0&stdin=1&stdout=0&stream=1 HTTP/1.1',
     'every one of the five is sent as asked, false as 0';
 
-  $t->containers->attach('deadbeef', logs => 0, stdin => 0);
+  $t->containers->attach('deadbeef', stdin => 0);
   is $t->request_line,
-    'POST /v1.41/containers/deadbeef/attach?logs=0&stderr=1&stdin=0&stdout=1&stream=1 HTTP/1.1',
-    'stdin and logs appear only when named; a false one is still sent';
+    'POST /v1.41/containers/deadbeef/attach?logs=1&stderr=1&stdin=0&stdout=1&stream=0 HTTP/1.1',
+    'stdin appears only when named; a false one is still sent';
+
+  # logs => 0 alone leaves both flags off, which the engine refuses outright:
+  # Podman answers 400 "at least one of Logs or Stream must be set". The
+  # client passes it through rather than second-guessing it.
+  $t->containers->attach('deadbeef', logs => 0);
+  is $t->request_line,
+    'POST /v1.41/containers/deadbeef/attach?logs=0&stderr=1&stdout=1&stream=0 HTTP/1.1',
+    'logs => 0 alone is sent as asked -- the both-off 400 is the engine\'s call';
 
   my $err = do { local $@; eval { $t->containers->attach }; $@ };
   like $err, qr/Container ID required/, 'a missing id croaks';
@@ -577,34 +617,57 @@ subtest 'live: changes and the archive endpoints against a real container' => su
     like $change->{Kind}, qr/\A[012]\z/, 'and a Kind of 0, 1 or 2';
   }
 
+  my $engine = live_engine();
+
   my $stat = $docker->containers->stat_archive($container->Id,
     path => '/etc/hostname');
   ok defined $stat, 'stat_archive found /etc/hostname';
   is ref $stat, 'HASH', 'and decoded the header into a HashRef';
 
-  # The engine's key names, asserted rather than just noted (karr #36):
-  # measured against Podman 5.4.2 the header carries six keys, one more than
-  # the Docker Engine API reference documents (name, size, mode, mtime,
-  # linkTarget) -- isDir is Podman's addition.
-  is_deeply [ sort keys %$stat ], [qw( isDir linkTarget mode mtime name size )],
-    'the real key set';
+  # What both engines agree on for a plain regular file: name is the
+  # basename and the low nine bits of mode are the POSIX permission bits.
   is $stat->{name}, 'hostname', 'name is the basename, not the full path';
-  is $stat->{linkTarget}, '/etc/hostname',
-    'linkTarget is populated even for a plain regular file -- Podman echoes '
-    . 'the resolved path here rather than leaving it empty for a non-symlink';
-  ok !$stat->{isDir}, '/etc/hostname is not a directory';
   is $stat->{mode} & 0777, 0644, 'the permission bits are the low nine of mode';
+
+  # The key set and isDir/linkTarget do not: side-by-side measurement against
+  # both engines (karr #36, later re-verified against a real Docker daemon --
+  # 29.7.2, API 1.55 -- next to Podman 5.4.2, API 1.41, same container, same
+  # file) found isDir is Podman's own addition, confirmed rather than
+  # guessed: Docker never sends it, not even for a directory. linkTarget
+  # differs too -- Docker leaves it empty for a plain file, matching the
+  # Docker Engine API reference; Podman echoes the resolved path instead.
+  if ($engine eq 'podman') {
+    is_deeply [ sort keys %$stat ], [qw( isDir linkTarget mode mtime name size )],
+      'Podman: six keys, isDir alongside the five the reference documents';
+    is $stat->{linkTarget}, '/etc/hostname',
+      'Podman: linkTarget is populated even for a plain regular file -- it '
+      . 'echoes the resolved path here rather than leaving it empty';
+    ok !$stat->{isDir}, 'Podman: /etc/hostname is not a directory';
+  }
+  else {
+    is_deeply [ sort keys %$stat ], [qw( linkTarget mode mtime name size )],
+      'Docker: exactly the five keys the Engine API reference documents, no isDir';
+    is $stat->{linkTarget}, '',
+      'Docker: linkTarget is left empty for a plain regular file';
+    ok !exists $stat->{isDir}, 'Docker: isDir is absent, not merely false';
+  }
 
   # mode itself is Go's os.FileMode, not a POSIX stat.st_mode word -- for a
   # regular file the two coincide (no type bits set), so the check above does
-  # not by itself tell them apart. A directory does: Go sets os.ModeDir
-  # (1<<31) above the permission bits, where POSIX would set S_IFDIR
-  # (0040000) at an entirely different position.
+  # not by itself tell them apart. A directory does, on both engines: Go sets
+  # os.ModeDir (1<<31) above the permission bits, where POSIX would set
+  # S_IFDIR (0040000) at an entirely different position.
   my $dir_stat = $docker->containers->stat_archive($container->Id, path => '/etc');
-  ok $dir_stat->{isDir}, '/etc is a directory';
   ok $dir_stat->{mode} & (1 << 31),
     'mode carries Go os.ModeDir above the permission bits -- proof this is '
     . 'FileMode, not raw POSIX stat.st_mode, which never sets that bit';
+
+  if ($engine eq 'podman') {
+    ok $dir_stat->{isDir}, 'Podman: /etc is a directory';
+  }
+  else {
+    ok !exists $dir_stat->{isDir}, 'Docker: isDir is absent for a directory too';
+  }
 
   my $tar = $docker->containers->get_archive($container->Id,
     path => '/etc/hostname');
@@ -612,6 +675,53 @@ subtest 'live: changes and the archive endpoints against a real container' => su
   is length($tar) % 512, 0, 'a whole number of tar blocks';
   is substr($tar, 257, 5), 'ustar', 'ustar magic';
   is unpack('Z100', $tar), 'hostname', 'the member is the basename';
+};
+
+subtest 'live write: stat_archive on a symlink diverges by engine (karr #36)' => sub {
+  plan skip_all => 'live only'       unless is_live();
+  plan skip_all => 'write tests off' unless can_write();
+
+  my $docker = test_docker();
+  my ($base) = grep { $_->RepoTags && @{ $_->RepoTags } } @{ $docker->images->list };
+  plan skip_all => 'no tagged image to base a container on' unless $base;
+
+  # A container of our own: the read-only subtest above cannot pick a symlink
+  # off whatever container happens to already exist, so this one creates it,
+  # names it apidocker-stat- as agreed, and removes it again below.
+  my $created = $docker->containers->create(
+    Image => $base->RepoTags->[0],
+    Cmd   => [ '/bin/sh', '-c', 'ln -s /etc/hostname /tmp/hnlink' ],
+    name  => 'apidocker-stat-symlink-' . $$,
+  );
+  my $id = $created->{Id};
+  register_cleanup(sub { eval { $docker->containers->remove($id, force => 1) } });
+
+  $docker->containers->start($id);
+  $docker->containers->wait($id);
+
+  my $stat = $docker->containers->stat_archive($id, path => '/tmp/hnlink');
+  ok defined $stat, 'stat_archive found the symlink';
+
+  # Measured for /tmp/hnlink -> /etc/hostname: both engines agree on
+  # linkTarget (the resolved target path) and on mode (Go's ModeSymlink,
+  # 1<<27, plus the symlink's own 0777) -- but not on name. Docker reports
+  # the link itself; Podman resolves through it and reports the target's
+  # basename instead.
+  is $stat->{linkTarget}, '/etc/hostname',
+    'both engines resolve linkTarget to the symlink\'s destination';
+  ok $stat->{mode} & (1 << 27),
+    'mode carries Go ModeSymlink above the permission bits on both engines';
+  is $stat->{mode} & 0777, 0777, 'a symlink\'s own permission bits are 0777 on both';
+
+  my $engine = live_engine();
+  if ($engine eq 'podman') {
+    is $stat->{name}, 'hostname',
+      'Podman fully resolves the symlink -- name is the target\'s basename, not the link\'s';
+  }
+  else {
+    is $stat->{name}, 'hnlink',
+      'Docker reports the link itself -- name is the symlink\'s own basename';
+  }
 };
 
 done_testing;
