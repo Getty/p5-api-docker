@@ -1,0 +1,48 @@
+---
+class: standard
+completed: 2026-08-27T18:45:31Z
+created: 2026-08-27T18:31:12Z
+id: 58
+priority: low
+started: 2026-08-27T18:45:31Z
+status: done
+tags:
+- podman
+- upstream
+- attach
+title: Report the Podman attach exit-status loss upstream
+updated: 2026-08-27T18:45:31Z
+---
+
+REPORTED upstream 2026-08-27:
+https://github.com/podman-container-tools/podman/issues/29664
+
+Note the repo moved: containers/podman -> podman-container-tools/podman.
+The old path still redirects for browsing but the GitHub search API does not
+resolve it, which is worth knowing for future lookups.
+
+Verified before filing, because "retest on a current release" would have been
+the first reply otherwise:
+
+  Podman 5.4.2 (Debian 13's package, the systemd socket)  ZERSTOERT
+  Podman 5.8.4 (~/.local/bin, current upstream)           ZERSTOERT
+
+Both: before attach `exited/exit=4`, wait `{"StatusCode":4}`; after attach
+`created/exit=0`, wait `{"StatusCode":-1}`.
+
+Worth knowing about this machine, and the reason the version question came up
+at all: there are two podman installations. The systemd user socket starts
+/usr/bin/podman (5.4.2, Debian package) while ~/.local/bin/podman is 5.8.4 and
+is what the CLI resolves to. Every measurement in this distribution's POD and
+Changes names 5.4.2 and is correctly labelled -- but it is the older of the two,
+and any future measurement should say which socket it used.
+
+No duplicate found upstream. The closest existing issues are #8154 (attach does
+not exit when the container stops -- that is the hang, not the data loss) and
+#9597 / #23757, which are interesting for a different reason: podman's own CLI
+refuses attach against a non-running container, while the compat API endpoint
+does not. That asymmetry went into the report.
+
+Nothing to do here until upstream answers. If it is fixed, the require_running
+guard in containers->attach (karr #53) can be revisited -- at minimum for the
+Docker case, where it currently refuses a call that is harmless.
