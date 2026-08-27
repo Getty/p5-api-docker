@@ -1,0 +1,596 @@
+package API::Docker::API::Plugins;
+# ABSTRACT: Docker Engine Plugins API
+our $VERSION = '0.004';
+use Moo;
+with 'API::Docker::Role::Filters', 'API::Docker::Role::RegistryAuth';
+use Carp qw( croak );
+use namespace::clean;
+
+=head1 SYNOPSIS
+
+    my $docker = API::Docker->new;
+
+    # List installed plugins
+    my $plugins = $docker->plugins->list;
+
+    # Install: look at what the plugin demands, then grant exactly that
+    my $privileges = $docker->plugins->privileges('vieux/sshfs:latest');
+    $docker->plugins->install('vieux/sshfs:latest',
+        privileges => $privileges,
+    );
+    $docker->plugins->enable('vieux/sshfs:latest');
+
+    # Inspect
+    my $info = $docker->plugins->inspect('vieux/sshfs:latest');
+
+    # Configure, upgrade, disable, remove
+    $docker->plugins->configure('vieux/sshfs:latest', ['DEBUG=1']);
+    $docker->plugins->upgrade('vieux/sshfs:latest', privileges => $privileges);
+    $docker->plugins->disable('vieux/sshfs:latest');
+    $docker->plugins->remove('vieux/sshfs:latest');
+
+=head1 DESCRIPTION
+
+This module provides access to the Docker managed-plugin endpoints
+(C</plugins>).
+
+Accessed via C<< $docker->plugins >>.
+
+=head2 Installing is two calls, and the engine enforces it
+
+C<< POST /plugins/pull >> takes the list of privileges the plugin demands
+B<in its request body>, and the daemon compares that list against the one it
+computes from the plugin's own config. They must match exactly -- same
+length, same names, same values -- or the install fails with
+C<incorrect privileges>. A plugin runs with the host access it asked for, so
+the round trip exists to make somebody look at that access before granting
+it.
+
+L</privileges> is the first call, L</install> the second:
+
+    my $privileges = $docker->plugins->privileges('vieux/sshfs:latest');
+    # inspect $privileges here -- it is an ArrayRef of
+    #   { Name => 'network', Description => '...', Value => ['host'] }
+    $docker->plugins->install('vieux/sshfs:latest', privileges => $privileges);
+
+C<install> B<requires> C<privileges> and croaks without it, which is stricter
+than the engine: the daemon's own body parser treats a missing body as an
+empty privilege list rather than an error, so a blind install of a plugin
+that happens to demand nothing would quietly succeed and one that demands
+C<network: host> would fail with an error naming neither. Passing
+C<< accept_privileges => 1 >> makes C<install> perform the first call itself
+and hand the answer straight back -- a blanket grant, spelled out at the call
+site so it is greppable.
+
+The same applies to L</upgrade>, which takes the same body.
+
+=head2 Not available on Podman
+
+Measured against the rootless Podman socket (5.4.2, API 1.41): B<none> of the
+C</plugins> endpoints exist there. C<< GET /v1.41/plugins >> answers
+C<404 Not Found> with
+C<< {"cause":"","message":"Path /v1.41/plugins is not supported","response":0} >>,
+and every other path in this family -- C</plugins/privileges>,
+C</plugins/pull>, C</plugins/{name}/json>, C</plugins/{name}/enable> and the
+rest -- answers a bare C<404 Not Found> as C<text/plain>, meaning the compat
+layer has no route registered for them at all. Managed plugins are a Docker
+feature; Podman's own plugin model is not served here. Everything in this
+class therefore needs a real Docker daemon.
+
+=head2 What this class returns
+
+L</list> and L</inspect> return the decoded engine response -- an ArrayRef of
+HashRefs and a HashRef -- not entity objects. That deviates from the
+C<list>/C<inspect> convention the other resource classes follow, because
+there is no C<API::Docker::Plugin> entity class to wrap them in yet.
+
+=cut
+
+has client => (
+  is       => 'ro',
+  required => 1,
+  weak_ref => 1,
+);
+
+=attr client
+
+Reference to L<API::Docker> client. Weak reference to avoid circular dependencies.
+
+=cut
+
+# The plugin router calls registry.DecodeAuthConfig on the header and
+# discards the error -- "Ignore invalid AuthConfig to increase compatibility
+# with the existing API" -- so unlike /images/{name}/push, which rejects a
+# missing header, an anonymous plugin operation needs no header at all. It is
+# sent only when the caller asked for it. The encoding is
+# API::Docker::Role::RegistryAuth; what stays here is the policy.
+sub _auth_headers {
+  my ($self, $opts) = @_;
+  return () unless defined $opts->{auth};
+  return (headers => { 'X-Registry-Auth' => $self->_registry_auth_header($opts->{auth}) });
+}
+
+sub _privileges_body {
+  my ($self, $method, $remote, %opts) = @_;
+
+  return $self->privileges($remote, %opts) if $opts{accept_privileges};
+
+  my $privileges = $opts{privileges};
+  croak __PACKAGE__ . '->' . $method . ' requires privileges: fetch them with '
+    . '->privileges(' . $remote . ') and pass them back as privileges => '
+    . '$privileges, or pass accept_privileges => 1 to grant whatever the '
+    . 'plugin asks for. The engine compares the list you send against the one '
+    . 'the plugin demands and fails the operation when they differ'
+    unless defined $privileges;
+
+  croak __PACKAGE__ . '->' . $method . ' privileges must be an ArrayRef'
+    unless ref $privileges eq 'ARRAY';
+
+  return $privileges;
+}
+
+sub list {
+  my ($self, %opts) = @_;
+  my %params;
+  $params{filters} = $self->_normalise_filters($opts{filters})
+    if defined $opts{filters};
+  return $self->client->get('/plugins', params => \%params);
+}
+
+=method list
+
+    my $plugins = $plugins->list;
+    my $enabled = $plugins->list(filters => { enabled => ['true'] });
+
+List installed plugins. Returns an ArrayRef of HashRefs -- the engine's
+C<Plugin> objects, not entity objects; see L</"What this class returns">. An
+engine with no plugins installed answers C<[]>, never C<null>.
+
+Options:
+
+=over
+
+=item * C<filters> - HashRef of filters, JSON-encoded by the transport. Values
+are ArrayRefs of strings even for booleans -- L<API::Docker::Role::Filters>
+shape-checks and normalises that, but not the names, which the daemon
+validates itself
+
+=back
+
+The accepted filter names are C<enabled> and C<capability>. B<It is C<enabled>,
+not C<enable>> -- the published Engine API reference says C<enable>, and the
+daemon validates plugin filter names against its own list, so the documented
+spelling is refused outright rather than silently matching nothing. C<enabled>
+takes C<['true']> or C<['false']>; C<capability> takes a capability name such
+as C<['volumedriver']>.
+
+=cut
+
+sub privileges {
+  my ($self, $remote, %opts) = @_;
+  croak __PACKAGE__ . '->privileges remote reference required' unless $remote;
+
+  my $result = $self->client->get('/plugins/privileges',
+    params => { remote => $remote },
+    $self->_auth_headers(\%opts),
+  );
+
+  # A plugin that demands nothing answers a bare `null`: computePrivileges
+  # builds its result with `var privileges types.PluginPrivileges` and
+  # appends only what the config asks for, so a nil Go slice reaches the
+  # wire. The transport decodes that to undef, which no caller can iterate
+  # and which accept_privileges => 1 would post straight back to
+  # /plugins/pull as a JSON null. Normalised to the empty list it means.
+  return [] unless ref $result eq 'ARRAY';
+  return $result;
+}
+
+=method privileges
+
+    my $privileges = $plugins->privileges('vieux/sshfs:latest');
+
+Get the privileges a plugin demands, without installing it. Returns an
+ArrayRef of HashRefs:
+
+    [ { Name => 'network', Description => '', Value => ['host'] },
+      { Name => 'mount',   Description => '', Value => ['/var/lib/docker/plugins/'] } ]
+
+This is the first half of the install; see L</"Installing is two calls, and
+the engine enforces it">. Reading it is the point -- the result is what you
+hand to L</install>, and the daemon accepts the install only if the two
+lists agree.
+
+A plugin that demands nothing answers with an empty ArrayRef.
+
+The C<remote> reference is normalised by the daemon, so C<vieux/sshfs> and
+C<docker.io/vieux/sshfs:latest> name the same plugin; C<:latest> is the
+default when no tag is given.
+
+Options:
+
+=over
+
+=item * C<auth> - Registry credentials for a plugin in a private registry;
+HashRef of C<username> / C<password> / C<serveraddress> / C<identitytoken>,
+or a pre-encoded base64 string. Sent as C<X-Registry-Auth>. The Engine API
+reference does not document this header on this endpoint, but the daemon
+reads it here exactly as it does on the pull
+
+=back
+
+=cut
+
+sub install {
+  my ($self, $remote, %opts) = @_;
+  croak __PACKAGE__ . '->install remote reference required' unless $remote;
+
+  my $privileges = $self->_privileges_body('install', $remote, %opts);
+
+  my %params = ( remote => $remote );
+  $params{name} = $opts{name} if defined $opts{name};
+
+  # exists, not truth: an unset callback is a caller bug, and falling back to
+  # the buffered path for it would hand a long pull back as silence.
+  return $self->client->post('/plugins/pull', $privileges,
+    params => \%params,
+    $self->_auth_headers(\%opts),
+    exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
+  );
+}
+
+=method install
+
+    my $privileges = $plugins->privileges('vieux/sshfs:latest');
+    $plugins->install('vieux/sshfs:latest', privileges => $privileges);
+
+    # blanket grant, in one call
+    $plugins->install('vieux/sshfs:latest', accept_privileges => 1);
+
+Pull and install a plugin (C<< POST /plugins/pull >>). The plugin is installed
+disabled -- call L</enable> afterwards.
+
+C<privileges> is required. Without it this croaks and names both ways
+forward; see L</"Installing is two calls, and the engine enforces it"> for
+why it is not defaulted.
+
+Options:
+
+=over
+
+=item * C<privileges> - ArrayRef of privilege HashRefs from L</privileges>.
+Required, unless C<accept_privileges> is set
+
+=item * C<accept_privileges> - Fetch the privileges and grant them, in one
+call. A blanket grant: use it where the call site is allowed to trust the
+plugin, and know that it reads as consent to whatever the plugin demands
+
+=item * C<name> - Local name for the installed plugin, if it should differ
+from C<remote>. A digest is not allowed here
+
+=item * C<auth> - Registry credentials, as for L</privileges>
+
+=item * C<on_event> - CodeRef called with each progress event as it arrives,
+instead of the ArrayRef being collected and returned; see below
+
+=back
+
+Returns an ArrayRef of progress events, one per object in the engine's
+newline-delimited JSON stream, C<[]> when the engine sent no progress
+at all.
+
+=head2 Progress as it arrives
+
+Without a callback the whole stream is read before anything is parsed, so
+pulling a plugin is silence until it is done. Pass C<on_event> and the events
+are handed over as the daemon sends them:
+
+    my $summary = $plugins->install('vieux/sshfs:latest',
+        privileges => $privileges,
+        on_event   => sub {
+            my ($event, $stop) = @_;
+            print $event->{status}, "\n" if defined $event->{status};
+        },
+    );
+
+    $summary;   # { delivered => 18, stopped => 0 }
+
+With a callback the return value is that summary HashRef, not the events:
+C<delivered> is how many went to the callback, C<stopped> is 1 when the
+callback ended the stream and 0 when the daemon did. Nothing is accumulated.
+See L<API::Docker::Role::HTTP/"Streaming a response as it arrives">.
+
+The C<errorDetail> check runs on this path too, per event rather than over the
+finished list, so a failure inside the 200 stream still croaks with an
+L<API::Docker::Error::Stream> -- at the event that reports it, and carrying
+that one event alone rather than the whole stream. It is the difference
+L<API::Docker::API::Images/"A failed build still croaks, one event earlier">
+describes, and it applies here identically. A caller that wants the progress
+that preceded a failure must collect it in the callback.
+
+L</upgrade> and L</push> take C<on_event> on the same terms.
+
+A failed install croaks by one of two routes, exactly as
+L<API::Docker::API::Images/pull> does, because the daemon commits to HTTP 200
+the moment it flushes the first progress object. A failure before that point
+arrives as a real error status -- C<incorrect privileges> is reported this
+way, since it is decided before anything is pulled -- and one after it
+arrives as an C<errorDetail> object inside the 200 stream, which croaks with
+an L<API::Docker::Error::Stream>. C<eval> and inspect C<$@> as a string
+rather than testing for the exception class.
+
+=cut
+
+sub inspect {
+  my ($self, $name) = @_;
+  croak __PACKAGE__ . '->inspect plugin name required' unless $name;
+  return $self->client->get("/plugins/$name/json");
+}
+
+=method inspect
+
+    my $plugin = $plugins->inspect('vieux/sshfs:latest');
+    say $plugin->{Enabled};
+    say join ', ', @{ $plugin->{Settings}{Env} };
+
+Get detailed information about an installed plugin. Returns a HashRef -- the
+engine's C<Plugin> object, not an entity object; see L</"What this class
+returns">.
+
+The name may carry a registry host, a repository path and a tag
+(C<docker.io/vieux/sshfs:latest>) and is interpolated into the request path
+as given: the daemon routes this endpoint as C<< /plugins/{name:.*}/json >>,
+so the slashes and the colon must survive unescaped, and they do.
+
+=cut
+
+sub remove {
+  my ($self, $name, %opts) = @_;
+  croak __PACKAGE__ . '->remove plugin name required' unless $name;
+  my %params;
+  $params{force} = $opts{force} ? 1 : 0 if defined $opts{force};
+  return $self->client->delete_request("/plugins/$name", params => \%params);
+}
+
+=method remove
+
+    $plugins->remove('vieux/sshfs:latest');
+    $plugins->remove('vieux/sshfs:latest', force => 1);
+
+Remove an installed plugin. A plugin that is still enabled is refused unless
+C<force> is set.
+
+Options:
+
+=over
+
+=item * C<force> - Disable the plugin before removing it. Removing a plugin
+that containers are still using will break them
+
+=back
+
+Returns C<undef>. The Engine API reference documents a C<Plugin> object as
+the 200 response body here; the daemon writes no body at all.
+
+=cut
+
+sub enable {
+  my ($self, $name, %opts) = @_;
+  croak __PACKAGE__ . '->enable plugin name required' unless $name;
+  # Always sent, and not conditional on the caller passing it: the daemon
+  # parses this parameter with strconv.Atoi and has no default, so an absent
+  # timeout is parsed as the empty string and answers 400. See the POD.
+  my %params = ( timeout => $opts{timeout} // 0 );
+  return $self->client->post("/plugins/$name/enable", undef, params => \%params);
+}
+
+=method enable
+
+    $plugins->enable('vieux/sshfs:latest');
+    $plugins->enable('vieux/sshfs:latest', timeout => 30);
+
+Enable an installed plugin. Returns C<undef>.
+
+Options:
+
+=over
+
+=item * C<timeout> - Seconds to wait for the plugin to come up, C<0> for no
+timeout (the default)
+
+=back
+
+C<timeout> is B<always> sent, whether or not the caller passes it. The Engine
+API reference gives it a default of C<0>, but the daemon has none: it reads
+the raw query value and parses it with Go's C<strconv.Atoi>, so an absent
+parameter is parsed as the empty string and the request fails with
+C<strconv.Atoi: parsing "": invalid syntax> as an invalid-parameter error.
+This is the one endpoint in the family where omitting an optional parameter
+is fatal.
+
+=cut
+
+sub disable {
+  my ($self, $name, %opts) = @_;
+  croak __PACKAGE__ . '->disable plugin name required' unless $name;
+  my %params;
+  $params{force} = $opts{force} ? 1 : 0 if defined $opts{force};
+  return $self->client->post("/plugins/$name/disable", undef, params => \%params);
+}
+
+=method disable
+
+    $plugins->disable('vieux/sshfs:latest');
+    $plugins->disable('vieux/sshfs:latest', force => 1);
+
+Disable an enabled plugin. Returns C<undef>.
+
+Options:
+
+=over
+
+=item * C<force> - Disable even while the plugin is in use. Mounts held by
+the plugin stay behind, which is what makes a later L</remove> fail
+
+=back
+
+=cut
+
+sub upgrade {
+  my ($self, $name, %opts) = @_;
+  croak __PACKAGE__ . '->upgrade plugin name required' unless $name;
+
+  my $remote = $opts{remote} // $name;
+  my $privileges = $self->_privileges_body('upgrade', $remote, %opts);
+
+  return $self->client->post("/plugins/$name/upgrade", $privileges,
+    params => { remote => $remote },
+    $self->_auth_headers(\%opts),
+    exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
+  );
+}
+
+=method upgrade
+
+    my $privileges = $plugins->privileges('vieux/sshfs:latest');
+    $plugins->upgrade('vieux/sshfs:latest', privileges => $privileges);
+
+    # upgrade a locally renamed plugin from its upstream reference
+    $plugins->upgrade('sshfs', remote => 'vieux/sshfs:v2',
+        accept_privileges => 1);
+
+Upgrade an installed plugin in place. The plugin must be disabled first.
+
+Like L</install> this carries the privilege list in its body and the daemon
+checks it against what the new version demands, so C<privileges> is required
+here too -- an upgrade is where a plugin's demands can B<change>, which is
+the case worth looking at.
+
+Options:
+
+=over
+
+=item * C<privileges> - ArrayRef of privilege HashRefs. Required, unless
+C<accept_privileges> is set
+
+=item * C<accept_privileges> - Fetch the privileges for C<remote> and grant
+them, in one call
+
+=item * C<remote> - Remote reference to upgrade to. Defaults to C<$name>,
+which is what you want unless the plugin was installed under a local name
+
+=item * C<auth> - Registry credentials, as for L</privileges>
+
+=item * C<on_event> - CodeRef called with each progress event as it arrives.
+The return value is then the summary HashRef; see
+L</"Progress as it arrives">
+
+=back
+
+Returns an ArrayRef of progress events, C<[]> when the engine sent no
+progress. Failure is reported by the same two routes as L</install>.
+
+=cut
+
+sub push {
+  my ($self, $name, %opts) = @_;
+  croak __PACKAGE__ . '->push plugin name required' unless $name;
+  return $self->client->post("/plugins/$name/push", undef,
+    $self->_auth_headers(\%opts),
+    exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
+  );
+}
+
+=method push
+
+    $plugins->push('myrepo/sshfs:v1', auth => {
+        username      => 'me',
+        password      => 'secret',
+        serveraddress => 'https://index.docker.io/v1/',
+    });
+
+Push an installed plugin to a registry. B<This writes to a real registry>
+under the credentials given.
+
+Options:
+
+=over
+
+=item * C<auth> - Registry credentials; HashRef of C<username> / C<password> /
+C<serveraddress> / C<identitytoken>, or a pre-encoded base64 string. Sent as
+C<X-Registry-Auth>
+
+=item * C<on_event> - CodeRef called with each progress event as it arrives --
+layer by layer, rather than the whole upload in one silence. The return value
+is then the summary HashRef; see L</"Progress as it arrives">
+
+=back
+
+Unlike L<API::Docker::API::Images/push>, which sends C<X-Registry-Auth> on
+every call because the engine rejects an image push without it, this sends
+the header only when C<auth> is given: the plugin router decodes the header
+and discards a decoding failure, so an anonymous push needs no header. The
+Engine API reference documents no header on this endpoint at all; the daemon
+reads it.
+
+Returns an ArrayRef of progress events, C<[]> when the engine sent no
+progress. Failure is reported by the same two routes as L</install>.
+
+C<push> shadows the Perl builtin inside this package, which is why
+L<namespace::clean> is loaded. Always call it as a method.
+
+=cut
+
+sub configure {
+  my ($self, $name, @settings) = @_;
+  croak __PACKAGE__ . '->configure plugin name required' unless $name;
+
+  @settings = @{ $settings[0] } if @settings == 1 && ref $settings[0] eq 'ARRAY';
+
+  croak __PACKAGE__ . '->configure requires at least one setting, as an '
+    . 'ArrayRef or a list of "KEY=value" strings' unless @settings;
+
+  croak __PACKAGE__ . '->configure settings must be plain strings'
+    if grep { ref $_ } @settings;
+
+  return $self->client->post("/plugins/$name/set", \@settings);
+}
+
+=method configure
+
+    $plugins->configure('vieux/sshfs:latest', ['DEBUG=1']);
+    $plugins->configure('vieux/sshfs:latest', 'DEBUG=1', 'sshkey.source=/tmp');
+
+Set a plugin's user-configurable settings (C<< POST /plugins/{name}/set >>).
+The plugin must be disabled. Returns C<undef>.
+
+Settings are C<KEY=value> strings, given either as one ArrayRef or as a plain
+list. They name the mutable fields of the plugin's config -- the environment
+variables, mount sources, devices and args that C<< $plugin->{Settings} >>
+reports; L</inspect> is how you find out which ones a given plugin has.
+
+The engine replaces nothing it is not told about, and rejects a key the
+plugin's config does not declare as mutable.
+
+=cut
+
+=seealso
+
+=over
+
+=item * L<API::Docker> - Main Docker client
+
+=item * L<API::Docker::Role::RegistryAuth> - the C<X-Registry-Auth>
+encoding used here, shared with the other registry-facing endpoints
+
+=item * L<API::Docker::API::Images> - Image endpoints, whose C<push>
+sends that header on every call rather than only when credentials were
+given
+
+=item * L<API::Docker::Error::Stream> - Raised for a failure reported inside
+a 200 event stream by L</install>, L</upgrade> and L</push>
+
+=back
+
+=cut
+
+1;
