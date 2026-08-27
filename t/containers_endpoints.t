@@ -369,9 +369,13 @@ subtest 'stat_archive: a missing path is a croak, not an undef' => sub {
 subtest 'attach: demultiplexes exactly as logs does' => sub {
   plan skip_all => 'route assertions are fixture-only' if is_live();
 
+  # The inspect route is what attach's running-container check asks for; a
+  # running container lets the call through, which is the path this subtest
+  # is about. The check itself is covered further down.
   my $docker = test_docker(
     'POST /containers/deadbeef/attach' => sub { $FRAMES },
     'GET /containers/deadbeef/logs'    => sub { $FRAMES },
+    'GET /containers/deadbeef/json'    => { State => { Running => 1 } },
   );
 
   my $attached = $docker->containers->attach('deadbeef');
@@ -400,18 +404,23 @@ subtest 'attach: the query parameters, and the defaults that differ from the eng
   # stream's only terminator (the container ending) is already in the past.
   # Turning stream back on by default puts every attach() on a stopped
   # container back into that hang, which is what this assertion guards.
-  $t->containers->attach('deadbeef');
+  # require_running => 0 throughout: this subtest is about the query string,
+  # and the running-container check would otherwise put a GET .../json between
+  # the call and the request line being asserted. That it does not appear here
+  # is itself the point -- opting out skips the round trip rather than making
+  # it and ignoring the answer.
+  $t->containers->attach('deadbeef', require_running => 0);
   is $t->request_line,
     'POST /v1.41/containers/deadbeef/attach?logs=1&stderr=1&stdout=1&stream=0 HTTP/1.1',
     'stream defaults OFF as the engine does, logs defaults ON so the call replays';
 
-  $t->containers->attach('deadbeef',
+  $t->containers->attach('deadbeef', require_running => 0,
     stream => 1, stdout => 0, stderr => 0, stdin => 1, logs => 0);
   is $t->request_line,
     'POST /v1.41/containers/deadbeef/attach?logs=0&stderr=0&stdin=1&stdout=0&stream=1 HTTP/1.1',
     'every one of the five is sent as asked, false as 0';
 
-  $t->containers->attach('deadbeef', stdin => 0);
+  $t->containers->attach('deadbeef', stdin => 0, require_running => 0);
   is $t->request_line,
     'POST /v1.41/containers/deadbeef/attach?logs=1&stderr=1&stdin=0&stdout=1&stream=0 HTTP/1.1',
     'stdin appears only when named; a false one is still sent';
@@ -419,10 +428,15 @@ subtest 'attach: the query parameters, and the defaults that differ from the eng
   # logs => 0 alone leaves both flags off, which the engine refuses outright:
   # Podman answers 400 "at least one of Logs or Stream must be set". The
   # client passes it through rather than second-guessing it.
-  $t->containers->attach('deadbeef', logs => 0);
+  $t->containers->attach('deadbeef', logs => 0, require_running => 0);
   is $t->request_line,
     'POST /v1.41/containers/deadbeef/attach?logs=0&stderr=1&stdout=1&stream=0 HTTP/1.1',
     'logs => 0 alone is sent as asked -- the both-off 400 is the engine\'s call';
+
+  # require_running is a client-side option and must not reach the engine as
+  # one: the engine has no such query parameter and would ignore it silently.
+  unlike $t->request_line, qr/require_running/,
+    'require_running is consumed here, never sent as a query parameter';
 
   my $err = do { local $@; eval { $t->containers->attach }; $@ };
   like $err, qr/Container ID required/, 'a missing id croaks';
@@ -431,7 +445,7 @@ subtest 'attach: the query parameters, and the defaults that differ from the eng
 subtest 'attach: it is a POST with no body, not a GET' => sub {
   my $t = fake_client();
   $t->canned([200, 'OK', {}, $FRAMES]);
-  $t->containers->attach('deadbeef');
+  $t->containers->attach('deadbeef', require_running => 0);
 
   like $t->written, qr{\APOST /v1\.41/containers/deadbeef/attach\?},
     'POST, as the engine requires for this endpoint';
@@ -444,26 +458,126 @@ subtest 'attach: tty skips demultiplexing' => sub {
   my $t = fake_client();
   $t->canned([200, 'OK', {}, "OUT\r\nERR\r\n"]);
 
-  is_deeply $t->containers->attach('deadbeef', tty => 1),
+  is_deeply $t->containers->attach('deadbeef', tty => 1, require_running => 0),
     [ { stream => 'raw', data => "OUT\r\nERR\r\n" } ],
     'a TTY attach comes back as one raw frame';
 
   # And the framing is detected from the bytes when tty was not declared,
   # so the common case needs no flag.
-  is_deeply $t->containers->attach('deadbeef'),
+  is_deeply $t->containers->attach('deadbeef', require_running => 0),
     [ { stream => 'raw', data => "OUT\r\nERR\r\n" } ],
     'unframed bytes are reported raw without being told';
 
   $t->canned([200, 'OK', {}, $FRAMES]);
-  is_deeply $t->containers->attach('deadbeef', tty => 1),
+  is_deeply $t->containers->attach('deadbeef', tty => 1, require_running => 0),
     [ { stream => 'raw', data => $FRAMES } ],
     'tty => 1 suppresses the walk even on bytes that would have framed';
+};
+
+# ===========================================================================
+# karr #53 -- attach refuses a container that is not running
+#
+# Measured on Podman 5.4.2 (API 1.41) and Docker 29.7.2 (API 1.55), one
+# container per row, each exiting with status 4:
+#
+#   attach to an ALREADY-EXITED container       Podman: status destroyed
+#   attach while RUNNING, exits under the call  Podman: status intact (4)
+#   either of those                             Docker: status intact (4)
+#
+# On Podman the exited container drops back to Status: created with ExitCode
+# 0, and a later wait answers {"StatusCode":-1} inside a 200. Nothing reports
+# it and the engine keeps no copy, so the caller cannot recover the value --
+# which is why this one is guarded and stats (karr #54) is not: there the
+# caller can always ask again afterwards.
+# ===========================================================================
+
+subtest 'attach: refuses a container that is not running, before sending anything' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  my %called;
+  my $docker = test_docker(
+    'GET /containers/deadbeef/json' => sub {
+      $called{inspect}++;
+      return { State => { Running => 0, Status => 'exited', ExitCode => 4 } };
+    },
+    'POST /containers/deadbeef/attach' => sub { $called{attach}++; return $FRAMES },
+  );
+
+  my $err = do { local $@; eval { $docker->containers->attach('deadbeef') }; $@ };
+
+  like $err, qr/attach refused/, 'attaching to a stopped container croaks';
+  like $err, qr/\bexited\b/, 'and names the state the engine reported';
+  like $err, qr/destroys its exit status on Podman/,
+    'and says what the refusal is protecting';
+  like $err, qr/logs\(\)/, 'and points at the method that reads it safely';
+  like $err, qr/require_running => 0/, 'and names the way past it';
+
+  is $called{inspect}, 1, 'the check cost exactly one inspect';
+
+  # The whole point of the check being pre-flight: the attach request is
+  # itself what destroys the exit status, so a check that let it go out and
+  # complained afterwards would report the loss rather than prevent it.
+  ok !$called{attach}, 'and the attach request was never sent';
+};
+
+subtest 'attach: require_running => 0 attaches anyway, and skips the round trip' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  my %called;
+  my $docker = test_docker(
+    'GET /containers/deadbeef/json' => sub {
+      $called{inspect}++;
+      return { State => { Running => 0, Status => 'exited' } };
+    },
+    'POST /containers/deadbeef/attach' => sub { $called{attach}++; return $FRAMES },
+  );
+
+  is_deeply $docker->containers->attach('deadbeef', require_running => 0), [
+    { stream => 'stdout', data => "OUT\n" },
+    { stream => 'stderr', data => "ERR\n" },
+  ], 'the frames come back from a stopped container when the check is off';
+
+  is $called{attach}, 1, 'the attach request went out';
+  ok !$called{inspect},
+    'and no inspect was made -- opting out skips the check, not just its verdict';
+};
+
+subtest 'attach: the check reads State.Running, and fails open when it cannot' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  my %called;
+  my $running = test_docker(
+    'GET /containers/deadbeef/json' =>
+      { State => { Running => 1, Status => 'running' } },
+    'POST /containers/deadbeef/attach' => sub { $called{attach}++; return $FRAMES },
+  );
+
+  is scalar @{ $running->containers->attach('deadbeef') }, 2,
+    'a running container attaches normally -- the check does not stand in the way';
+  is $called{attach}, 1, 'and the attach request did go out';
+
+  # Anything the check cannot read is not evidence that the container is
+  # stopped. A guard that is unsure must not be the thing that breaks a
+  # working call, so each of these proceeds instead of croaking.
+  for my $case (
+    [ 'no State at all'          => {} ],
+    [ 'a State without Running'  => { State => { Status => 'exited' } } ],
+    [ 'a State that is a string' => { State => 'exited' } ],
+  ) {
+    my ($name, $body) = @$case;
+    my $t = test_docker(
+      'GET /containers/deadbeef/json'    => $body,
+      'POST /containers/deadbeef/attach' => sub { $FRAMES },
+    );
+    my $out = do { local $@; eval { $t->containers->attach('deadbeef') } };
+    is ref $out, 'ARRAY', "$name: the check fails open and the attach proceeds";
+  }
 };
 
 subtest 'attach: an empty stream is an empty ArrayRef' => sub {
   my $t = fake_client();
   $t->canned([200, 'OK', {}, '']);
-  is_deeply $t->containers->attach('deadbeef'), [],
+  is_deeply $t->containers->attach('deadbeef', require_running => 0), [],
     'a container that wrote nothing gives no frames, not undef';
 };
 
@@ -565,6 +679,10 @@ subtest 'API::Docker::Container forwards all six' => sub {
       mock_response(headers => { 'X-Docker-Container-Path-Stat' => $STAT_HEADER });
     },
     'POST /containers/deadbeef/attach'  => sub { $seen{attach}++; $FRAMES },
+    # The entity forwards %opts to the API class, so it inherits attach's
+    # running-container check along with everything else -- which is why a
+    # forwarding test needs the endpoint that check asks for.
+    'GET /containers/deadbeef/json'     => { State => { Running => 1 } },
     'GET /containers/deadbeef/changes'  => sub { $seen{changes}++; [] },
     'GET /containers/deadbeef/export'   => sub { $seen{export}++;  $TAR },
     'POST /containers/deadbeef/resize'  => sub { $seen{resize}++;  undef },

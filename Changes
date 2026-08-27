@@ -138,10 +138,11 @@ Revision history for API-Docker
     with a structurally valid, zero-filled reading, every key present. The
     advice this POD used to give -- test for `read` or `cpu_stats` before
     using what comes back -- therefore passes on Docker and lets a caller
-    use zeros as a measurement. The only markers are Go's zero time in
-    `read` (`0001-01-01T00:00:00Z`), `num_procs` of 0 and an empty
-    `memory_stats`; the POD now says to ask `inspect` whether the container
-    is running instead. Also newly documented: `stream => 1` on a container
+    use zeros as a measurement. What is left of a marker is Go's zero time
+    in `read` (`0001-01-01T00:00:00Z`) and an empty `memory_stats`, and not
+    `num_procs`: a reading taken from a genuinely running container on
+    Docker carries `num_procs` of 0 as well, so it separates nothing. The
+    POD says to ask `inspect` whether the container is running instead. Also newly documented: `stream => 1` on a container
     that is not running is an unbounded stream on Docker -- one zero-filled
     reading per second, forever, measured as 5 objects in 5s and 12 in 12s
     -- where Podman sends one error object and closes. Only `on_event` with
@@ -645,6 +646,39 @@ Revision history for API-Docker
     `code` key at all and leaves the number in the message text. The three
     other `exit status 7` matches in the file are fixture-driven and never
     reach a daemon, so they stayed as they are.
+  - `containers->attach` refuses a container that is not running: it asks
+    `inspect` first and croaks instead of attaching. Measured on Podman
+    5.4.2 (API 1.41) and Docker 29.7.2 (API 1.55): attaching to an
+    already-exited container on Podman reverts it to `Status: created`,
+    resets `ExitCode` to 0 and makes a later `wait` answer
+    `{"StatusCode":-1}` inside a 200, with the real value gone from the
+    engine for good. All three variants do it, the `stream => 0, logs => 1`
+    default that returns in milliseconds included -- it is the call, not
+    the hang. What decides the check is the other half of the same
+    measurement: attaching to a container that is still running and letting
+    it exit under the call leaves the exit status intact on both engines,
+    so "not running at the moment of the call" is exactly the damaging
+    condition, and exactly what `inspect` answers. The check is a
+    pre-flight one and does not close the race against a container stopping
+    between the two calls; the POD says so rather than claiming a
+    guarantee. `require_running => 0` turns it off and skips the round trip
+    with it. This is a behaviour change -- the call went straight to the
+    engine before. It also refuses `stream => 0` against a stopped
+    container on Docker, where that call is harmless and returns what
+    `logs` returns; that is the price of not spending a round trip on
+    detecting the engine, and `require_running => 0` is the way out.
+    `logs` is unaffected and reads a finished container's output safely on
+    both engines.
+  - `containers->stats` is deliberately left unguarded, and the POD says
+    why. Measured on Docker 29.7.2 (API 1.55): a `stream => 1` opened on a
+    container that was genuinely running does not end when that container
+    exits -- one 20s probe saw 3 real readings, then 13 zero-filled ones,
+    the connection still open at the end, where Podman ends the same stream
+    on the container's exit after 5.0s. A pre-flight check would therefore
+    have answered "running, go ahead" and the caller would have hung
+    anyway: unlike `attach` the blind spot is the whole stream rather than
+    one round trip, and nothing here is destroyed -- `inspect` still reports
+    the truth afterwards.
 
 0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the

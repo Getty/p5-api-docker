@@ -462,7 +462,10 @@ subtest 'every remaining method passes its callback through' => sub {
         { stream => 'stdout', data => "one\n" },
         { stream => 'stdout', data => "two\n" },
         { stream => 'stderr', data => "three\n" },
-      ])->containers->attach('abc', on_frame => $cb);
+      # require_running => 0: this case is about the callback contract, not
+      # about attach's running-container check, and opting out keeps the route
+      # table down to the one endpoint under test.
+      ])->containers->attach('abc', on_frame => $cb, require_running => 0);
     },
   );
 

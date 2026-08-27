@@ -232,6 +232,13 @@ returns; C<< stream => 1 >> on a container that is not running never
 returns -- not even with a callback -- see
 L<API::Docker::API::Containers/"The defaults follow the engine">.
 
+B<The container must be running.> Attaching to one that has already exited
+destroys its exit status on Podman, so the call checks first and croaks rather
+than attaching; L</logs> is how a finished container's output is read.
+C<< require_running => 0 >> attaches anyway. The check is a pre-flight one and
+does not close the race against a container stopping underneath it -- see
+L<API::Docker::API::Containers/"This method refuses a container that is not running">.
+
 =cut
 
 sub inspect {

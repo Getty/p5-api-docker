@@ -497,9 +497,55 @@ frames rather than the single one the buffered path builds.
 
 =cut
 
+# The guard behind attach's require_running, and a pre-flight check is all it
+# is: it asks the engine what the container is doing now, and the container may
+# still stop between that answer and the attach landing. That race is not
+# closable from a client -- the engine offers no attach-if-running -- and the
+# check earns its round trip anyway, because the condition it tests is exactly
+# the condition that does the damage. Measured on Podman 5.4.2 (API 1.41) and
+# Docker 29.7.2 (API 1.55), one container per row, each exiting with status 4:
+#
+#   attach to an ALREADY-EXITED container      Podman: status destroyed
+#   attach while RUNNING, exits under the call Podman: status intact (4)
+#   either of those                            Docker: status intact (4)
+#
+# So "running at the moment of the call" is the whole of the condition. A
+# container that is still running when attach is sent stays safe even when it
+# exits a millisecond later, which is why the pre-flight answer is worth having
+# despite being one round trip stale.
+#
+# It fails open on anything it does not recognise: a State it cannot read is
+# not evidence that the container is stopped, and a guard that is unsure must
+# not be the thing that breaks a working call.
+sub _assert_container_running {
+  my ($self, $id) = @_;
+
+  my $state = $self->inspect($id)->State;
+  return unless ref $state eq 'HASH' && exists $state->{Running};
+  return if $state->{Running};
+
+  my $status = $state->{Status};
+  $status = 'not running' unless defined $status && length $status;
+
+  croak __PACKAGE__ . '->attach refused: container ' . $id . ' is ' . $status
+    . '. Attaching to a container that is not running destroys its exit status '
+    . 'on Podman, irrecoverably -- the engine keeps no copy -- and with '
+    . 'stream => 1 never returns on either engine. Read its output with logs() '
+    . 'instead, or pass require_running => 0 to attach anyway';
+}
+
 sub attach {
   my ($self, $id, %opts) = @_;
   croak "Container ID required" unless $id;
+
+  # Pre-flight, and deliberately before the request is built: the call itself
+  # is what destroys the exit status, so a check made afterwards could only
+  # report the loss rather than prevent it. Turned off it costs nothing at all,
+  # not even the round trip.
+  my $require_running
+    = defined $opts{require_running} ? $opts{require_running} : 1;
+  $self->_assert_container_running($id) if $require_running;
+
   my %params;
   $params{stream} = $opts{stream} ? 1 : 0;
   $params{logs}   = defined $opts{logs}   ? ($opts{logs}   ? 1 : 0) : 1;
@@ -530,6 +576,13 @@ stream, which this method demultiplexes; one created with a TTY arrives as a
 single C<< stream => 'raw' >> frame. See L</logs> and
 L<API::Docker::Role::HTTP/"Detecting a framed stream">.
 
+B<The container must be running.> Attaching to one that has already exited
+destroys its exit status on Podman, so this method checks first and croaks
+rather than attaching -- read the output of a finished container with
+L</logs>. Both halves of that are worth knowing before the call: see
+L</"On Podman this destroys a stopped container's exit status"> and
+L</"This method refuses a container that is not running">.
+
 =head2 On Podman this destroys a stopped container's exit status
 
 B<Attaching to a container that has already exited loses its exit code on
@@ -555,10 +608,49 @@ the sequence "attach to collect the output, then L</wait> for the exit code"
 cannot work: read the output with L</logs> instead, or take the exit code
 before attaching.
 
-This client does not refuse the call. The behavior is the engine's, it does
-not apply to a container that is still running, and telling the two engines
-apart costs a round trip of its own (C<< $docker->system->version >>), so
-this is documented rather than guarded.
+=head2 This method refuses a container that is not running
+
+Because of the above, C<attach> asks L</inspect> whether the container is
+running and B<croaks instead of attaching> when it is not:
+
+    API::Docker::API::Containers->attach refused: container x is exited. ...
+
+C<< require_running => 0 >> turns that off and attaches anyway; the check is
+then not performed at all, so opting out costs no round trip either.
+
+B<What the check does not do is close the race.> It is a pre-flight question,
+and the container can stop between the answer and the attach arriving -- in
+which case the exit status is destroyed exactly as it would have been without
+the check. The engine offers no attach-if-running, so this cannot be fixed
+from a client. What makes the check worth its round trip is that the window is
+one round trip wide rather than unbounded, and that the condition it tests is
+precisely the condition that does the damage. Measured, one container per row,
+each exiting with status 4:
+
+    attach to an ALREADY-EXITED container       Podman: status destroyed
+    attach while RUNNING, exits under the call  Podman: status intact (4)
+    either of those                             Docker: status intact (4)
+
+A container that is still running when the attach is sent therefore stays
+safe even when it exits a millisecond later. The damage needs the container to
+be stopped B<already>, which is the common case and the one the check catches:
+a caller reaching for a container it knows has finished.
+
+Refusing costs a caller nothing that C<attach> could have given them, on
+either engine. Against a container that is not running there is no combination
+that is both safe and useful: on Podman every variant destroys the exit
+status, C<< stream => 1 >> hangs forever on B<both> engines (measured: Docker
+was still open when a 10 s probe gave up), and Docker's C<< stream => 0 >>
+replay returns the same frames L</logs> returns, with none of the hazard and
+with C<tail> and C<since> on top.
+
+The check is engine-independent although the data loss is Podman's alone.
+Telling the engines apart would cost a round trip of its own, it would leave
+the both-engine C<< stream => 1 >> hang in place, and it would make the safe
+call on Docker a call this distribution recommends against anywhere else.
+
+B<This is a behavior change.> Up to and including the previous release the
+call went straight to the engine.
 
 =head2 This is the one-way attach
 
@@ -681,6 +773,12 @@ with C<on_frame> the same promise
 
 =item * C<on_frame> - CodeRef called with each frame as it arrives, instead of
 the ArrayRef being collected and returned. Same contract as in L</logs>
+
+=item * C<require_running> - Ask L</inspect> whether the container is running
+first, and croak rather than attach when it is not. Default B<1>. Set to 0 to
+attach to a stopped container anyway, which also skips the round trip; see
+L</"This method refuses a container that is not running"> for what the check
+does and does not guarantee
 
 =back
 
@@ -948,9 +1046,15 @@ about 825 bytes, no error anywhere in it:
 So the advice this section used to give -- test for C<read> or C<cpu_stats>
 before using what comes back -- is B<wrong on Docker>: both keys are present,
 both look plausible, the test passes, and the caller uses zeros as though
-they were a measurement. The only markers in that body are Go's zero time in
-C<read> (C<0001-01-01T00:00:00Z>), a C<num_procs> of 0 and an empty
-C<memory_stats>, and those are Docker's shape rather than anybody's contract.
+they were a measurement. The markers in that body are Go's zero time in
+C<read> (C<0001-01-01T00:00:00Z>) and an empty C<memory_stats>, and those are
+Docker's shape rather than anybody's contract.
+
+C<num_procs> is B<not> one of them, contrary to what this section said before
+it was measured: a one-shot reading taken from a container that was genuinely
+B<running> on Docker 29.7.2 carries C<< num_procs => 0 >> as well. It is zero
+on that engine either way and separates nothing.
+
 The engine-independent question is not about the reading at all: ask
 L</inspect> whether the container is running. Treat the zero timestamp as a
 cheap Docker-specific second opinion, not as the test.
@@ -978,6 +1082,50 @@ C<< stream => 1 >> without a callback therefore never returns on Docker for a
 container that is not running. C<on_event> plus a C<< $stop->() >> is the
 only way out, and there the callback has to decide for itself that a reading
 is not one: that stream carries nothing to croak on.
+
+=head2 On Docker the stream does not end when the container does
+
+Worse, and measured since: the container does B<not> have to be stopped when
+the call is made. A C<< stream => 1 >> opened on a container that was
+genuinely B<running> on Docker 29.7.2 does not end when that container exits.
+It degrades. One 20 s probe against a container that exited after 3 s:
+
+    3 real readings, then 13 zero-filled ones, connection still open at 20 s
+
+Podman ends the same stream on the container's exit -- 5.0 s for the same
+probe, the last object a whole reading.
+
+So on Docker C<< stream => 1 >> has B<no> terminator tied to the container at
+all, and the readings turn to zeros without anything in the stream saying so.
+A caller that follows a container's stats until it stops is asking for
+something this endpoint does not offer on that engine: give C<on_event> its
+own stopping condition -- a reading count, a deadline, or the Go zero time in
+C<read> -- and do not wait for the stream to end on its own.
+
+=head2 Why this is documented and not guarded
+
+L</attach> refuses a container that is not running (see
+L</"This method refuses a container that is not running">). This method does
+B<not>, and the difference is deliberate rather than an inconsistency.
+
+A pre-flight L</inspect> can only answer I<is it running now>. For L</attach>
+that is the whole question: the damage needs the container to be stopped
+already, so the check leaves a window one round trip wide. For this method it
+is the wrong question -- the hazard is the container stopping at B<any> point
+in a stream that may run for hours, which the measurement above is exactly a
+case of. A guard here would have returned "running, go ahead" and the caller
+would have hung anyway. Its blind spot is not a round trip, it is the entire
+stream.
+
+The second difference is that nothing here is destroyed. This is a read: after
+a hang or a pocketful of zeros, L</inspect> still reports the truth and the
+exit status is still there. That is precisely what L</attach> takes away -- a
+caller cannot check afterwards, because checking afterwards is the thing that
+stops working. A guard is worth an unclosable race when the alternative is
+unrecoverable, and is not worth it when the caller can simply ask again.
+
+What can be caught for free already is: Podman reports its refusal in the body
+and this method croaks on it, with no extra request and no race.
 
 =cut
 
