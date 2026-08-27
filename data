@@ -1,0 +1,51 @@
+---
+claimed_at: 2026-08-27T21:37:43Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T21:37:43Z
+created: 2026-08-27T19:42:46Z
+id: 63
+priority: medium
+started: 2026-08-27T21:23:43Z
+status: done
+tags:
+- tests
+- cleanup
+- docker
+title: The live build-failure test leaks a container on every run
+updated: 2026-08-27T21:37:43Z
+---
+
+Found 2026-08-27 while cleaning up after a day of live runs.
+
+The live subtest in t/stream_error.t builds an image whose RUN step exits 7,
+to assert that a failed build is reported. A failed build leaves its
+intermediate container behind, and nothing removes it.
+
+Measured on the Docker daemon after a day of work: 14 containers, all
+`Exited (7)`, all from the same intermediate image, timestamps spread across
+every live run of the session. Docker's auto-generated names
+(`priceless_driscoll`, `eloquent_rubin`, ...) because a build container is
+created without a name.
+
+Podman shows the same pattern for the same reason.
+
+So every live-write run of the suite adds one, forever. Nobody notices
+because the containers are exited and unnamed, and because the suite's own
+cleanup only knows about containers it created by name via register_cleanup
+-- a build intermediate is created by the daemon, not by the test.
+
+To fix:
+  - after the failed build, find and remove the intermediate. The build
+    stream's own output carries the container id of each step, so it does
+    not need a list-and-guess: parse it from the stream the test already
+    reads.
+  - check whether the successful-build tests leak too. They should not --
+    a successful build removes its intermediates -- but measure rather than
+    assume.
+  - the same question applies to any other test that builds. Grep for
+    `build` across t/ before calling it done.
+
+Not urgent: exited containers cost a little disk and nothing else. But a
+suite that leaks on every run trains everyone to ignore leftover state,
+which is exactly how a real leak gets missed later.
