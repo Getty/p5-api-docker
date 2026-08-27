@@ -1,0 +1,91 @@
+---
+claimed_at: 2026-08-27T06:35:17Z
+claimed_by: filters-worker
+class: standard
+completed: 2026-08-27T06:35:17Z
+created: 2026-08-27T04:24:45Z
+id: 24
+priority: low
+started: 2026-08-27T05:23:58Z
+status: done
+tags:
+- api
+- ergonomics
+title: filters is passed through unvalidated, and the shape is a known trap
+updated: 2026-08-27T06:35:17Z
+---
+
+Every list and prune method forwards $opts{filters} straight into params.
+_request JSON-encodes a hashref value, so the encoding is right - but the
+*shape* is not checked, and the shape is the thing clients get wrong.
+
+The daemon wants a map of string to array of string:
+
+  filters => { dangling => ["true"] }        correct
+  filters => { dangling => "true" }          wrong
+  filters => { dangling => 1 }               wrong
+  filters => { dangling => [1] }             wrong - must be the string
+
+A wrong shape does not error. The daemon either ignores the filter or
+matches nothing, so the caller gets a plausible empty list back and no
+signal. The booleans are the sharp edge: everywhere else in this client a
+boolean is normalised to 1/0, and here it has to be the string "true".
+
+Cheapest useful fix: normalise in one place - wrap a bare scalar into an
+arrayref, stringify a boolean to "true"/"false" - and croak on a value that
+is neither. Document it once on the shared helper rather than in each of the
+six methods that take filters.
+
+--- Concrete instance found while implementing /plugins (karr #28), 2026-08-27 ---
+
+The plugin list filter is a case where a wrong filter name is NOT the usual silent no-match: it is a hard error, and the published Engine API reference is the thing that gets it wrong.
+
+The reference documents the filters for GET /plugins as `capability=<name>` and `enable=<true>|<false>`. The daemon's accepted set is:
+
+  var acceptedPluginFilterTags = map[string]bool{
+    "enabled":    true,
+    "capability": true,
+  }
+
+and List() runs pluginFilters.Validate(acceptedPluginFilterTags) before doing anything, so `enable` is rejected outright rather than matching nothing. A client that copies the published reference gets a failed request.
+
+So the trap has two shapes, not one: a wrong filter *value* shape (JSON booleans instead of arrays of strings) is silent, while a wrong filter *name* is loud on endpoints that validate names -- and which endpoints validate is not documented. Worth folding into whatever validation this ticket lands on.
+
+API::Docker::API::Plugins::list documents the correct spelling in its POD and t/plugins.t pins it.
+
+2026-08-27 05:37 Landed. lib/API/Docker/Role/Filters.pm (new Moo::Role, same form as
+Role::RegistryAuth) + t/filters.t (new, 11 subtests, fixture-only). All twelve
+call sites in the eight resource classes now go through
+$self->_normalise_filters($opts{filters}).
+
+Rules, each one a measured daemon response (Podman 5.4.2 / API 1.41, GET
+/v1.41/images/json, 2026-08-27):
+  - bare value wrapped into an ArrayRef  ({"dangling":"true"} was 500)
+  - elements stringified                 ({"dangling":[1]}   was 500)
+  - JSON->true/false and \1/\0 -> "true"/"false" ({"dangling":true} / [true] were 500)
+  - undef, empty string, any other ref, empty filter name -> croak
+  - empty ArrayRef passes through (measured 200, filters nothing)
+
+The boolean rewrite is bound to the value's TYPE, not to its truthiness and
+not to the filter name: a plain 1 becomes "1", so exited => [0], stars => [0]
+and label => [1] keep asking what they asked. JSON->true / \1 carry the claim
+of being booleans and are also the two forms encode_json would otherwise turn
+into a JSON true, which the daemon rejects.
+
+Correction to this ticket's premise: a wrong SHAPE is not silent on Podman --
+it is a 500 carrying a Go unmarshal message, one round trip later, naming
+neither the option nor the key. What the fix changes is where that is said,
+and for the recoverable shapes it repairs instead of refusing.
+
+Filter NAME validation deliberately out of scope -> karr #39, with the
+measurements behind the decision.
+
+No POD example anywhere in the dist was wrong under the new rule (checked all
+eight classes, README.md and lib/API/Docker.pm). Networks::list/prune and
+Volumes::list/prune did not document `filters` at all despite accepting it --
+added.
+
+prove -lr t/ green except t/plugins.t #8, which is karr #30's lane and fails
+identically without this change. ../p5-dist-zilla-plugin-docker-api green; it
+does not use filters. No Changes entry written (handed to the caller), no
+$VERSION bump, no commit.
