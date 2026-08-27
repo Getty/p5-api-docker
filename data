@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-08-27T06:35:22Z
+claimed_by: images-worker
+class: standard
+completed: 2026-08-27T06:35:22Z
+created: 2026-08-27T04:24:50Z
+id: 25
+priority: low
+started: 2026-08-27T04:48:48Z
+status: done
+tags:
+- images
+- coverage
+title: No build cache control - POST /build/prune
+updated: 2026-08-27T06:35:22Z
+---
+
+images has prune for dangling images but not POST /build/prune, which
+clears the BuildKit build cache. Parameters: keep-storage, all, filters.
+
+They are different caches. On a machine that builds often the build cache is
+usually the larger of the two, and images->prune does not touch it, so a
+caller trying to reclaim space with this client cannot.
+
+2026-08-27 05:05 images->build_prune added -- named for the endpoint and paired with build, with POD that spells out it is not prune (build cache vs dangling images, different stores). Options keep_storage, all, filters. The hyphen is fine: _uri_encode leaves '-' alone, so keep-storage reaches the wire unmangled, and t/images_build_prune.t asserts that on the request line. keep_storage is the documented spelling because an unquoted keep-storage => $n is not valid Perl -- the fat comma only quotes a bareword identifier -- and the hyphenated wire name is accepted beside it. Measured: Podman 5.4.2 does not implement the endpoint at all. POST /build/prune answers 404 Not Found with a text/plain body of 'Not Found', not the JSON {"message":...} shape its other errors use, at /build/prune, /v1.41/, /v1.47/ and /v4.0.0/libpod/ alike; the transport croaks 'Docker API error (404): Not Found'. Both the POD and a test subtest carry that. New t/images_build_prune.t. No Changes entry written.
