@@ -1,6 +1,6 @@
 Revision history for API-Docker
 
-{{$NEXT}}
+0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the
     happy path already removed, so a live run no longer warns "Cleanup
     failed: ... no such container" on every pass. The safety net still
