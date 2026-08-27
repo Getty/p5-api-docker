@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 use Test::More;
-use JSON::MaybeXS qw( decode_json );
+use JSON::MaybeXS qw( decode_json is_bool );
 use MIME::Base64 qw( decode_base64 );
 use API::Docker;
 
@@ -102,6 +102,33 @@ my $PRIVILEGES = [
   { Name => 'mount',   Description => '', Value => ['/data'] },
 ];
 
+# One engine Plugin object, as JSON rather than as a Perl structure, so the
+# wrapping is fed exactly what the transport decodes -- Enabled included,
+# which reaches the entity as a decoded JSON boolean and must stay one.
+#
+# Synthesized, and not copied from an example either: the Engine API
+# reference ships no example response for GET /plugins or for
+# GET /plugins/{name}/json, both being a bare $ref to the Plugin definition.
+# What comes from the reference is the field set and the types, checked
+# against moby v20.10.24's swagger.yaml (which declares API 1.41) and the Go
+# struct it describes: these six keys are exactly the struct's members, there
+# is no Tag/Active pair (that is a stale pre-1.25 example block, deleted by
+# 1.41) and no top-level Description; Enabled is a required boolean; Settings
+# always carries Mounts, Env, Args and Devices, with Env and Args as plain
+# KEY=value strings rather than the HashRefs the same two names hold under
+# Config. The values are shaped the way the daemon builds them -- Name
+# familiar and tagged, PluginReference fully qualified. No daemon reachable
+# from this repo serves /plugins, so they are not a capture.
+my $PLUGIN_JSON = '{'
+  . '"Id":"5724e2c8652da337ab2eedd19fc6fc0ec908e4bd907c7421bf6a8dfc70c4c078",'
+  . '"Name":"vieux/sshfs:latest",'
+  . '"Enabled":true,'
+  . '"PluginReference":"docker.io/vieux/sshfs:latest",'
+  . '"Settings":{"Mounts":[],"Env":["DEBUG=0"],"Args":[],"Devices":[]},'
+  . '"Config":{"Description":"sshFS plugin for Docker",'
+  . '"Interface":{"Types":["docker.volumedriver/1.0"],"Socket":"sshfs.sock"}}'
+  . '}';
+
 # ---------------------------------------------------------------------------
 subtest 'list: filters are JSON-encoded, and the filter name is "enabled"' => sub {
   my $c = fake_client('[]');
@@ -123,9 +150,41 @@ subtest 'list: filters are JSON-encoded, and the filter name is "enabled"' => su
 
 subtest 'list: no filters means no query string' => sub {
   my $c = fake_client('[]');
-  $c->plugins->list;
+  my $got = $c->plugins->list;
   is request_line($c->written), 'GET /v1.41/plugins HTTP/1.1',
     'an empty params hash appends nothing';
+  is_deeply $got, [], 'an engine with no plugins wraps to an empty ArrayRef';
+};
+
+# ---------------------------------------------------------------------------
+subtest 'list wraps into API::Docker::Plugin entities' => sub {
+  my $c = fake_client('[' . $PLUGIN_JSON . ']');
+  my $plugins = $c->plugins->list;
+
+  is ref $plugins, 'ARRAY', 'an ArrayRef, one entry per plugin';
+  my $plugin = $plugins->[0];
+  isa_ok $plugin, 'API::Docker::Plugin';
+
+  is $plugin->Id,
+    '5724e2c8652da337ab2eedd19fc6fc0ec908e4bd907c7421bf6a8dfc70c4c078',
+    'Id';
+  is $plugin->Name, 'vieux/sshfs:latest', 'Name';
+  is $plugin->PluginReference, 'docker.io/vieux/sshfs:latest',
+    'PluginReference -- the remote the plugin came from, which is not the '
+    . 'local Name once a plugin is installed under one';
+  is_deeply $plugin->Settings->{Env}, ['DEBUG=0'],
+    'Settings is handed through as the HashRef the engine sent';
+  is $plugin->Config->{Interface}{Socket}, 'sshfs.sock', 'Config likewise';
+
+  ok $plugin->Enabled, 'Enabled is true for an enabled plugin';
+  ok is_bool($plugin->Enabled),
+    'and it is still the decoded JSON boolean -- entity classes mirror the '
+    . 'daemon verbatim, so nothing normalised it to 1/0';
+
+  # Without this the entity is inert: every method below reaches the engine
+  # through the client, and a wrapper built without one dies on an
+  # undefined invocant at the first call.
+  is $plugin->client, $c, 'the client is threaded into the entity';
 };
 
 # ---------------------------------------------------------------------------
@@ -140,6 +199,65 @@ subtest 'the plugin name reaches the path unescaped' => sub {
   # The daemon routes this family as /plugins/{name:.*}/json, so the slashes
   # are part of the captured name and percent-encoding them would not match.
   unlike $c->written, qr/%2F|%3A/i, 'nothing in the name got percent-encoded';
+};
+
+subtest 'inspect wraps too' => sub {
+  my $c = fake_client($PLUGIN_JSON);
+  my $plugin = $c->plugins->inspect('vieux/sshfs:latest');
+
+  isa_ok $plugin, 'API::Docker::Plugin';
+  is $plugin->Name, 'vieux/sshfs:latest', 'the single object is wrapped, '
+    . 'not returned as the HashRef it arrived as';
+  ok $plugin->Enabled, 'and its fields are reachable as accessors';
+
+  my $again = $plugin->inspect;
+  is request_line($c->written),
+    'GET /v1.41/plugins/vieux/sshfs:latest/json HTTP/1.1',
+    'the entity re-inspects itself by Name';
+  isa_ok $again, 'API::Docker::Plugin';
+};
+
+subtest 'the entity threads its Name back through the resource class' => sub {
+  my $c = fake_client('[' . $PLUGIN_JSON . ']');
+  my $plugin = $c->plugins->list->[0];
+
+  # Each request writes to a fresh sink, so ->written is always the last one.
+  $plugin->enable(timeout => 30);
+  is request_line($c->written),
+    'POST /v1.41/plugins/vieux/sshfs:latest/enable?timeout=30 HTTP/1.1',
+    'enable: the name goes into the path and the option is passed on';
+
+  $plugin->disable(force => 1);
+  is request_line($c->written),
+    'POST /v1.41/plugins/vieux/sshfs:latest/disable?force=1 HTTP/1.1',
+    'disable';
+
+  $plugin->configure(['DEBUG=1']);
+  is request_line($c->written),
+    'POST /v1.41/plugins/vieux/sshfs:latest/set HTTP/1.1', 'configure';
+  is_deeply decode_json(request_body($c->written)), ['DEBUG=1'],
+    'and the settings survive the extra hop as an array';
+
+  $plugin->upgrade(privileges => $PRIVILEGES);
+  is request_line($c->written),
+    'POST /v1.41/plugins/vieux/sshfs:latest/upgrade?remote=vieux/sshfs:latest'
+    . ' HTTP/1.1',
+    'upgrade: remote defaults to the local Name, which is why the entity '
+    . 'carries PluginReference for the renamed case';
+  is_deeply decode_json(request_body($c->written)), $PRIVILEGES,
+    'the privilege body is not swallowed by the delegation';
+
+  # The socket is an in-memory sink; this reaches no registry, and there is
+  # no live variant of this call anywhere in the suite.
+  $plugin->push;
+  is request_line($c->written),
+    'POST /v1.41/plugins/vieux/sshfs:latest/push HTTP/1.1',
+    'push, which shadows the builtin in both packages and is only ever '
+    . 'called as a method';
+
+  $plugin->remove(force => 1);
+  is request_line($c->written),
+    'DELETE /v1.41/plugins/vieux/sshfs:latest?force=1 HTTP/1.1', 'remove';
 };
 
 subtest 'remove: force is normalised to 1/0 and omitted when unset' => sub {

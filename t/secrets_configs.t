@@ -2,6 +2,8 @@ use strict;
 use warnings;
 use Test::More;
 use MIME::Base64 qw( decode_base64 );
+use API::Docker::Config;
+use API::Docker::Secret;
 use lib 't/lib';
 use Test::API::Docker::Mock;
 
@@ -41,13 +43,65 @@ subtest 'secrets list' => sub {
   return if is_live();
 
   is(scalar @$secrets, 2, 'two secrets in the fixture');
-  is(ref $secrets->[0], 'HASH',
-    'entries are the daemon hashrefs -- there is no API::Docker::Secret to wrap them in');
-  is($secrets->[0]{Spec}{Name}, 'db-password', 'first secret name');
-  is($secrets->[0]{Version}{Index}, 1, 'carries the Version.Index that update needs');
-  ok(!exists $secrets->[0]{Spec}{Data}, 'a secret never comes back with its value');
-  is($secrets->[1]{Spec}{Labels}, undef,
+  isa_ok($secrets->[0], 'API::Docker::Secret', 'entries are wrapped and the first one');
+  isa_ok($secrets->[1], 'API::Docker::Secret', 'so is the second');
+
+  is($secrets->[0]->ID, '28497238e77f873904ff31cb2', 'ID off the entity');
+  is($secrets->[0]->Spec->{Name}, 'db-password', 'first secret name');
+  is($secrets->[0]->version_index, 1, 'version_index reaches the Version.Index that update needs');
+  is($secrets->[0]->CreatedAt, '2026-08-27T05:01:40.791536705Z', 'CreatedAt is carried');
+  is($secrets->[0]->UpdatedAt, '2026-08-27T05:01:40.791536705Z', 'UpdatedAt is carried');
+
+  ok(!exists $secrets->[0]->Spec->{Data}, 'a secret never comes back with its value');
+  ok(!API::Docker::Secret->can('decoded_data'),
+    'and so has no decoded_data -- there is nothing on a secret to decode');
+
+  is($secrets->[1]->Spec->{Labels}, undef,
     'Podman sends Labels: null for an empty label set, and it is passed through as undef');
+
+  is($secrets->[0]->client, $docker, 'the entity carries the client that produced it');
+};
+
+subtest 'a secret entity delegates by ID, and defaults the version from itself' => sub {
+  plan skip_all => $REQUEST_SHAPE if is_live();
+
+  my ($deleted, $update_path, $update_params, $update_body);
+  my $docker = test_docker(
+    'GET /secrets' => load_fixture('secrets_list'),
+    'GET /secrets/28497238e77f873904ff31cb2' => load_fixture('secrets_list')->[0],
+    'DELETE /secrets/28497238e77f873904ff31cb2' => sub { $deleted = 1; return undef },
+    'POST /secrets/28497238e77f873904ff31cb2/update' => sub {
+      my ($method, $path, %opts) = @_;
+      ($update_path, $update_params, $update_body) = ($path, $opts{params}, $opts{body});
+      return undef;
+    },
+  );
+
+  my $secret = $docker->secrets->list->[0];
+
+  my $fresh = $secret->inspect;
+  isa_ok($fresh, 'API::Docker::Secret', 'inspect on the entity returns a fresh entity, and it');
+  is($fresh->Spec->{Name}, 'db-password', 'holding the same secret');
+
+  my %spec = %{ $secret->Spec };
+  $spec{Labels} = { env => 'staging' };
+  $secret->update(%spec);
+
+  is($update_path, '/secrets/28497238e77f873904ff31cb2/update',
+    'update addresses the secret by ID, not by Spec.Name');
+  is_deeply($update_params, { version => 1 },
+    'and fills the version in from the entity own Version.Index');
+  is_deeply($update_body->{Labels}, { env => 'staging' }, 'the spec is the request body');
+  ok(!exists $update_body->{version},
+    'the defaulted version is a query parameter, not smuggled into the spec');
+
+  $secret->update(version => 9, %spec);
+  is_deeply($update_params, { version => 9 },
+    'an explicit version wins over the entity own -- nothing the caller passes is overwritten');
+  ok(!exists $update_body->{version}, 'and it is stripped out of the spec before it goes out');
+
+  $secret->remove;
+  ok($deleted, 'remove deletes by ID');
 };
 
 subtest 'secrets list forwards filters as a HashRef' => sub {
@@ -88,8 +142,9 @@ subtest 'secrets inspect' => sub {
   );
 
   my $secret = $docker->secrets->inspect('db-password');
-  is($secret->{Spec}{Name}, 'db-password', 'inspect returns the daemon hashref');
-  is($secret->{Version}{Index}, 1, 'with the Version.Index');
+  isa_ok($secret, 'API::Docker::Secret', 'inspect wraps the daemon response and it');
+  is($secret->Spec->{Name}, 'db-password', 'carrying the spec');
+  is($secret->version_index, 1, 'with the Version.Index');
 };
 
 # --- create: the base64 contract --------------------------------------------
@@ -182,11 +237,11 @@ subtest 'secrets update sends Version.Index as the version parameter' => sub {
   );
 
   my $secret = $docker->secrets->inspect('db-password');
-  is($secret->{Version}{Index}, 1, 'the version the caller is meant to pass comes from inspect');
+  is($secret->version_index, 1, 'the version the caller is meant to pass comes from inspect');
 
-  my %spec = %{ $secret->{Spec} };
+  my %spec = %{ $secret->Spec };
   $spec{Labels} = { env => 'staging' };
-  my $result = $docker->secrets->update('db-password', $secret->{Version}{Index}, %spec);
+  my $result = $docker->secrets->update('db-password', $secret->version_index, %spec);
 
   is($path, '/secrets/db-password/update', 'update posts to the right path');
   is_deeply($params, { version => 1 },
@@ -268,8 +323,41 @@ subtest 'configs list' => sub {
   my $configs = $docker->configs->list;
 
   is(ref $configs, 'ARRAY', 'list returns an ArrayRef');
-  is($configs->[0]{Spec}{Name}, 'server.conf', 'config name');
-  is($configs->[0]{Version}{Index}, 11, 'carries Version.Index');
+  isa_ok($configs->[0], 'API::Docker::Config', 'entries are wrapped and the first one');
+  is($configs->[0]->ID, 'ktnbjxoalbkvbvedmg1urrz8h', 'ID off the entity');
+  is($configs->[0]->Spec->{Name}, 'server.conf', 'config name');
+  is($configs->[0]->version_index, 11, 'version_index reaches the Version.Index');
+  is($configs->[0]->CreatedAt, '2016-11-05T01:20:17.327670065Z', 'CreatedAt is carried');
+  is($configs->[0]->client, $docker, 'the entity carries the client that produced it');
+};
+
+subtest 'decoded_data decodes Spec.Data and leaves Spec alone' => sub {
+  plan skip_all => 'Podman serves no /configs route (404 Not Found on every path)'
+    if is_live();
+
+  my $docker = test_docker('GET /configs' => [$CONFIG]);
+  my $config = $docker->configs->list->[0];
+
+  is($config->Spec->{Data}, 'bGlzdGVuIDgwODA7Cg==',
+    'Spec.Data is the base64 the daemon sent, not rewritten by the entity');
+  is($config->decoded_data, "listen 8080;\n",
+    'decoded_data is that known base64 value decoded');
+  isnt($config->decoded_data, $config->Spec->{Data},
+    'the two are not the same string -- an accessor that just handed Spec.Data back would pass everything else here');
+  is($config->Spec->{Data}, 'bGlzdGVuIDgwODA7Cg==',
+    'and reading it did not consume or replace the field');
+
+  # A secret carries no payload at all, so the accessor exists on exactly one
+  # of the two entity classes. That asymmetry is the ticket, not an omission.
+  ok(API::Docker::Config->can('decoded_data'), 'a config has the accessor');
+  ok(!API::Docker::Secret->can('decoded_data'), 'a secret deliberately does not');
+
+  my $bare = API::Docker::Config->new(ID => 'x');
+  is($bare->decoded_data, undef, 'an object with no Spec decodes to nothing rather than dying');
+  is($bare->version_index, undef, 'and has no version_index either');
+
+  my $dataless = API::Docker::Config->new(ID => 'x', Spec => { Name => 'n' });
+  is($dataless->decoded_data, undef, 'nor does a Spec without a Data key');
 };
 
 subtest 'configs create encodes Data, inspect does not decode it' => sub {
@@ -290,10 +378,13 @@ subtest 'configs create encodes Data, inspect does not decode it' => sub {
   is(decode_base64($body->{Data}), "listen 8080;\n", 'round-trips');
 
   my $config = $docker->configs->inspect('server.conf');
-  is($config->{Spec}{Data}, 'bGlzdGVuIDgwODA7Cg==',
-    'inspect hands back the daemon response untouched -- Spec.Data stays base64');
-  is(decode_base64($config->{Spec}{Data}), "listen 8080;\n",
-    'so the caller decodes it, which is visible rather than silent');
+  isa_ok($config, 'API::Docker::Config', 'inspect wraps the daemon response and it');
+  is($config->Spec->{Data}, 'bGlzdGVuIDgwODA7Cg==',
+    'hands the Spec back untouched -- Spec.Data stays base64');
+  is(decode_base64($config->Spec->{Data}), "listen 8080;\n",
+    'so decoding stays an explicit step, visible rather than silent');
+  is($config->decoded_data, "listen 8080;\n",
+    'and decoded_data is that step, spelled once');
 };
 
 subtest 'configs update sends Version.Index as the version parameter' => sub {
@@ -310,17 +401,54 @@ subtest 'configs update sends Version.Index as the version parameter' => sub {
   );
 
   my $config = $docker->configs->inspect('server.conf');
-  my %spec   = %{ $config->{Spec} };
+  my %spec   = %{ $config->Spec };
   delete $spec{Data};                        # already base64 -- see the POD
   $spec{Labels} = { 'com.example.some-label' => 'other-value' };
 
-  $docker->configs->update('server.conf', $config->{Version}{Index}, %spec);
+  $docker->configs->update('server.conf', $config->version_index, %spec);
 
   is($path, '/configs/server.conf/update', 'update posts to the right path');
   is_deeply($params, { version => 11 },
     'Version.Index rides in the version query parameter, and it is the only parameter');
   is_deeply($body->{Labels}, { 'com.example.some-label' => 'other-value' },
     'the spec is the request body');
+};
+
+subtest 'a config entity delegates by ID, and defaults the version from itself' => sub {
+  plan skip_all => $REQUEST_SHAPE if is_live();
+
+  my ($deleted, $path, $params, $body);
+  my $docker = test_docker(
+    'GET /configs' => [$CONFIG],
+    'DELETE /configs/ktnbjxoalbkvbvedmg1urrz8h' => sub { $deleted = 1; return undef },
+    'POST /configs/ktnbjxoalbkvbvedmg1urrz8h/update' => sub {
+      my ($method, $req_path, %opts) = @_;
+      ($path, $params, $body) = ($req_path, $opts{params}, $opts{body});
+      return undef;
+    },
+  );
+
+  my $config = $docker->configs->list->[0];
+
+  my %spec = %{ $config->Spec };
+  $spec{Data}   = $config->decoded_data;     # decoded, so it encodes once on the way out
+  $spec{Labels} = { 'com.example.some-label' => 'other-value' };
+  $config->update(%spec);
+
+  is($path, '/configs/ktnbjxoalbkvbvedmg1urrz8h/update',
+    'update addresses the config by ID, not by Spec.Name');
+  is_deeply($params, { version => 11 },
+    'and fills the version in from the entity own Version.Index');
+  is($body->{Data}, 'bGlzdGVuIDgwODA7Cg==',
+    'a decoded_data round-trip re-encodes to exactly the base64 it came from');
+
+  $config->update(version => 12, %spec);
+  is_deeply($params, { version => 12 },
+    'an explicit version wins over the entity own -- nothing the caller passes is overwritten');
+  ok(!exists $body->{version}, 'and it is stripped out of the spec before it goes out');
+
+  $config->remove;
+  ok($deleted, 'remove deletes by ID');
 };
 
 subtest 'configs update will not go out without a usable version' => sub {

@@ -20,34 +20,58 @@ use API::Docker;
 # export, resize and attach -- and 500 with "layer not known" on changes,
 # which is why changes documents that difference.
 #
-# What is NOT measured here: the bytes of a real archive, a real attach
-# stream, and the X-Docker-Container-Path-Stat header, because all three need
-# a container and this work was held to read-only probes. The live subtests at
-# the bottom read them off a container that already exists; with none on the
-# daemon they skip, and they skipped on the run that produced this file.
+# karr #36 closed the remaining gap: the bytes of a real archive, a real
+# attach stream, and the X-Docker-Container-Path-Stat header are now captured
+# from apidocker-fixture-* containers on that same socket rather than assumed.
+# See the fixture-loading comments below for what each measurement found.
 
 check_live_access();
 
-# A real ustar archive built with GNU tar, shaped like what the engine returns
-# for path=/etc/hostname: one member, named after the basename. Deliberately
-# not hand-rolled bytes -- the property under test is that nothing in the
-# client touches them, so it has to be a stream a tar reader accepts.
+# GET /containers/{id}/archive?path=/etc/hostname, captured from a running
+# apidocker-fixture-archive container on Podman 5.4.2 (API 1.41) -- karr #36
+# replaced the hand-built ustar that stood in here before. Measured
+# differences from the hand-built version: uname/gname are populated
+# ('root'/'root', not empty), devmajor/devminor are the ASCII string
+# '0000000' rather than left as raw NUL bytes, and mode reflects the file's
+# real permissions (0644, not the guessed 0664). Block size (512), the two
+# trailing all-zero blocks that end the archive, the ustar magic/version, and
+# the empty prefix field were already right in the hand-built one.
 my $TAR = load_fixture_raw('containers_archive.tar');
 
 # The one-way attach stream is byte-identical to the logs stream, which is the
-# whole claim of karr #19. This is the captured logs fixture rather than a
-# second file holding the same bytes: it is real engine output, and a copy
-# made by hand would only look like one.
+# whole claim of karr #19 -- and now measured, not just documented: karr #36
+# attached live to an apidocker-fixture-attach-live container across its run
+# (POST .../attach?stream=1&stdout=1&stderr=1, connected before the container
+# started so the daemon had output to send) and diffed the bytes against
+# GET .../logs?stdout=1&stderr=1 on an equivalent run; both came back as this
+# same 24-byte frame pair, byte for byte. This is the captured logs fixture
+# rather than a second file holding the same bytes: it is real engine output,
+# and a copy made by hand would only look like one.
+#
+# A related hazard the measurement also turned up: attaching (even with
+# logs=1) to a container that has *already* exited still sends the same 24
+# bytes, but Podman never closes the connection afterward -- no
+# Content-Length, no chunked encoding, and no close even when the client
+# sends Connection: close itself, which _request always does. Reading blocks
+# until EOF, so that call hangs forever. One more reason the live subtests
+# below never call attach.
 my $FRAMES = load_fixture_raw('containers_logs_multiplexed.bin');
 
-# Constructed from the shape the Docker Engine API documents, not captured --
-# see the note above and API::Docker::API::Containers/stat_archive.
+# X-Docker-Container-Path-Stat for /etc/hostname, decoded from a real header
+# captured alongside the archive above (karr #36). Podman's key names match
+# the Docker Engine API reference for these five; it also sends a sixth,
+# isDir, which the live subtest below checks for separately. Two measured
+# surprises: linkTarget is populated even for a plain regular file (Podman
+# echoes the resolved path here rather than leaving it empty), and mode is
+# Go's os.FileMode, not a POSIX stat.st_mode word -- for this regular file
+# the two are numerically identical (0644, no type bits), but they diverge
+# for a directory; see the live subtest for the case that tells them apart.
 my %STAT = (
   name       => 'hostname',
   size       => 13,
   mode       => 420,
-  mtime      => '2026-08-27T05:00:00Z',
-  linkTarget => '',
+  mtime      => '2026-08-27T15:36:51.589296398Z',
+  linkTarget => '/etc/hostname',
 );
 my $STAT_HEADER = encode_base64(encode_json(\%STAT), '');
 
@@ -557,11 +581,30 @@ subtest 'live: changes and the archive endpoints against a real container' => su
     path => '/etc/hostname');
   ok defined $stat, 'stat_archive found /etc/hostname';
   is ref $stat, 'HASH', 'and decoded the header into a HashRef';
-  # The engine's key names, verified here rather than assumed.
-  ok exists $stat->{name}, 'the stat carries a name key';
-  ok exists $stat->{size}, 'and a size key';
-  ok exists $stat->{mode}, 'and a mode key';
-  note 'X-Docker-Container-Path-Stat keys: ' . join(', ', sort keys %$stat);
+
+  # The engine's key names, asserted rather than just noted (karr #36):
+  # measured against Podman 5.4.2 the header carries six keys, one more than
+  # the Docker Engine API reference documents (name, size, mode, mtime,
+  # linkTarget) -- isDir is Podman's addition.
+  is_deeply [ sort keys %$stat ], [qw( isDir linkTarget mode mtime name size )],
+    'the real key set';
+  is $stat->{name}, 'hostname', 'name is the basename, not the full path';
+  is $stat->{linkTarget}, '/etc/hostname',
+    'linkTarget is populated even for a plain regular file -- Podman echoes '
+    . 'the resolved path here rather than leaving it empty for a non-symlink';
+  ok !$stat->{isDir}, '/etc/hostname is not a directory';
+  is $stat->{mode} & 0777, 0644, 'the permission bits are the low nine of mode';
+
+  # mode itself is Go's os.FileMode, not a POSIX stat.st_mode word -- for a
+  # regular file the two coincide (no type bits set), so the check above does
+  # not by itself tell them apart. A directory does: Go sets os.ModeDir
+  # (1<<31) above the permission bits, where POSIX would set S_IFDIR
+  # (0040000) at an entirely different position.
+  my $dir_stat = $docker->containers->stat_archive($container->Id, path => '/etc');
+  ok $dir_stat->{isDir}, '/etc is a directory';
+  ok $dir_stat->{mode} & (1 << 31),
+    'mode carries Go os.ModeDir above the permission bits -- proof this is '
+    . 'FileMode, not raw POSIX stat.st_mode, which never sets that bit';
 
   my $tar = $docker->containers->get_archive($container->Id,
     path => '/etc/hostname');

@@ -54,8 +54,100 @@ subtest 'every falsy form of tls is still accepted' => sub {
     ok $docker, 'and returns a client';
   }
 
+  # Pinned against the developer's own shell: the default now reads
+  # DOCKER_TLS_VERIFY (karr #42), and the claim being made here is the one
+  # that has always been made -- with nothing set, a tcp:// host is plaintext.
+  delete local $ENV{DOCKER_TLS_VERIFY};
   is client()->tls, 0, 'the default is still 0: a tcp:// host is plaintext '
     . 'unless TLS is asked for';
+};
+
+# ===========================================================================
+# DOCKER_TLS_VERIFY (karr #42)
+# ===========================================================================
+
+subtest 'the default is DOCKER_TLS_VERIFY, on the docker CLI rule' => sub {
+  # Measured against docker/cli rather than guessed. cli/flags/options.go:
+  #
+  #     dockerTLSVerify = os.Getenv(client.EnvTLSVerify) != ""
+  #
+  # so the test is "non-empty", not "true", and non-empty means TLS on *and*
+  # verification on (InsecureSkipVerify = !o.TLSVerify). The one place Perl
+  # truthiness and that rule disagree is the string '0' -- which is exactly
+  # what a user types for "off".
+  {
+    local $ENV{DOCKER_TLS_VERIFY} = '1';
+    is client()->tls, 1, "'1' turns TLS on";
+  }
+  {
+    local $ENV{DOCKER_TLS_VERIFY} = '0';
+    is client()->tls, 1, "'0' turns TLS ON as well: the CLI reads != \"\", not "
+      . 'truthiness, and this is the case a naive port gets backwards';
+  }
+  for my $value (qw( false no off true yes 2 )) {
+    local $ENV{DOCKER_TLS_VERIFY} = $value;
+    is client()->tls, 1, "'$value' is non-empty, so it is on too";
+  }
+  {
+    local $ENV{DOCKER_TLS_VERIFY} = '';
+    is client()->tls, 0, 'the empty string is the only set value that is off';
+  }
+  {
+    delete local $ENV{DOCKER_TLS_VERIFY};
+    is client()->tls, 0, 'and unset is off, which is the old default unchanged';
+  }
+
+  {
+    local $ENV{DOCKER_TLS_VERIFY} = '1';
+    is client(tls => 0)->tls, 0, 'an explicit tls => 0 outranks the variable';
+    delete local $ENV{DOCKER_TLS_VERIFY};
+    is client(tls => 1)->tls, 1, 'and an explicit tls => 1 needs no variable';
+  }
+};
+
+subtest 'DOCKER_TLS_VERIFY is ignored on a socket host' => sub {
+  # The CLI ignores it there too -- cli/context/docker/load.go, "there's no
+  # need to configure TLS for a socket connection", true for unix, npipe and
+  # fd. Here it MUST be ignored rather than merely being tidy: BUILD croaks on
+  # tls => 1 with a non-tcp:// host, so a host-blind default would make a bare
+  # API::Docker->new die on every machine that talks to a local socket and
+  # happens to export the variable -- this repo's own default host included.
+  local $ENV{DOCKER_TLS_VERIFY} = '1';
+
+  for my $host (
+    'unix:///var/run/docker.sock',
+    'unix:///run/user/1000/podman/podman.sock',
+  ) {
+    my $docker = eval { API::Docker->new(host => $host, api_version => '1.41') };
+    is $@, '', $host . ' still constructs';
+    is $docker->tls, 0, 'and TLS stayed off, so BUILD had nothing to croak about';
+  }
+
+  my ($bare, $err) = do {
+    local $ENV{DOCKER_HOST} = 'unix:///var/run/docker.sock';
+    local $@;
+    my $client = eval { API::Docker->new };
+    ($client, $@);
+  };
+  is $err, '', 'including the no-argument constructor a consumer writes';
+  is $bare->tls, 0,
+    'which is the shape ../p5-dist-zilla-plugin-docker-api builds its client in';
+};
+
+subtest 'DOCKER_TLS_VERIFY with no certificates is the system trust store' => sub {
+  # The third constraint: non-empty means encrypt and verify, and the CLI asks
+  # for no DOCKER_CERT_PATH alongside it. Not a croak and not a new code path
+  # -- it is already what tls => 1 with cert_path => undef means here.
+  local $ENV{DOCKER_TLS_VERIFY} = '1';
+  delete local $ENV{DOCKER_CERT_PATH};
+
+  my $docker = eval { client() };
+  is $@, '', 'a tcp:// client with no certificates anywhere constructs';
+  is $docker->tls, 1, 'with TLS on';
+  is $docker->cert_path, undef, 'and no certificate directory to read';
+  is $docker->tls_insecure, 0,
+    'verification is still on: the CLI sets InsecureSkipVerify = !TLSVerify, '
+    . 'so non-empty is encrypt AND verify';
 };
 
 subtest 'tls => 1 on a unix:// host croaks' => sub {
@@ -73,6 +165,10 @@ subtest 'tls => 1 on a unix:// host croaks' => sub {
 };
 
 subtest 'tls_insecure without tls croaks' => sub {
+  # Only reachable while tls is off, and the default is read from the
+  # environment now, so the environment is what this subtest pins first.
+  delete local $ENV{DOCKER_TLS_VERIFY};
+
   my $err = do {
     local $@;
     eval { client(tls_insecure => 1) };
@@ -90,6 +186,7 @@ subtest 'cert_path on its own still transmits nothing' => sub {
   # Kept from the file this replaces, and still true: cert_path defaults from
   # DOCKER_CERT_PATH, which machines running the docker CLI export, so it must
   # not change anything for a client that never asked for TLS.
+  delete local $ENV{DOCKER_TLS_VERIFY};
   my $docker = eval { client(cert_path => '/etc/docker/certs') };
   is $@, '', 'no croak, even though the path does not exist';
   is $docker->cert_path, '/etc/docker/certs', 'the value is kept';

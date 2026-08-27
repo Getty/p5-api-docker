@@ -3,6 +3,7 @@ package API::Docker::API::Configs;
 our $VERSION = '0.004';
 use Moo;
 with 'API::Docker::Role::Filters';
+use API::Docker::Config;
 use Carp qw( croak );
 use MIME::Base64 qw( encode_base64 );
 use namespace::clean;
@@ -21,14 +22,15 @@ use namespace::clean;
         Labels => { app => 'web' },
     );
 
-    # Inspect a config -- Spec.Data comes back base64, and stays that way
+    # Inspect a config -- an API::Docker::Config; Spec.Data stays base64
     my $config = $docker->configs->inspect($created->{ID});
-    my $text   = MIME::Base64::decode_base64($config->{Spec}{Data});
+    my $text   = $config->decoded_data;
 
     # Update: the version comes from the inspect above, and is mandatory
-    my %spec = %{ $config->{Spec} };
+    my %spec = %{ $config->Spec };
+    delete $spec{Data};                       # already base64 -- see below
     $spec{Labels} = { app => 'web', tier => 'edge' };
-    $docker->configs->update($created->{ID}, $config->{Version}{Index}, %spec);
+    $config->update(%spec);
 
     # Remove
     $docker->configs->remove($created->{ID});
@@ -43,8 +45,9 @@ Accessed via C<< $docker->configs >>.
 Configs are L<API::Docker::API::Secrets> without the secrecy: the same five
 endpoints, the same spec shape, the same mandatory C<version> on update. The
 one behavioural difference is that a config's value can be read back --
-L</inspect> returns it in C<< $config->{Spec}{Data} >>, where a secret returns
-no payload at all. Which is the whole point of the split: put configuration in
+L</inspect> returns it in C<< $config->Spec->{Data} >>, and
+L<API::Docker::Config/decoded_data> decodes it, where a secret returns no
+payload at all. Which is the whole point of the split: put configuration in
 a config, and anything you would mind seeing in a C<docker config inspect> in
 a secret.
 
@@ -73,16 +76,19 @@ C<Wide character in subroutine entry>; encode first, e.g. with
 C<Encode::encode_utf8>.
 
 B<The reverse trip is not symmetric, deliberately.> L</inspect> and L</list>
-hand back exactly what the daemon sent, so C<< {Spec}{Data} >> is still
-base64 and you decode it yourself:
+hand back what the daemon sent with nothing rewritten, so
+C<< $config->Spec->{Data} >> is still base64. Decoding is a separate,
+explicit call on the entity:
 
-    my $text = MIME::Base64::decode_base64($config->{Spec}{Data});
+    my $text = $config->decoded_data;
 
 The asymmetry follows one rule: this class encodes where getting it wrong is
-silent, and touches nothing where getting it wrong is visible. An unencoded
+silent, and rewrites nothing where getting it wrong is visible. An unencoded
 C<Data> going out is stored as garbage with a 200; a base64 string coming back
-is obvious the moment you look at it. Decoding it here would also mean
-rewriting a daemon response, which nothing else in this distribution does.
+is obvious the moment you look at it. So the decode is offered where it costs
+nothing -- L<API::Docker::Config/decoded_data> derives the bytes on demand and
+leaves C<Spec> verbatim -- rather than by replacing a field of a daemon
+response, which nothing in this distribution does.
 
 To send an already-encoded value verbatim, bypass this class:
 
@@ -95,7 +101,7 @@ daemon rejects the request without it. The value is the C<Version.Index> of
 the config as it stands right now, which is what L</inspect> returns:
 
     my $config = $docker->configs->inspect($id);
-    $docker->configs->update($id, $config->{Version}{Index}, %spec);
+    $docker->configs->update($id, $config->version_index, %spec);
 
 It is an optimistic-concurrency token, not a serial number to invent. If
 anything else changed the config since that C<inspect>, the index has moved on
@@ -104,14 +110,16 @@ Read it immediately before the update, and again before a retry.
 
 This class makes it the second positional argument and croaks when it is
 missing or not numeric, so the mistake surfaces here instead of one round trip
-later.
+later. L<API::Docker::Config/update> supplies it from the entity's own
+C<Version.Index> instead, which is the same value read at the same moment.
 
 The Engine API reference states that only C<Labels> may actually change: the
 rest of the spec must go back unchanged from what C<inspect> returned. Hence
-C<< %spec = %{ $config->{Spec} } >> in the SYNOPSIS -- send the whole spec back
+C<< %spec = %{ $config->Spec } >> in the SYNOPSIS -- send the whole spec back
 with the one key edited. Note that a C<Spec> from C<inspect> carries C<Data>
 already base64-encoded, so passing it straight to L</update> would encode it a
-second time; delete the key, or decode it, before sending it back.
+second time; delete the key, or pass
+L<API::Docker::Config/decoded_data> in its place, before sending it back.
 
 =head2 Swarm, and Podman
 
@@ -144,6 +152,19 @@ Reference to L<API::Docker> client. Weak reference to avoid circular dependencie
 
 =cut
 
+sub _wrap {
+  my ($self, $data) = @_;
+  return API::Docker::Config->new(
+    client => $self->client,
+    %$data,
+  );
+}
+
+sub _wrap_list {
+  my ($self, $list) = @_;
+  return [ map { $self->_wrap($_) } @$list ];
+}
+
 # The wire field is base64; the public contract is raw bytes. Guarding the
 # character range here keeps the failure a croak naming this class instead of
 # MIME::Base64's "Wide character in subroutine entry" from two frames down.
@@ -160,7 +181,7 @@ sub list {
   my %params;
   $params{filters} = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
-  return $self->client->get('/configs', params => \%params) // [];
+  return $self->_wrap_list($self->client->get('/configs', params => \%params) // []);
 }
 
 =method list
@@ -168,10 +189,9 @@ sub list {
     my $configs = $configs->list;
     my $configs = $configs->list(filters => { label => ['app=web'] });
 
-List configs. Returns an ArrayRef of HashRefs exactly as the daemon sent them
--- unlike C<< $docker->volumes->list >> these are not wrapped in an entity
-class, because there is no C<API::Docker::Config>. Each carries a
-C<< {Spec}{Data} >> that is still base64.
+List configs. Returns an ArrayRef of L<API::Docker::Config> objects. Each
+carries a C<< Spec->{Data} >> that is still base64;
+L<API::Docker::Config/decoded_data> is the decode.
 
 Options:
 
@@ -204,7 +224,10 @@ sub create {
         Labels => { app => 'web' },
     );
 
-Create a config. Returns the daemon's response, a HashRef carrying C<ID>.
+Create a config. Returns the daemon's response, a HashRef carrying C<ID> --
+not an L<API::Docker::Config>, because C<ID> is all the daemon answers with
+and an entity built from it would carry no C<Spec> and no C<Version>. Call
+L</inspect> on that C<ID> for the object.
 
 Options:
 
@@ -228,18 +251,19 @@ sub inspect {
   my ($self, $id) = @_;
   croak __PACKAGE__ . '->inspect config ID or name required'
     unless defined $id && length $id;
-  return $self->client->get("/configs/$id");
+  return $self->_wrap($self->client->get("/configs/$id"));
 }
 
 =method inspect
 
     my $config = $configs->inspect($id);
-    my $index  = $config->{Version}{Index};   # what update needs
-    my $text   = MIME::Base64::decode_base64($config->{Spec}{Data});
+    my $index  = $config->version_index;      # what update needs
+    my $text   = $config->decoded_data;
 
-Get a config by ID or name. Returns the daemon's HashRef unchanged, with
-C<ID>, C<Spec>, C<CreatedAt>, C<UpdatedAt> and C<Version>. C<< {Spec}{Data} >>
-is base64 and is B<not> decoded here.
+Get a config by ID or name. Returns an L<API::Docker::Config>, with C<ID>,
+C<Spec>, C<CreatedAt>, C<UpdatedAt> and C<Version> as the daemon sent them.
+C<< Spec->{Data} >> is base64 and is B<not> rewritten;
+L<API::Docker::Config/decoded_data> derives the bytes from it on demand.
 
 =cut
 
@@ -264,22 +288,25 @@ sub update {
 =method update
 
     my $config = $configs->inspect($id);
-    my %spec   = %{ $config->{Spec} };
+    my %spec   = %{ $config->Spec };
     delete $spec{Data};                       # already base64 -- see below
     $spec{Labels} = { app => 'web', tier => 'edge' };
 
-    $configs->update($id, $config->{Version}{Index}, %spec);
+    $configs->update($id, $config->version_index, %spec);
+    $config->update(%spec);                   # the same call, via the entity
 
 Update a config. Returns nothing on success -- the daemon answers 200 with an
 empty body.
 
 C<$version> is mandatory and is the C<Version.Index> from L</inspect>; see
 L</"update takes the current version, and it is mandatory"> for why it cannot
-be guessed and why the whole spec goes back.
+be guessed and why the whole spec goes back. L<API::Docker::Config/update>
+fills it in from the entity it was called on.
 
 A C<Data> passed here is treated like L</create>'s: raw bytes, encoded on the
 way out. The C<Data> in a C<Spec> from L</inspect> is already base64, so drop
-or decode it before handing that spec back, or it gets encoded twice.
+it, or replace it with L<API::Docker::Config/decoded_data>, before handing
+that spec back -- otherwise it gets encoded twice.
 
 =cut
 
@@ -304,6 +331,8 @@ returns nothing; a config that is not there is a 404 and croaks.
 =over
 
 =item * L<API::Docker> - Main Docker client
+
+=item * L<API::Docker::Config> - Config entity class
 
 =item * L<API::Docker::API::Secrets> - Secrets, the same shape for values that
 must not be readable back

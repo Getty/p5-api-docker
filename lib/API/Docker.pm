@@ -65,7 +65,8 @@ with client certificates (L</tls>, L</cert_path>)
 
 =item * Automatic API version negotiation
 
-=item * Object-oriented entity classes (Container, Image, Network, Volume)
+=item * Object-oriented entity classes (Container, Image, Network, Volume,
+Secret, Config, Plugin)
 
 =item * Comprehensive logging via L<Log::Any>
 
@@ -116,6 +117,12 @@ The distribution is organized into several layers:
 =item * L<API::Docker::Network> - Network entity
 
 =item * L<API::Docker::Volume> - Volume entity
+
+=item * L<API::Docker::Secret> - Secret entity
+
+=item * L<API::Docker::Config> - Config entity
+
+=item * L<API::Docker::Plugin> - Plugin entity
 
 =back
 
@@ -187,19 +194,58 @@ This attribute is set automatically by L</negotiate_version>.
 =cut
 
 has tls => (
-  is      => 'ro',
-  default => 0,
+  is => 'lazy',
 );
+
+sub _build_tls {
+  my ($self) = @_;
+
+  # The docker CLI's own rule, read off cli/flags/options.go:
+  #   dockerTLSVerify = os.Getenv(client.EnvTLSVerify) != ""
+  # Every non-empty value turns TLS on, DOCKER_TLS_VERIFY=0 included. Perl
+  # truthiness would read that '0' as off and disagree with the CLI on exactly
+  # the value a user is most likely to type for "off", so the test is
+  # defined-and-not-empty rather than a boolean one.
+  return 0 unless defined $ENV{DOCKER_TLS_VERIFY}
+    && $ENV{DOCKER_TLS_VERIFY} ne '';
+
+  # And the CLI ignores TLS on a socket host without saying so
+  # (cli/context/docker/load.go, "there's no need to configure TLS for a
+  # socket connection"). Ignoring it here is not politeness: BUILD croaks on
+  # tls => 1 with a non-tcp:// host, so a host-blind default would make a bare
+  # API::Docker->new die on every unix:// machine that exports the variable.
+  return $self->host =~ m{^tcp://} ? 1 : 0;
+}
 
 =attr tls
 
-Speak TLS on a C<tcp://> connection. Default C<0>, which is plaintext.
+Speak TLS on a C<tcp://> connection. Defaults to C<1> when
+C<$ENV{DOCKER_TLS_VERIFY}> holds any non-empty value and L</host> is a
+C<tcp://> one, and to C<0> -- plaintext -- otherwise.
 
     my $docker = API::Docker->new(
       host      => 'tcp://dockerhost:2376',
       tls       => 1,
       cert_path => '/home/me/.docker',
     );
+
+The default follows the C<docker> CLI rather than the Go SDK's C<FromEnv>: the
+CLI reads the variable as C<< != "" >>, so B<every non-empty value turns TLS
+on> -- C<DOCKER_TLS_VERIFY=0> included, and so are C<false>, C<no> and C<off>.
+Only unset, or the empty string, is off. That is deliberately not Perl
+truthiness: C<'0'> is the value most likely to be typed for "off" and is
+precisely where the two rules would part company. An explicit C<< tls => ... >>
+passed to the constructor outranks the variable in both directions.
+
+The variable is B<ignored on a socket host>, as the CLI ignores it -- a
+C<unix://>, C<npipe://> or C<fd://> connection carries nothing to encrypt.
+Without that exception a shell exporting C<DOCKER_TLS_VERIFY> would make a bare
+C<< API::Docker->new >> croak on every machine talking to a local socket, since
+C<< tls => 1 >> on a non-C<tcp://> host is a construction error (below).
+
+C<DOCKER_TLS_VERIFY> with no L</cert_path> and no C<DOCKER_CERT_PATH> beside it
+is TLS against the system trust store, not an error; the CLI asks for no
+certificates either, and non-empty there means encrypt B<and> verify.
 
 With C<< tls => 1 >> the transport opens an L<IO::Socket::SSL> connection
 instead of an L<IO::Socket::INET> one and nothing above the socket changes.

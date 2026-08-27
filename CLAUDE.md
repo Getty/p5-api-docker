@@ -49,7 +49,7 @@ for this distribution.
 11. **The version in `lib/API/Docker.pm` is the NEXT release.** What's
     currently on CPAN is the previous tag. `dzil release` bumps the
     version automatically — never bump it by hand before a release. The
-    same literal is repeated in all twelve `lib/**/*.pm` files and must
+    same literal is repeated in all 22 `lib/**/*.pm` files and must
     stay in sync.
 
 12. **`{{$NEXT}}` in `Changes` is the placeholder for the upcoming
@@ -90,6 +90,7 @@ lib/API/Docker/API/Secrets.pm           # /secrets
 lib/API/Docker/API/Configs.pm           # /configs
 lib/API/Docker/API/Plugins.pm           # /plugins
 lib/API/Docker/{Container,Image,Network,Volume}.pm  # entity classes
+lib/API/Docker/{Plugin,Secret,Config}.pm            # entity classes
 lib/API/Docker/Error/Stream.pm          # croaked on a failed build/pull/push stream
 t/                                      # tests (prove -lr t/)
 t/lib/Test/API/Docker/Mock.pm           # fixture-driven mock helper

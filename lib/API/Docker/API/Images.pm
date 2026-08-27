@@ -681,25 +681,14 @@ sub get_all {
   }
 
   croak "At least one image name required" unless @names;
-  return $self->client->get('/images/get?' . $self->_names_query(@names),
+  # `names` is a repeated query parameter -- names=a&names=b -- and nothing
+  # else is accepted: measured against Podman 5.4.2, the comma-joined spelling
+  # answers 500 with 'parsing reference "alpine:3,registry:2": invalid
+  # reference format'. An ArrayRef param value is exactly that repetition;
+  # _request escapes each element with its own _uri_encode, which leaves `/`
+  # and `:` raw so an image reference survives intact.
+  return $self->client->get('/images/get', params => { names => \@names },
     exists $opts{on_chunk} ? ( on_chunk => $opts{on_chunk} ) : ( raw => 1 ));
-}
-
-# `names` is a repeated query parameter -- names=a&names=b -- and nothing
-# else is accepted: measured against Podman 5.4.2, the comma-joined spelling
-# answers 500 with 'parsing reference "alpine:3,registry:2": invalid
-# reference format', and Docker reads r.Form["names"], so a single value is
-# always exactly one name. _request's params encoder emits one pair per key
-# and has no way to repeat one, so the query is built here and handed over as
-# part of the path. The escaping mirrors the transport's own _uri_encode: `/`
-# and `:` stay raw so an image reference survives intact.
-sub _names_query {
-  my ($self, @names) = @_;
-  return join '&', map {
-    my $name = $_;
-    $name =~ s/([^A-Za-z0-9\-_.~:\/])/sprintf("%%%02X", ord($1))/ge;
-    'names=' . $name;
-  } @names;
 }
 
 =method get_all

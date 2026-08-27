@@ -3,6 +3,7 @@ package API::Docker::API::Plugins;
 our $VERSION = '0.004';
 use Moo;
 with 'API::Docker::Role::Filters', 'API::Docker::Role::RegistryAuth';
+use API::Docker::Plugin;
 use Carp qw( croak );
 use namespace::clean;
 
@@ -21,7 +22,8 @@ use namespace::clean;
     $docker->plugins->enable('vieux/sshfs:latest');
 
     # Inspect
-    my $info = $docker->plugins->inspect('vieux/sshfs:latest');
+    my $plugin = $docker->plugins->inspect('vieux/sshfs:latest');
+    say $plugin->Name, $plugin->Enabled ? ' (enabled)' : ' (disabled)';
 
     # Configure, upgrade, disable, remove
     $docker->plugins->configure('vieux/sshfs:latest', ['DEBUG=1']);
@@ -79,10 +81,15 @@ class therefore needs a real Docker daemon.
 
 =head2 What this class returns
 
-L</list> and L</inspect> return the decoded engine response -- an ArrayRef of
-HashRefs and a HashRef -- not entity objects. That deviates from the
-C<list>/C<inspect> convention the other resource classes follow, because
-there is no C<API::Docker::Plugin> entity class to wrap them in yet.
+L</list> and L</inspect> return L<API::Docker::Plugin> objects, following the
+C<list>/C<inspect> convention every other resource class here follows. The
+entity mirrors the engine's C<Plugin> fields verbatim and normalises nothing,
+and its methods thread the plugin's name back through this class.
+
+Everything else returns the decoded engine response as it came: L</privileges>
+an ArrayRef of privilege HashRefs, L</install>, L</upgrade> and L</push> an
+ArrayRef of progress events, and L</enable>, L</disable>, L</remove> and
+L</configure> C<undef>.
 
 =cut
 
@@ -97,6 +104,19 @@ has client => (
 Reference to L<API::Docker> client. Weak reference to avoid circular dependencies.
 
 =cut
+
+sub _wrap {
+  my ($self, $data) = @_;
+  return API::Docker::Plugin->new(
+    client => $self->client,
+    %$data,
+  );
+}
+
+sub _wrap_list {
+  my ($self, $list) = @_;
+  return [ map { $self->_wrap($_) } @$list ];
+}
 
 # The plugin router calls registry.DecodeAuthConfig on the header and
 # discards the error -- "Ignore invalid AuthConfig to increase compatibility
@@ -134,7 +154,8 @@ sub list {
   my %params;
   $params{filters} = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
-  return $self->client->get('/plugins', params => \%params);
+  my $result = $self->client->get('/plugins', params => \%params);
+  return $self->_wrap_list($result // []);
 }
 
 =method list
@@ -142,9 +163,9 @@ sub list {
     my $plugins = $plugins->list;
     my $enabled = $plugins->list(filters => { enabled => ['true'] });
 
-List installed plugins. Returns an ArrayRef of HashRefs -- the engine's
-C<Plugin> objects, not entity objects; see L</"What this class returns">. An
-engine with no plugins installed answers C<[]>, never C<null>.
+List installed plugins. Returns an ArrayRef of L<API::Docker::Plugin> objects.
+An engine with no plugins installed answers C<[]>, never C<null>, so this is
+an empty ArrayRef rather than C<undef>.
 
 Options:
 
@@ -323,18 +344,17 @@ rather than testing for the exception class.
 sub inspect {
   my ($self, $name) = @_;
   croak __PACKAGE__ . '->inspect plugin name required' unless $name;
-  return $self->client->get("/plugins/$name/json");
+  return $self->_wrap($self->client->get("/plugins/$name/json"));
 }
 
 =method inspect
 
     my $plugin = $plugins->inspect('vieux/sshfs:latest');
-    say $plugin->{Enabled};
-    say join ', ', @{ $plugin->{Settings}{Env} };
+    say $plugin->Enabled;
+    say join ', ', @{ $plugin->Settings->{Env} };
 
-Get detailed information about an installed plugin. Returns a HashRef -- the
-engine's C<Plugin> object, not an entity object; see L</"What this class
-returns">.
+Get detailed information about an installed plugin. Returns an
+L<API::Docker::Plugin> object; see L</"What this class returns">.
 
 The name may carry a registry host, a repository path and a tag
 (C<docker.io/vieux/sshfs:latest>) and is interpolated into the request path
@@ -565,7 +585,7 @@ The plugin must be disabled. Returns C<undef>.
 
 Settings are C<KEY=value> strings, given either as one ArrayRef or as a plain
 list. They name the mutable fields of the plugin's config -- the environment
-variables, mount sources, devices and args that C<< $plugin->{Settings} >>
+variables, mount sources, devices and args that C<< $plugin->Settings >>
 reports; L</inspect> is how you find out which ones a given plugin has.
 
 The engine replaces nothing it is not told about, and rejects a key the
@@ -576,6 +596,8 @@ plugin's config does not declare as mutable.
 =seealso
 
 =over
+
+=item * L<API::Docker::Plugin> - the entity L</list> and L</inspect> return
 
 =item * L<API::Docker> - Main Docker client
 

@@ -65,7 +65,8 @@ volumes without the overhead of heavy HTTP client libraries.
 - **Unix socket and TCP transport**, the latter in the clear or over TLS
   with client certificates (see `tls`, `cert_path` below)
 - **Automatic API version negotiation** with Docker daemon
-- **Object-oriented entity classes** (Container, Image, Network, Volume)
+- **Object-oriented entity classes** (Container, Image, Network, Volume,
+  Secret, Config, Plugin)
 - **HTTP/1.1 implementation** with chunked transfer encoding, including
   incremental delivery of a streaming response through a per-request
   callback (`on_event`/`on_frame`/`on_chunk`) for endpoints that never

@@ -266,7 +266,41 @@ sub kill {
 
     $containers->kill($id, signal => 'SIGKILL');
 
+    $containers->kill($id, signal => 'SIGUSR1');   # not necessarily a stop
+
 Send a signal to a container. Default signal is C<SIGKILL>.
+
+Returns nothing -- unlike L</start>, L</stop>, L</restart>, L</pause> and
+L</unpause>, which report 1/0 through their shared C<_state_change> path.
+Those methods have two outcomes worth telling apart: a change (204) and a
+no-op (304, where the engine sends one). C<kill> has only one, because
+C<_request> croaks on any C<< status >= 400 >>, so the B<409> a non-running
+container gets back never reaches this method's C<return>. A boolean with a
+single possible value is not worth adding.
+
+More importantly, B<204 does not mean the container stopped.> Measured
+against Podman 5.4.2 (API 1.41): sending a signal the container traps or
+ignores -- C<< signal => 'SIGUSR1' >> against a process with a handler
+installed for it -- is delivered, the container keeps running, and the
+engine still answers 204 exactly as it does for a signal that does end the
+process. A caller that needs to know whether the container is still running
+after a C<kill> has to ask L</inspect>; that is also why this returns nothing
+rather than a plain C<1> -- a 1 here would claim a state change that a
+trapped signal never made.
+
+Killing a container that is not running -- stopped, exited or just created --
+croaks (B<409>, C<container state improper>); it does not return a falsy
+value. An unknown container ID croaks B<404>. Neither is reachable through a
+return value, and no case answers 304: moby's swagger for this endpoint
+(C<operationId: ContainerKill>) documents only 204, 404, 409 and 500.
+
+Options:
+
+=over
+
+=item * C<signal> - Signal to send (default C<SIGKILL>)
+
+=back
 
 =cut
 

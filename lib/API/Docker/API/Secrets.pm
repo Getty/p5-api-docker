@@ -3,6 +3,7 @@ package API::Docker::API::Secrets;
 our $VERSION = '0.004';
 use Moo;
 with 'API::Docker::Role::Filters';
+use API::Docker::Secret;
 use Carp qw( croak );
 use MIME::Base64 qw( encode_base64 );
 use namespace::clean;
@@ -21,13 +22,14 @@ use namespace::clean;
         Labels => { env => 'prod' },
     );
 
-    # Inspect a secret
+    # Inspect a secret -- an API::Docker::Secret
     my $secret = $docker->secrets->inspect($created->{ID});
+    say $secret->Spec->{Name};
 
     # Update: the version comes from the inspect above, and is mandatory
-    my %spec = %{ $secret->{Spec} };
+    my %spec = %{ $secret->Spec };
     $spec{Labels} = { env => 'staging' };
-    $docker->secrets->update($created->{ID}, $secret->{Version}{Index}, %spec);
+    $secret->update(%spec);
 
     # Remove
     $docker->secrets->remove($created->{ID});
@@ -39,10 +41,12 @@ listing, creation, inspection, update and removal.
 
 Accessed via C<< $docker->secrets >>.
 
-The value of a secret is write-only. C<list> and L</inspect> return the
+The value of a secret is write-only. L</list> and L</inspect> return the
 metadata -- C<ID>, C<Spec>, C<CreatedAt>, C<Version> -- and never the payload;
 the engine hands that out to containers, not over this API. If you need to
-read the value back, this is the wrong storage.
+read the value back, this is the wrong storage: use
+L<API::Docker::API::Configs>, whose entity offers a C<decoded_data> because
+the daemon actually sends one.
 
 =head2 Data is raw bytes; this class does the base64
 
@@ -82,7 +86,7 @@ daemon rejects the request without it. The value is the C<Version.Index> of
 the secret as it stands right now, which is what L</inspect> returns:
 
     my $secret = $docker->secrets->inspect($id);
-    $docker->secrets->update($id, $secret->{Version}{Index}, %spec);
+    $docker->secrets->update($id, $secret->version_index, %spec);
 
 It is an optimistic-concurrency token, not a serial number to invent. If
 anything else changed the secret since that C<inspect>, the index has moved on
@@ -91,11 +95,12 @@ Read it immediately before the update, and read it again before a retry.
 
 This class makes it the second positional argument and croaks when it is
 missing or not numeric, so the mistake is caught here rather than one round
-trip later.
+trip later. L<API::Docker::Secret/update> supplies it from the entity's own
+C<Version.Index> instead, which is the same value read at the same moment.
 
 The Engine API reference states that only C<Labels> may actually change: every
 other field of the spec must be sent back unchanged from what C<inspect>
-returned. Hence the C<< %spec = %{ $secret->{Spec} } >> in the SYNOPSIS -- send
+returned. Hence the C<< %spec = %{ $secret->Spec } >> in the SYNOPSIS -- send
 the whole spec back with the one key edited, not just the key you edited.
 
 =head2 Swarm, and what Podman serves instead
@@ -139,6 +144,19 @@ Reference to L<API::Docker> client. Weak reference to avoid circular dependencie
 
 =cut
 
+sub _wrap {
+  my ($self, $data) = @_;
+  return API::Docker::Secret->new(
+    client => $self->client,
+    %$data,
+  );
+}
+
+sub _wrap_list {
+  my ($self, $list) = @_;
+  return [ map { $self->_wrap($_) } @$list ];
+}
+
 # The wire field is base64; the public contract is raw bytes. Guarding the
 # character range here keeps the failure a croak naming this class instead of
 # MIME::Base64's "Wide character in subroutine entry" from two frames down.
@@ -155,7 +173,7 @@ sub list {
   my %params;
   $params{filters} = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
-  return $self->client->get('/secrets', params => \%params) // [];
+  return $self->_wrap_list($self->client->get('/secrets', params => \%params) // []);
 }
 
 =method list
@@ -163,9 +181,7 @@ sub list {
     my $secrets = $secrets->list;
     my $secrets = $secrets->list(filters => { label => ['env=prod'] });
 
-List secrets. Returns an ArrayRef of HashRefs exactly as the daemon sent them
--- unlike C<< $docker->volumes->list >> these are not wrapped in an entity
-class, because there is no C<API::Docker::Secret>.
+List secrets. Returns an ArrayRef of L<API::Docker::Secret> objects.
 
 Options:
 
@@ -198,7 +214,10 @@ sub create {
         Labels => { env => 'prod' },
     );
 
-Create a secret. Returns the daemon's response, a HashRef carrying C<ID>.
+Create a secret. Returns the daemon's response, a HashRef carrying C<ID> --
+not an L<API::Docker::Secret>, because C<ID> is all the daemon answers with
+and an entity built from it would carry no C<Spec> and no C<Version>. Call
+L</inspect> on that C<ID> for the object.
 
 Options:
 
@@ -224,16 +243,17 @@ sub inspect {
   my ($self, $id) = @_;
   croak __PACKAGE__ . '->inspect secret ID or name required'
     unless defined $id && length $id;
-  return $self->client->get("/secrets/$id");
+  return $self->_wrap($self->client->get("/secrets/$id"));
 }
 
 =method inspect
 
     my $secret = $secrets->inspect($id);
-    my $index  = $secret->{Version}{Index};   # what update needs
+    my $index  = $secret->version_index;      # what update needs
 
-Get a secret's metadata by ID or name. Returns the daemon's HashRef, with
-C<ID>, C<Spec>, C<CreatedAt>, C<UpdatedAt> and C<Version>. Never the value.
+Get a secret's metadata by ID or name. Returns an L<API::Docker::Secret>, with
+C<ID>, C<Spec>, C<CreatedAt>, C<UpdatedAt> and C<Version>. Never the value --
+see L<API::Docker::Secret/"There is no accessor for the value">.
 
 =cut
 
@@ -258,17 +278,19 @@ sub update {
 =method update
 
     my $secret = $secrets->inspect($id);
-    my %spec   = %{ $secret->{Spec} };
+    my %spec   = %{ $secret->Spec };
     $spec{Labels} = { env => 'staging' };
 
-    $secrets->update($id, $secret->{Version}{Index}, %spec);
+    $secrets->update($id, $secret->version_index, %spec);
+    $secret->update(%spec);                   # the same call, via the entity
 
 Update a secret. Returns nothing on success -- the daemon answers 200 with an
 empty body.
 
 C<$version> is mandatory and is the C<Version.Index> from L</inspect>; see
 L</"update takes the current version, and it is mandatory"> for why it cannot
-be guessed and why the whole spec goes back. Podman does not implement this
+be guessed and why the whole spec goes back. L<API::Docker::Secret/update>
+fills it in from the entity it was called on. Podman does not implement this
 endpoint and answers 501.
 
 =cut
@@ -294,6 +316,8 @@ returns nothing; a secret that is not there is a 404 and croaks.
 =over
 
 =item * L<API::Docker> - Main Docker client
+
+=item * L<API::Docker::Secret> - Secret entity class
 
 =item * L<API::Docker::API::Configs> - Configs, the same shape without the
 secrecy

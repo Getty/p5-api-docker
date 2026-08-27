@@ -391,6 +391,101 @@ Revision history for API-Docker
     and serves no `/configs` at all (404, plain text) -- so secrets and
     configs stand on their own rather than on an orchestrator, and are
     covered despite belonging to the same Engine API family Swarm does.
+  - New `API::Docker::Plugin` entity class. `plugins->list` and
+    `plugins->inspect` return it instead of the decoded engine response,
+    which is a return-shape change: the class no longer deviates from the
+    `list`/`inspect` convention every other resource class follows. The
+    entity carries the six top-level fields the daemon encodes -- `Id`,
+    `Name`, `Enabled`, `PluginReference`, `Config` and `Settings` -- and
+    threads `Name` back through `inspect`, `enable`, `disable`, `remove`,
+    `configure`, `upgrade` and `push`. That field set was checked against
+    moby v20.10.24's `swagger.yaml`, which declares API 1.41, and against
+    the Go struct it describes -- not against a running engine, because
+    nothing reachable from here serves `/plugins` at all: rootless Podman
+    5.4.2 answers `GET /v1.41/plugins` with `Path /v1.41/plugins is not
+    supported`. There is no `Tag`/`Active` pair -- that is a stale
+    pre-1.25 example block, contradicted by the schema three lines above
+    it and gone from 1.41 -- and no top-level `Description`.
+    `PluginReference` is omitted by the engine unless the plugin came from
+    a registry, so it reads as `undef`, never null.
+  - `secrets->list`/`inspect` and `configs->list`/`inspect` return
+    `API::Docker::Secret` and `API::Docker::Config` entities instead of
+    the raw daemon hashrefs, restoring the same invariant. Both carry
+    `ID`, `Spec`, `Version`, `CreatedAt` and `UpdatedAt`, a `version_index`
+    reader for the `Version.Index` that `update` needs, and
+    `inspect`/`update`/`remove` delegating by ID. `create` still returns
+    the daemon's `{ ID => ... }`: that is all it answers with, and an
+    entity built from it would carry no `Spec` and no `Version`.
+  - `API::Docker::Config->decoded_data` base64-decodes `Spec.Data` and
+    leaves `Spec` verbatim. `API::Docker::Secret` has no such accessor on
+    purpose: in the `GET /secrets` response captured from Podman 5.4.2
+    (API 1.41) the `Spec` carries `Name`, `Driver` and `Labels` and no
+    `Data` key at all, so a secret has nothing to decode.
+  - `tls` now defaults from `$ENV{DOCKER_TLS_VERIFY}` instead of always
+    being 0, so a shell set up for the `docker` CLI reaches a `tcp://`
+    daemon over TLS rather than in the clear. The rule taken is the CLI's,
+    not the Go SDK's `FromEnv`: `cli/flags/options.go` reads
+    `os.Getenv(client.EnvTLSVerify) != ""`, so *every* non-empty value
+    turns TLS on -- `DOCKER_TLS_VERIFY=0` included, along with `false`,
+    `no` and `off`; only unset or the empty string is off. Non-empty means
+    encrypt *and* verify (`InsecureSkipVerify = !o.TLSVerify`) and needs
+    no `DOCKER_CERT_PATH` beside it: that case verifies against the system
+    trust store, which is what `tls => 1` with no `cert_path` already
+    meant here. (`FromEnv` differs, turning TLS on from `DOCKER_CERT_PATH`
+    instead; the CLI is what a configured shell was configured by.) The
+    variable is ignored on a socket host, as the CLI ignores it --
+    `cli/context/docker/load.go`, "there's no need to configure TLS for a
+    socket connection" -- so a `unix://` client is unaffected and a bare
+    `API::Docker->new` on a machine exporting the variable still
+    constructs rather than croaking on `tls => 1` with a non-`tcp://`
+    host. An explicit `tls => ...` outranks the variable in both
+    directions. The risk this leaves: a `tcp://` client of a plaintext
+    daemon, on a machine whose shell still exports a stale
+    `DOCKER_TLS_VERIFY` from another project, starts speaking TLS and no
+    longer gets through. Its defence is that `docker` itself, in that same
+    shell, does exactly the same thing -- and `tls => 0` now says
+    otherwise explicitly.
+  - `containers->kill` is documented for what it returns and why. Unlike
+    `->start`/`->stop`/`->restart`/`->pause`/`->unpause` it has only one
+    reachable outcome, 204, since `_request` croaks on the 409 a
+    non-running container answers with -- so a 1/0 shape does not apply
+    and it keeps returning nothing. More importantly the POD now says
+    plainly that 204 does not mean the container stopped: measured against
+    Podman 5.4.2 (API 1.41), `signal => 'SIGUSR1'` against a process with
+    a handler installed for it is delivered, the container keeps running,
+    and the engine answers 204 exactly as it does for a signal that ends
+    the process. `->inspect` is the only way to know afterwards. No code
+    change.
+  - `t/fixtures/containers_archive.tar` is a real capture of `GET
+    /containers/{id}/archive?path=/etc/hostname` measured against the
+    rootless Podman socket (5.4.2, API 1.41) rather than a hand-built
+    ustar archive -- the only tar fixture in the suite that had been.
+    Differences from the hand-built one: uname/gname are populated
+    (`root`/`root`, not empty), devmajor/devminor are the ASCII string
+    `0000000` rather than raw NUL bytes, and mode reflects the file's real
+    0644 rather than the guessed 0664; block size, the trailing zero
+    blocks and the ustar magic were already right.
+    `X-Docker-Container-Path-Stat`'s `mode` is confirmed to be Go's
+    `os.FileMode`, not a POSIX `st_mode` word -- the two coincide for a
+    regular file, which proves nothing, so the proof is a directory:
+    `/etc` reports `2147484141`, Go's `os.ModeDir` (`1<<31`) plus 0755,
+    where POSIX `S_IFDIR` would give `16877`. `mode & 0777` recovers the
+    permission bits either way, but the raw value must not be compared
+    against a POSIX constant. The header also carries an undocumented
+    sixth key, `isDir`, and `linkTarget` is populated even for a plain
+    regular file rather than left empty as the Docker reference says.
+    `t/containers_endpoints.t` asserts the real key set and the FileMode
+    distinction instead of noting them.
+  - The one-way `attach` stream is confirmed byte-identical to `logs` on
+    the same engine, as documented rather than assumed when the attach
+    subtests were written. The measurement found a related hazard, left
+    unfixed and recorded: attaching to a container that has already exited
+    never closes the connection on Podman -- 200,
+    `application/vnd.docker.raw-stream`, no Content-Length, no chunked
+    encoding, and no close even when the client sends `Connection: close`,
+    which `_request` always does. The buffered frames arrive and the
+    socket then hangs. A live attach closes cleanly when the container
+    exits mid-stream.
 
 0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the
