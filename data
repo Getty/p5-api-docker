@@ -1,0 +1,48 @@
+---
+claimed_at: 2026-08-27T18:07:43Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T18:07:43Z
+created: 2026-08-27T17:04:18Z
+id: 56
+priority: medium
+started: 2026-08-27T17:54:09Z
+status: done
+tags:
+- tests
+- docker
+- podman
+title: t/stream_error.t asserts Podman's build-failure wording, fails on Docker
+updated: 2026-08-27T18:07:43Z
+---
+
+Found 2026-08-27 on the first live run against real Docker (29.7.2, API 1.55).
+
+t/stream_error.t asserts a failed build's error message matches
+
+  qr/exit status 7/
+
+That is Podman's wording. Real Docker says
+
+  "returned a non-zero code: 7"
+
+so the assertion fails against Docker while passing against Podman.
+
+This is the same class of engine-blind assertion that was just fixed in
+t/containers_endpoints.t for the X-Docker-Container-Path-Stat keys -- an
+engine's exact prose written into a test as though it were the protocol.
+It is also exactly what karr #50 warns about: the croak text is engine-
+dependent and is not a stable interface, so a test matching on it is
+matching on the wrong thing.
+
+Two ways out, and the choice matters:
+  - branch on live_engine() (the helper added to Test::API::Docker::Mock
+    in this same session) and assert each engine's wording, or
+  - stop asserting the prose entirely and assert what is actually
+    contractual: that it croaked, and -- now that API::Docker::Error::HTTP
+    exists -- what it carries.
+
+The second is better where it applies, and is the point of #50. Check which
+of the two the assertion actually needs before branching it.
+
+Fixed: only the live subtest ('live: a build that fails croaks against a real engine', gated on can_write()) actually hit a real daemon -- the other three 'exit status 7' occurrences (lines 53, 130, 147) replay a checked-in Podman fixture through a fake in-memory transport and never touch $ENV{API_DOCKER_TEST_HOST}, so they were never engine-blind in practice; left unchanged. Reproduced the live failure first (sg docker -c ..., subtest 11 red, all others green). Probed both engines by hand with curl --unix-socket: Docker 29.7.2/API 1.55 puts the RUN exit code structurally in errorDetail.code (measured: {"code":7,...}); Podman 5.4.2/API 1.41 has no code key, only prose. So the exit code is genuinely NOT structurally reachable on both engines -- branched on live_engine() per the ticket's option (a), asserting errorDetail.code on Docker and the prose regex only on Podman. Added a robust errorDetail-event lookup (grep, not a fixed index), an apidocker-56- tag prefix + register_cleanup. Mutation-verified both new assertions (temp-edited Role::HTTP to drop errorDetail.code / stub $reason, confirmed red, reverted). All three canonical runs green at baseline (27/308, 27/308, 27/308) plus dzil test (29/331). t/secrets_configs.t passed in the Docker run -- karr #55 looks resolved, not touched by me either way.
