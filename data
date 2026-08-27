@@ -1,0 +1,49 @@
+---
+claimed_at: 2026-08-27T19:18:47Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T19:18:47Z
+created: 2026-08-27T18:31:31Z
+id: 59
+priority: medium
+started: 2026-08-27T18:36:03Z
+status: done
+tags:
+- streaming
+- docker
+- transport
+title: Streaming endpoints have no client-side bound, and one engine stream never
+  ends
+updated: 2026-08-27T19:18:47Z
+---
+
+Found while closing #54.
+
+Measured on Docker 29.7.2 (API 1.55): GET /containers/{id}/stats?stream=true opened
+on a container that is genuinely RUNNING does not end when that container exits. It
+degrades instead. One 20 s probe against a container that exited after 3 s:
+
+  3 real readings, then 13 zero-filled ones, connection still open at 20 s
+
+Podman 5.4.2 ends the same stream on the container's exit (5.0 s, last object a whole
+reading). So on Docker this stream has no terminator tied to the container at all.
+
+Consequence: the distribution's standing advice for streaming endpoints -- bound the
+window -- has nothing to bind here, and 'wait for the stream to end' is not a strategy
+on that engine. Today the only way out is on_event plus the caller's own $stop->(),
+where the caller must itself decide a zero-filled object is not a reading.
+
+#54 is closed as deliberately not guarded: a pre-flight inspect answers 'running now'
+while the hazard is 'stops at any point in the stream', which the measurement above is
+exactly a case of. That reasoning does not extend to the general problem.
+
+To decide, none of it done:
+  - whether the transport should grow a read timeout at all (touches Role::HTTP, the
+    seam under all twelve modules -- this is the general version of #52's hang too)
+  - whether the streaming methods want a max_events / deadline option so a bound can
+    be expressed without writing a counting callback by hand
+  - whether stats specifically should stop on Go's zero time in read, which is
+    Docker's shape and not anybody's contract
+
+Related: #45 (Podman error inside a 200, now croaked), #52 (attach hang), #53 (attach
+guard), #54 (this measurement's origin).
