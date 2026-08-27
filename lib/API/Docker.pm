@@ -11,6 +11,10 @@ use API::Docker::API::Images;
 use API::Docker::API::Networks;
 use API::Docker::API::Volumes;
 use API::Docker::API::Exec;
+use API::Docker::API::Distribution;
+use API::Docker::API::Secrets;
+use API::Docker::API::Configs;
+use API::Docker::API::Plugins;
 
 =head1 SYNOPSIS
 
@@ -56,8 +60,8 @@ Key features:
 
 =item * Pure Perl implementation with minimal dependencies
 
-=item * Unix socket and TCP transport support, both plaintext -- there is no
-TLS, and L</tls> croaks rather than implying there is
+=item * Unix socket and TCP transport, the latter in the clear or over TLS
+with client certificates (L</tls>, L</cert_path>)
 
 =item * Automatic API version negotiation
 
@@ -91,6 +95,14 @@ The distribution is organized into several layers:
 
 =item * L<API::Docker::API::Exec> - Exec into containers
 
+=item * L<API::Docker::API::Distribution> - Registry manifest lookups
+
+=item * L<API::Docker::API::Secrets> - Swarm secrets
+
+=item * L<API::Docker::API::Configs> - Swarm configs
+
+=item * L<API::Docker::API::Plugins> - Managed plugins
+
 =back
 
 =item * B<Entity Classes> - Object wrappers for Docker resources:
@@ -107,9 +119,32 @@ The distribution is organized into several layers:
 
 =back
 
-=item * B<HTTP Role> - L<API::Docker::Role::HTTP> - HTTP transport layer
+=item * B<Roles> - Behaviour shared across the API modules:
+
+=over
+
+=item * L<API::Docker::Role::HTTP> - HTTP transport layer
+
+=item * L<API::Docker::Role::RegistryAuth> - X-Registry-Auth / AuthConfig
+encoding, shared by Images, Plugins, Distribution and System
+
+=item * L<API::Docker::Role::Filters> - the C<filters> query parameter,
+normalised into the one shape the engine reads
 
 =back
+
+=back
+
+=head2 Swarm orchestration is out of scope
+
+C</swarm>, C</nodes>, C</services> and C</tasks> are deliberately absent and
+are not planned: Podman -- the engine this distribution is actually tested
+against -- implements none of them, so the whole family would ship untested,
+and no consumer asks for it. Compose and Kubernetes took the job Swarm was
+aimed at. L<API::Docker::API::Secrets> and L<API::Docker::API::Configs> are
+covered despite belonging to that same Engine API family, because they stand
+on their own rather than on an orchestrator -- Podman serves C</secrets> from
+its own local secret store with no swarm anywhere in sight.
 
 =cut
 
@@ -158,28 +193,35 @@ has tls => (
 
 =attr tls
 
-B<Not implemented.> C<< tls => 1 >> croaks at construction; the default of
-C<0> is the only value this client accepts.
+Speak TLS on a C<tcp://> connection. Default C<0>, which is plaintext.
 
-The attribute is kept rather than removed because silence is the failure mode
-worth preventing here. L<API::Docker::Role::HTTP> builds a plain
-L<IO::Socket::INET> connection and speaks HTTP over it, and nothing anywhere
-reads this attribute -- so a C<tcp://> daemon has always been addressed in
-cleartext, C<< tls => 1 >> or not, and a caller who asked for TLS got an
-unencrypted connection and no indication of it. Anyone who was passing this
-option was, by definition, sending credentials in the clear while believing
-otherwise.
+    my $docker = API::Docker->new(
+      host      => 'tcp://dockerhost:2376',
+      tls       => 1,
+      cert_path => '/home/me/.docker',
+    );
 
-Terminate TLS in front of the daemon instead and point L</host> at the local
-end of it:
+With C<< tls => 1 >> the transport opens an L<IO::Socket::SSL> connection
+instead of an L<IO::Socket::INET> one and nothing above the socket changes.
+The daemon's certificate is B<verified>, and so is its hostname; L</cert_path>
+supplies the trust anchor and this client's own certificate.
 
-    # stunnel, socat or plain ssh -- whatever is already in the stack
-    ssh -N -L 2375:127.0.0.1:2376 dockerhost
-    my $docker = API::Docker->new(host => 'tcp://127.0.0.1:2375');
+With no certificates at all it still means encrypt and verify, against the
+system trust store -- see
+L<API::Docker::Role::HTTP/"TLS with no certificates at all">
+for why that rather than an error. To switch verification off, and to read
+what that gives away, see L</tls_insecure>.
 
-Implementing TLS here is new work, not a repair: it needs the socket builder
-to know about L<IO::Socket::SSL>, client certificates and verification
-policy. Until then this croaks.
+C<< tls => 1 >> on a C<unix://> host croaks at construction. A Unix socket is
+a file, not a wire; there is nothing on it to encrypt, and accepting the
+option would mean answering a request for an encrypted transport with an
+unencrypted one -- which is the failure this attribute previously had.
+
+L<IO::Socket::SSL> is a recommended rather than a required dependency, loaded
+when the first TLS connection is opened; C<< tls => 1 >> without it installed
+croaks naming it. See
+L<API::Docker::Role::HTTP/"TLS on a tcp:// connection"> for the whole of the
+policy.
 
 =cut
 
@@ -190,29 +232,68 @@ has cert_path => (
 
 =attr cert_path
 
-B<Unused.> Path to TLS certificates, defaulting to C<$ENV{DOCKER_CERT_PATH}>.
-No code reads it.
+Directory holding the TLS certificates, in the layout the C<docker> CLI
+writes: F<ca.pem> as the trust anchor, F<cert.pem> and F<key.pem> as this
+client's certificate and key. Defaults to C<$ENV{DOCKER_CERT_PATH}>.
 
-Unlike L</tls> it does not croak, and deliberately so: it defaults from the
-environment, and C<DOCKER_CERT_PATH> is commonly exported on machines that
-also run the C<docker> CLI. Croaking on it would break clients that never
-asked for TLS at all, over a value the caller did not pass. On its own it
-also asserts nothing and transmits nothing -- setting it cannot make an
-unencrypted connection look encrypted, which is the specific harm L</tls>
-was doing. The path that would act on it is the one that croaks.
+Each file is used if it is there. F<ca.pem> alone is a daemon this client
+verifies but does not authenticate to; F<cert.pem> without F<key.pem> or the
+reverse is a croak, since half a client certificate is an accident rather than
+a mode. A C<cert_path> naming something that is not a directory croaks too.
+
+B<Read only when L</tls> is set.> The default comes from the environment, and
+C<DOCKER_CERT_PATH> is exported on plenty of machines that run the C<docker>
+CLI, so a client that never asked for TLS is unaffected by having it set. A
+TLS client that wants the system trust store rather than the CLI's private one
+on such a machine passes C<< cert_path => undef >> explicitly.
+
+=cut
+
+has tls_insecure => (
+  is      => 'ro',
+  default => 0,
+);
+
+=attr tls_insecure
+
+Turn certificate verification off. Default C<0>. Only read when L</tls> is
+set, and named for what it does.
+
+C<< tls_insecure => 1 >> sets C<SSL_VERIFY_NONE> and drops the hostname check,
+which leaves a connection encrypted against a passive listener and against
+nothing else: whoever answers it chooses the certificate, so anyone able to
+redirect the connection reads and rewrites everything on it -- registry
+credentials, image contents, the commands containers are started with.
+
+It exists for a self-signed daemon certificate whose CA is not to hand. The
+better answer is nearly always L</cert_path>: a self-signed certificate is its
+own CA and works as F<ca.pem> directly.
+
+Setting it without L</tls> croaks, rather than being accepted and doing
+nothing.
 
 =cut
 
 sub BUILD {
   my ($self) = @_;
+
+  # Both checks are here rather than at connect time so that a request for
+  # encryption that cannot be honoured is refused before the caller has a
+  # client to hand credentials to.
+  croak __PACKAGE__ . '->new tls_insecure => 1 without tls => 1 does '
+    . 'nothing: verification is only reachable on a connection that has TLS '
+    . 'to verify. Set tls => 1 as well, or drop the option'
+    if $self->tls_insecure && !$self->tls;
+
   return unless $self->tls;
-  croak __PACKAGE__ . '->new tls => 1 is not implemented. This client always '
-    . 'speaks plaintext HTTP over the socket, so a tcp:// connection is never '
-    . 'encrypted no matter what this attribute says -- accepting the option '
-    . 'would only hide that credentials go out in the clear. Terminate TLS in '
-    . 'front of the daemon instead (stunnel, socat, or ssh -N -L '
-    . '2375:127.0.0.1:2376 dockerhost) and set host to the local end of the '
-    . 'tunnel';
+
+  my $host = $self->host;
+  croak __PACKAGE__ . '->new tls => 1 is only meaningful for a tcp:// host, '
+    . 'and this one is ' . $host . '. A Unix socket is a file rather than a '
+    . 'wire and carries nothing to encrypt, so honouring the option is not '
+    . 'possible and ignoring it would answer a request for an encrypted '
+    . 'transport with an unencrypted one'
+    unless $host =~ m{^tcp://};
 }
 
 has _version_negotiated => (
@@ -290,6 +371,55 @@ has exec => (
 =attr exec
 
 Returns L<API::Docker::API::Exec> instance for executing commands in containers.
+
+=cut
+
+has distribution => (
+  is      => 'lazy',
+  builder => sub { API::Docker::API::Distribution->new(client => $_[0]) },
+);
+
+=attr distribution
+
+Returns L<API::Docker::API::Distribution> instance for registry manifest
+lookups: C<inspect> and C<exists>.
+
+=cut
+
+has secrets => (
+  is      => 'lazy',
+  builder => sub { API::Docker::API::Secrets->new(client => $_[0]) },
+);
+
+=attr secrets
+
+Returns L<API::Docker::API::Secrets> instance for secret operations: C<list>,
+C<create>, C<inspect>, C<update> and C<remove>.
+
+=cut
+
+has configs => (
+  is      => 'lazy',
+  builder => sub { API::Docker::API::Configs->new(client => $_[0]) },
+);
+
+=attr configs
+
+Returns L<API::Docker::API::Configs> instance for config operations: C<list>,
+C<create>, C<inspect>, C<update> and C<remove>.
+
+=cut
+
+has plugins => (
+  is      => 'lazy',
+  builder => sub { API::Docker::API::Plugins->new(client => $_[0]) },
+);
+
+=attr plugins
+
+Returns L<API::Docker::API::Plugins> instance for managed-plugin operations:
+C<list>, C<privileges>, C<install>, C<inspect>, C<remove>, C<enable>,
+C<disable>, C<upgrade>, C<push> and C<configure>.
 
 =cut
 
@@ -386,10 +516,10 @@ C<unix://$XDG_RUNTIME_DIR/podman/podman.sock>. See L</CONTAINER ENGINES>.
 
 =item C<DOCKER_CERT_PATH>
 
-Path to TLS certificates directory. Used as default for L</cert_path>, which
-nothing reads -- this client has no TLS support at all. Setting it changes
-nothing, and having it set (as machines running the C<docker> CLI usually do)
-breaks nothing.
+Path to the TLS certificate directory (F<ca.pem>, F<cert.pem>, F<key.pem>).
+Used as the default for L</cert_path>, which is read only when L</tls> is set
+-- so having it exported, as machines running the C<docker> CLI usually do,
+changes nothing for a client that speaks plaintext or over a Unix socket.
 
 =back
 
@@ -398,6 +528,11 @@ breaks nothing.
 =over
 
 =item * L<API::Docker::Role::HTTP> - HTTP transport implementation
+
+=item * L<API::Docker::Role::RegistryAuth> - X-Registry-Auth / AuthConfig
+encoding
+
+=item * L<API::Docker::Role::Filters> - the C<filters> query parameter
 
 =item * L<API::Docker::API::System> - System and daemon operations
 
@@ -410,6 +545,14 @@ breaks nothing.
 =item * L<API::Docker::API::Volumes> - Volume management
 
 =item * L<API::Docker::API::Exec> - Execute commands in containers
+
+=item * L<API::Docker::API::Distribution> - Registry manifest lookups
+
+=item * L<API::Docker::API::Secrets> - Swarm secrets
+
+=item * L<API::Docker::API::Configs> - Swarm configs
+
+=item * L<API::Docker::API::Plugins> - Managed plugins
 
 =back
 
