@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-08-27T06:35:42Z
+claimed_by: transport-worker-2
+class: standard
+completed: 2026-08-27T06:35:42Z
+created: 2026-08-27T05:03:51Z
+id: 30
+priority: medium
+started: 2026-08-27T05:18:49Z
+status: done
+tags:
+- transport
+- drift
+title: _request hands a bare JSON scalar body back undecoded
+updated: 2026-08-27T06:35:42Z
+---
+
+Role::HTTP::_request only decodes a body that matches /^\s*[\{\[]/, so a response whose whole payload is a JSON scalar -- null, true, false, a number, a quoted string -- is returned as its raw bytes instead of the decoded value.
+
+Found while implementing /plugins (karr #28). GET /plugins/privileges answers a bare `null` for a plugin that demands no privileges: moby's computePrivileges starts from `var privileges types.PluginPrivileges` and appends only what the plugin config asks for, so a nil Go slice reaches the wire. The caller then gets the four-character string 'null' where an ArrayRef is documented -- and in that endpoint's case would POST it straight back to /plugins/pull as a JSON string where the engine expects an array.
+
+API::Docker::API::Plugins::privileges guards against it locally (`return [] unless ref $result eq 'ARRAY'`), with a comment and a regression test in t/plugins.t ('privileges: a plugin that demands nothing answers null'), which also pins the transport's current behaviour so a fix here shows up there.
+
+Any other endpoint with a nil-able Go slice or pointer as its whole response body has the same problem. Deciding whether _request should decode a scalar body is a transport-wide return-shape question, which is why it was not fixed in passing.
