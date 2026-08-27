@@ -111,8 +111,9 @@ subtest 'events' => sub {
 
   if (is_live()) {
     # A real daemon may legitimately have no events in the requested
-    # window, in which case the body is empty and _request returns
-    # undef rather than an arrayref.
+    # window, in which case the body is empty and _request's ndjson
+    # branch returns [] for it, not undef -- the assertion below still
+    # tolerates undef too, a shape this call no longer produces.
     ok(!defined($events) || ref($events) eq 'ARRAY',
       'events is array or undef (empty window is a valid live response)');
   }
