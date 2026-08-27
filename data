@@ -1,0 +1,56 @@
+---
+claimed_at: 2026-08-27T17:20:57Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T17:20:57Z
+created: 2026-08-27T15:49:35Z
+id: 52
+priority: medium
+started: 2026-08-27T16:11:28Z
+status: done
+tags:
+- containers
+- podman
+- streaming
+- hazard
+title: attach to an already-exited container never closes on Podman - hangs forever
+updated: 2026-08-27T17:20:57Z
+---
+
+Measured on rootless Podman 5.4.2 (API 1.41), 2026-08-27, while capturing the
+karr #36 fixtures.
+
+POST /containers/{id}/attach?stream=1&stdout=1&stderr=1&logs=1 against a
+container that has ALREADY EXITED answers 200 with
+Content-Type: application/vnd.docker.raw-stream, no Content-Length and no
+chunked encoding -- and then never closes the connection. Confirmed with
+curl -v. The buffered frames do arrive; the socket then just hangs.
+
+It does not close even when the client sends `Connection: close`, which
+_request always does.
+
+Attaching to a container that is still RUNNING is fine: the stream closes
+naturally when the container exits, and those bytes are byte-identical to
+GET /containers/{id}/logs on the same engine (that was #36's measurement).
+
+Consequence for this distribution: containers->attach on a stopped container
+is an unbounded hang, not an error and not an empty result. It is the same
+family as the documented streaming hazard, but sharper -- here there is no
+"bound the window" option, because the daemon has no more data to send and
+still will not hang up. A callback does not help either: nothing will ever
+call $stop->().
+
+That is why attach is deliberately absent from the live subtests in
+t/containers_endpoints.t, which is now recorded as a comment there.
+
+To decide, none of it done:
+  - whether attach should refuse (or warn) when inspect says the container
+    is not running -- costs an extra round trip on every call
+  - whether the transport wants a read timeout at all, which is the general
+    version of this problem and touches Role::HTTP
+  - whether this is Podman-specific: NOT measured against Docker, there is
+    no Docker on this machine.
+
+Related: #45 (Podman-shaped error inside a 200), #50 (engine-dependent croak
+text). All three are the same underlying theme -- this client trusts a
+well-behaved daemon in places where Podman is not one.
