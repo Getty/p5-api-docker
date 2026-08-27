@@ -1,0 +1,53 @@
+---
+claimed_at: 2026-08-27T18:34:37Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T18:34:37Z
+created: 2026-08-27T16:54:38Z
+id: 54
+priority: medium
+started: 2026-08-27T18:14:00Z
+status: done
+tags:
+- containers
+- streaming
+- docker
+title: 'Docker: stats(stream => 1) on a stopped container streams zero readings forever'
+updated: 2026-08-27T18:34:37Z
+---
+
+Measured 2026-08-27 on Docker 29.7.2 (API 1.55) while cross-checking #45.
+
+GET /containers/{id}/stats?stream=true on a container that is NOT running
+answers 200 chunked and then emits one zero-filled stats object per second,
+forever. Measured: 5 objects in 5s, 12 objects in 12s, curl exit 28 both
+times. No container exit will ever terminate it, because the container has
+already exited.
+
+Podman does the opposite: one error object, connection closed after 1.5ms.
+
+So the two engines fail in opposite directions on the same call, and the
+"bound the window" advice this distribution gives for streaming endpoints
+does not apply here -- there is no window to bound. Only on_event plus a
+$stop->() call gets out.
+
+Second half of the same measurement, and the reason this is not just #45's
+Docker column: Docker's ONE-SHOT answer (stream=false) on a stopped
+container is a real, structurally valid stats object -- id, name, os_type,
+cpu_stats, precpu_stats, blkio_stats all present and zero-filled,
+Content-Length: 829. It is not distinguishable by shape from a live
+reading. The only markers are the Go zero time in `read`
+("0001-01-01T00:00:00Z") and num_procs: 0.
+
+That invalidates the advice currently in the stats POD, which tells the
+caller to "test for read or cpu_stats before using what comes back". On
+Docker both keys are present and look valid, so the test passes and the
+caller uses zeros as though they were a measurement.
+
+To decide:
+  - what the POD should tell a caller to test instead (the Go zero time is
+    the only reliable marker found so far, and that is engine-specific)
+  - whether stats should warn or refuse on a non-running container
+  - whether the streaming-hazard documentation needs a Docker-specific line
+
+Related: #45 (the Podman side of the same endpoint).
