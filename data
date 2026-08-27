@@ -1,0 +1,27 @@
+---
+class: standard
+completed: 2026-08-27T17:17:36Z
+created: 2026-08-27T17:13:48Z
+id: 57
+priority: medium
+started: 2026-08-27T17:17:36Z
+status: done
+tags:
+- engine
+- docker
+- tests
+title: 't/secrets_configs.t fails against live Docker: /secrets needs swarm mode'
+updated: 2026-08-27T17:17:36Z
+---
+
+DUPLICATE of #55, which was filed minutes earlier for the same failure from
+the same live Docker run. Closed in favour of #55; act there.
+
+Both describe: t/secrets_configs.t dying with 503 "This node is not a swarm
+manager" against a plain single-node Docker install, because Docker serves
+/secrets and /configs only on a swarm manager while Podman serves them from
+its own local store.
+
+#55 additionally records that the fix must be a skip rather than a
+`docker swarm init`, and that the failure is a die rather than a failed
+assertion, so it takes the whole file down.
