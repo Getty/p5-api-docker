@@ -1,0 +1,60 @@
+---
+claimed_at: 2026-08-27T06:35:03Z
+claimed_by: transport-worker
+class: standard
+completed: 2026-08-27T06:35:03Z
+created: 2026-08-27T04:24:13Z
+id: 21
+priority: medium
+started: 2026-08-27T05:02:57Z
+status: done
+tags:
+- transport
+- architecture
+title: The transport cannot stream - every follow mode blocks forever
+updated: 2026-08-27T06:35:03Z
+---
+
+Structural, and the reason several endpoints are only half usable.
+
+_request sends Connection: close, reads the whole response, then parses.
+That is fine for a request/response endpoint and wrong for every endpoint
+whose point is that it keeps going:
+
+  containers->logs(follow => 1)   never returns
+  system->events with no until    never returns
+  containers->stats without stream => 0   never returns
+
+Today the only defence is that the caller must bound the window, which the
+POD says but nothing enforces. A caller who forgets hangs the process with
+no diagnostic.
+
+What a fix looks like: an optional per-request event callback, invoked as
+frames or ndjson lines arrive, with _request returning once the callback
+says stop or the daemon closes. That keeps the existing buffered path as
+the default and makes the follow modes usable without changing any current
+signature.
+
+Doing this also unblocks the Upgrade: tcp half of attach and exec, which
+needs a live bidirectional connection.
+
+Adjacent, worth a thought while in here: every _request calls _reconnect
+and closes afterwards, so there is no connection reuse at all.
+
+
+--- PROGRESS 2026-08-27: transport half landed ---
+Role::HTTP now has on_event / on_frame / on_chunk with a $stop closure;
+_request returns { delivered => N, stopped => 0|1 } and accumulates nothing.
+Measured: GET /events with since and no until returns in under a second
+through on_event, and was still running when killed after 20s through the
+buffered path.
+
+STILL OPEN -- the resource methods do not pass a callback through yet, so
+every follow mode named in this ticket still blocks. To wire:
+  System::events            on_event; drop the 'Always pass until' warning
+  Containers::logs          on_frame + a follow param it does not accept
+  Containers::stats         on_event; it hardcodes stream => 0, one-shot => 1
+  Exec::start               on_frame
+  Images::build/create/push/load, Plugins::install/upgrade/push   on_event
+  Images::get/get_all       on_chunk; the POD at Images.pm:537 saying
+                            'there is no streaming transport here' is stale
