@@ -127,7 +127,8 @@ The Engine API groups C</configs> with Swarm. A Docker daemon that is not a
 swarm manager answers B<503> C<"This node is not a swarm manager."> to all of
 these endpoints, which this client turns into a croak. That is documented
 engine behaviour, not a fault at this end -- the daemon needs
-C<docker swarm init>, or a manager to talk to.
+C<docker swarm init>, or a manager to talk to, and a single-node install that
+has never run it is the ordinary case, not an edge one.
 
 B<Podman does not serve C</configs> at all.> Measured against Podman 5.4.2
 (API 1.41): every path under it answers B<404> with the plain-text body

@@ -608,6 +608,43 @@ Revision history for API-Docker
     guarded `written` accessor of two of those copies was kept as the
     canonical one, since it is a strict superset and the other three never
     exercised the difference.
+  - Swarm orchestration is documented as a permanent scope decision rather
+    than a gap waiting to be closed: `/swarm`, `/nodes`, `/services` and
+    `/tasks` stay absent because Swarm sees too little practical use to
+    justify the surface, Podman implements none of the family, and no
+    consumer asks for it. Stated as this project's call and not as a claim
+    about Docker's roadmap -- Docker has not withdrawn Swarm and nothing
+    here says otherwise -- with a pointer to use a different client if you
+    actually need it. What works without Swarm keeps working: `secrets` and
+    `configs` stay covered because they stand on their own rather than on
+    an orchestrator. Measured while writing this, and recorded in
+    `API::Docker::API::Secrets`: `GET /info`'s `Swarm.LocalNodeState`
+    reports `inactive` on Docker and Podman alike with no swarm anywhere,
+    yet Podman still answers `/secrets` with 200 and real data while Docker
+    answers 503 -- so that field does not predict whether the endpoint
+    works, and a check built on it would gate out the one engine that does
+    serve it.
+  - `t/secrets_configs.t` no longer dies against a single-node Docker
+    daemon. Its live `secrets list` call was unguarded, so the 503 `This
+    node is not a swarm manager` that a Docker install without an
+    initialised swarm answers with took the whole file down -- a die, not
+    a failed assertion. It now skips on that status and re-raises anything
+    else, and Podman keeps running the assertion for real. The two
+    `configs` subtests skipped with a reason that was Podman's alone
+    (`Podman serves no /configs route`); measured, Podman answers 404 with
+    no such route while Docker answers the same swarm 503 it gives
+    `/secrets`, so the reason now names both and the scope decision behind
+    them.
+  - `t/stream_error.t`'s live build-failure subtest matched Podman's prose
+    against whatever engine it was pointed at, and failed against Docker,
+    which words the same failure `returned a non-zero code: 7` rather than
+    `exit status 7`. It now branches on the engine and asserts the exit
+    code where each one actually carries it: Docker 29.7.2 (API 1.55) puts
+    it structurally in `errorDetail.code`, which is a stronger claim than
+    the prose match it replaces, while Podman 5.4.2 (API 1.41) sends no
+    `code` key at all and leaves the number in the message text. The three
+    other `exit status 7` matches in the file are fixture-driven and never
+    reach a daemon, so they stayed as they are.
 
 0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the

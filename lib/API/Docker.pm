@@ -144,14 +144,22 @@ normalised into the one shape the engine reads
 
 =head2 Swarm orchestration is out of scope
 
-C</swarm>, C</nodes>, C</services> and C</tasks> are deliberately absent and
-are not planned: Podman -- the engine this distribution is actually tested
-against -- implements none of them, so the whole family would ship untested,
-and no consumer asks for it. Compose and Kubernetes took the job Swarm was
-aimed at. L<API::Docker::API::Secrets> and L<API::Docker::API::Configs> are
-covered despite belonging to that same Engine API family, because they stand
-on their own rather than on an orchestrator -- Podman serves C</secrets> from
-its own local secret store with no swarm anywhere in sight.
+C</swarm>, C</nodes>, C</services> and C</tasks> are deliberately absent, and
+staying absent is the plan rather than a gap waiting to be closed. That is a
+scope decision: Swarm sees too little practical use to be worth the surface,
+Podman -- the engine this distribution is actually tested against --
+implements none of the Swarm family at all, and no consumer of this
+distribution has asked for it. Docker has not withdrawn Swarm, and nothing
+here claims it has; this distribution simply chooses not to follow it.
+
+What already works without Swarm keeps working. L<API::Docker::API::Secrets>
+and L<API::Docker::API::Configs> are covered despite belonging to that same
+Engine API family, because both stand on their own rather than on an
+orchestrator -- see
+L<API::Docker::API::Secrets/"Swarm, and what Podman serves instead"> for what
+that looks like against each engine, Docker's single-node 503 included.
+Anyone who actually needs Swarm orchestration should reach for a client built
+around it; extending this one to cover it is not on the roadmap.
 
 =cut
 

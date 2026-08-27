@@ -109,7 +109,15 @@ The Engine API groups C</secrets> with Swarm. A Docker daemon that is not a
 swarm manager answers B<503> C<"This node is not a swarm manager."> to every
 one of these endpoints, and this client turns that into a croak. That is the
 engine behaving as documented, not a fault at this end: it needs
-C<docker swarm init>, or a manager to talk to.
+C<docker swarm init>, or a manager to talk to -- and a single-node install
+that has never run it is the ordinary case, not an edge one.
+
+C<GET /info>'s C<Swarm.LocalNodeState> does not tell you which of those two
+you are looking at. Measured fresh against both engines with no swarm
+initialized anywhere, it reports C<"inactive"> on Docker and on Podman alike
+-- and Podman still serves C</secrets> with B<200> and real data in that
+state, while Docker still answers B<503>. Whether C</secrets> works is a
+property of the engine, not of that field.
 
 Podman is the useful exception. Measured against Podman 5.4.2 (API 1.41) with
 no swarm involved anywhere, C</secrets> is served from Podman's own local

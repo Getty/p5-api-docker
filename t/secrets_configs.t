@@ -4,6 +4,7 @@ use Test::More;
 use MIME::Base64 qw( decode_base64 );
 use API::Docker::Config;
 use API::Docker::Secret;
+use API::Docker::Error::HTTP;
 use lib 't/lib';
 use Test::API::Docker::Mock;
 
@@ -37,7 +38,25 @@ my $CONFIG = {
 
 subtest 'secrets list' => sub {
   my $docker  = test_docker('GET /secrets' => load_fixture('secrets_list'));
-  my $secrets = $docker->secrets->list;
+  my $secrets = eval { $docker->secrets->list };
+  if (my $err = $@) {
+    die $err unless is_live() && ref($err) && $err->isa('API::Docker::Error::HTTP')
+      && $err->status == 503;
+
+    # Docker serves /secrets only on an initialised swarm manager; a plain
+    # single-node install -- the normal state of a development machine, and
+    # what this daemon is -- answers 503 "This node is not a swarm manager"
+    # here instead of a list (measured live, Docker 29.7.2 / API 1.55).
+    # `docker swarm init` would clear it, but that is a real change to the
+    # host's networking (an overlay network, a firewall rule) that no test
+    # may make, so this is a skip and not a workaround. Reacting to the
+    # status rather than pre-checking GET /info's Swarm.LocalNodeState is
+    # deliberate: Podman answers "inactive" there too, despite serving
+    # /secrets from its own local secret store with no swarm involved --
+    # a pre-check on that field would skip the one live engine this subtest
+    # actually covers (measured live, Podman 5.4.2 / API 1.41).
+    plan skip_all => "daemon refuses /secrets outside a swarm (503): $err";
+  }
 
   is(ref $secrets, 'ARRAY', 'list returns an ArrayRef');
   return if is_live();
@@ -313,11 +332,26 @@ subtest 'secrets remove' => sub {
 
 # --- configs: the same five endpoints, one different return -----------------
 #
-# Podman serves no /configs at all, so none of this can run live.
+# Podman has no /configs route at all: it answers 404 Not Found, plain text
+# body "Not Found", to every request under it -- the same blanket 404 any
+# unimplemented path gets (measured live, Podman 5.4.2 / API 1.41). Docker
+# does serve /configs, but only inside an initialised swarm manager; outside
+# one it answers 503 with a JSON body, "This node is not a swarm manager. Use
+# \"docker swarm init\" or \"docker swarm join\" to connect this node to
+# swarm and try again." -- the same gate /secrets sits behind (measured live,
+# Docker 29.7.2 / API 1.55). Unlike /secrets, which Podman serves from its
+# own local store with no swarm involved, /configs has no swarm-free path on
+# either engine, and swarm orchestration is out of scope for this
+# distribution (see API::Docker's own POD, and `docker swarm init` is a real
+# change to the host's networking that no test may make besides). So neither
+# live engine reachable from this suite ever actually answers /configs, and
+# both subtests below skip unconditionally on is_live() for that reason --
+# not because of a Podman-specific gap.
+my $CONFIGS_UNSERVED = 'no live engine here serves /configs: Podman has no such route (404), '
+  . 'Docker gates it behind swarm (503) and swarm is out of scope for this distribution';
 
 subtest 'configs list' => sub {
-  plan skip_all => 'Podman serves no /configs route (404 Not Found on every path)'
-    if is_live();
+  plan skip_all => $CONFIGS_UNSERVED if is_live();
 
   my $docker  = test_docker('GET /configs' => [$CONFIG]);
   my $configs = $docker->configs->list;
@@ -332,8 +366,7 @@ subtest 'configs list' => sub {
 };
 
 subtest 'decoded_data decodes Spec.Data and leaves Spec alone' => sub {
-  plan skip_all => 'Podman serves no /configs route (404 Not Found on every path)'
-    if is_live();
+  plan skip_all => $CONFIGS_UNSERVED if is_live();
 
   my $docker = test_docker('GET /configs' => [$CONFIG]);
   my $config = $docker->configs->list->[0];

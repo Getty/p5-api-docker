@@ -219,21 +219,46 @@ SKIP: {
     # inside the stream. Nothing is left behind -- the build never commits an
     # image, and rm=1 (the default) drops the intermediate container.
     my $docker = API::Docker->new(host => $ENV{API_DOCKER_TEST_HOST});
+    my $tag    = 'apidocker-56-stream-error:test';
+
+    # Defensive: the build is expected to fail and tag nothing, but a broken
+    # rm=1/tag interaction should still not leave an image behind untidied.
+    register_cleanup(sub { eval { $docker->images->remove($tag, force => 1) } });
 
     my $dockerfile = "FROM alpine:3\nRUN exit 7\n";
     my $tar = _tar_context($dockerfile);
 
     my $events = eval {
-      $docker->images->build(context => $tar, t => 'apidocker-stream-error:test')
+      $docker->images->build(context => $tar, t => $tag)
     };
     my $err = $@;
 
     ok !defined $events, 'no return value from the failed build';
     isa_ok $err, 'API::Docker::Error::Stream';
-    like "$err", qr/exit status 7/, 'the engine reported the RUN exit status';
     ok scalar @{ $err->events } > 1, 'the build output came with it';
 
-    my $tagged = eval { $docker->images->inspect('apidocker-stream-error:test') };
+    my ($error_event) = grep { ref $_ eq 'HASH' && $_->{errorDetail} } @{ $err->events };
+    ok $error_event, 'one of the carried events is the one that triggered the croak';
+
+    # The claim is that the RUN step's exit code reaches the caller -- not
+    # any particular sentence about it, which karr #50 already ruled out as
+    # a stable interface. Measured 2026-08-27: Docker 29.7.2/API 1.55 puts it
+    # in errorDetail structurally --
+    # {"code":7,"message":"...returned a non-zero code: 7"} -- while Podman
+    # 5.4.2/API 1.41 sends only {"message":"...exit status 7\n"}, no `code`
+    # key at all. So the exit code is genuinely only prose on Podman; assert
+    # the strongest form each engine actually offers rather than a wording
+    # that happens to appear on both (there isn't one).
+    if (live_engine() eq 'docker') {
+      is $error_event->{errorDetail}{code}, 7,
+        'Docker carries the RUN exit status structurally, in errorDetail.code';
+    }
+    else {
+      like "$err", qr/exit status 7/,
+        'Podman carries the RUN exit status only in the message text';
+    }
+
+    my $tagged = eval { $docker->images->inspect($tag) };
     ok !$tagged, 'the failed build left no tagged image behind';
   };
 }

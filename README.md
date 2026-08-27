@@ -151,11 +151,16 @@ Returns L<API::Docker::API::Plugins> for managed-plugin operations:
 `upgrade`, `push` and `configure`.
 
 The Swarm orchestration family (`/swarm`, `/nodes`, `/services`,
-`/tasks`) is deliberately out of scope: Podman, the engine this
-distribution is tested against, implements none of it, and no consumer
-asks for it. `secrets` and `configs` are covered despite belonging to
-that same Engine API family, because they stand on their own rather than
-on an orchestrator.
+`/tasks`) is deliberately out of scope, and staying that way is the plan:
+Swarm sees too little practical use to be worth the surface, Podman — the
+engine this distribution is tested against — implements none of it, and
+no consumer asks for it. Docker has not withdrawn Swarm; this
+distribution simply chooses not to follow it. `secrets` and `configs`
+are covered despite belonging to that same Engine API family, because
+they stand on their own rather than on an orchestrator — see
+`API::Docker::API::Secrets` for what that looks like against Docker and
+Podman, single-node 503 included. Anyone who actually needs Swarm
+orchestration should reach for a client built around it.
 
 ## Container engines
 
