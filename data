@@ -1,0 +1,35 @@
+---
+claimed_at: 2026-08-27T06:34:53Z
+claimed_by: containers-worker
+class: standard
+completed: 2026-08-27T06:34:53Z
+created: 2026-08-27T04:23:45Z
+id: 19
+priority: medium
+started: 2026-08-27T05:02:48Z
+status: done
+tags:
+- containers
+- streaming
+title: No containers->attach
+updated: 2026-08-27T06:34:53Z
+---
+
+POST /containers/{id}/attach is not exposed. It was named as a gap back when
+the framed streams were undecoded; the demultiplexer (stream_frames) exists
+now, so the hard part is done.
+
+Without headers the daemon answers 200 and streams the same multiplexed
+frames logs does, one-way, which the current buffering transport can handle
+for a container that exits on its own.
+
+With Upgrade: tcp + Connection: Upgrade it answers 101 Switching Protocols
+and hands over a bidirectional connection - that variant needs the streaming
+work in the separate ticket, and is worth splitting off rather than blocking
+the one-way case on it.
+
+Query parameters: stream, stdin, stdout, stderr, logs. There is also
+/attach/ws, which needs a WebSocket handshake and is a different piece of
+work again.
+
+2026-08-27 05:15 Implemented containers->attach, one-way variant only (no Upgrade: tcp, no /attach/ws), demultiplexing through stream_frames exactly as logs does. Query parameters stream/stdin/stdout/stderr/logs; stream, stdout and stderr default to 1 because the engine defaults all five off and would return an empty body. POD says plainly that this is the 200 one-way variant, that nothing can be written to stdin here, and that it blocks until the stream ends. Coverage in t/containers_endpoints.t. What the bidirectional variant still needs is reported to the parent for its own ticket.
