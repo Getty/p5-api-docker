@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-08-27T06:36:20Z
+claimed_by: doc-final
+class: standard
+completed: 2026-08-27T06:36:20Z
+created: 2026-08-27T06:25:43Z
+id: 46
+priority: low
+started: 2026-08-27T06:29:18Z
+status: done
+tags:
+- docs
+- changes
+title: Changes {{$NEXT}} entry for containers->attach asserts daemon behavior without
+  measurement
+updated: 2026-08-27T06:36:20Z
+---
+
+House standard for this Changes file: every entry names the engine's exact error string or an observed before/after ('Measured against the rootless Podman socket (5.4.2, API 1.41): ...'). The containers->attach paragraph breaks that pattern:
+
+  '... sent without `Upgrade: tcp` the engine answers 200 and streams the
+  same multiplexed frames `logs` does, so it returns the same ArrayRef of
+  `{ stream => ..., data => ... }` frames, or the summary HashRef with
+  `on_frame`.'
+
+stated as plain fact, with no measurement citation -- unlike every other paragraph in the {{$NEXT}} section, including the ones right next to it.
+
+It is not measured. t/containers_endpoints.t says so explicitly at the top: 'What is NOT measured here: the bytes of a real archive, a real attach stream, and the X-Docker-Container-Path-Stat header ... the live subtests ... skipped on the run that produced this file.' The attach subtests reuse the *logs* fixture on 'the (documented, not measured here) ground that the one-way attach stream is byte-identical to the logs stream' (see karr #36, which already tracks capturing real fixtures).
+
+This ticket is narrower than #36: it is about the CHANGES file wording specifically, since Changes ships as release notes and is read as a measured claim by convention here. Before release, either hedge the sentence (say it is inferred from the Engine API reference and the shared /attach code path, not measured) or measure it live and keep the claim once #36 lands.
+
+Found during the pre-release audit; not fixed here per the audit's own scope (report only).
