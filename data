@@ -1,0 +1,61 @@
+---
+claimed_at: 2026-08-27T18:34:37Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T18:34:37Z
+created: 2026-08-27T16:54:33Z
+id: 53
+priority: high
+started: 2026-08-27T18:14:00Z
+status: done
+tags:
+- containers
+- podman
+- hazard
+- data-loss
+title: attach on an exited container destroys its exit status on Podman
+updated: 2026-08-27T18:34:37Z
+---
+
+Measured 2026-08-27 on rootless Podman 5.4.2 (API 1.41) and Docker 29.7.2
+(API 1.55), isolated with a controlled before/after probe:
+
+  PODMAN  before attach   inspect=[exited 4]   wait={"StatusCode":4,"Error":null}
+  PODMAN  after  attach   inspect=[created 0]  wait={"StatusCode":-1,"Error":null}
+  DOCKER  before attach   inspect=[exited 4]   wait={"StatusCode":4}
+  DOCKER  after  attach   inspect=[exited 4]   wait={"StatusCode":4}
+
+Attaching to an already-exited container on Podman reverts it to
+Status: created, resets ExitCode to 0, and makes a subsequent wait answer
+StatusCode -1 -- a sentinel inside a 200 with no error signalled anywhere.
+
+It is NOT the hang that does it. The call itself does. All three variants
+trigger it:
+  - stream=1&logs=1  (hangs, then destroys)
+  - stream=1 alone   (hangs, then destroys)
+  - stream=0&logs=1  (closes in 2ms, and still destroys)
+
+GET /containers/{id}/logs does NOT do it. Docker does not do it.
+
+This matters more than it looks: karr #52 changed containers->attach to
+default to stream=0, logs=1 precisely because that variant returns cleanly.
+It returns cleanly and still destroys the exit status. So the new default
+made attach fast and left it destructive.
+
+containers->attach is therefore a DATA-LOSS operation on Podman against a
+stopped container, not merely an awkward one. A caller that attaches to
+collect output and then asks wait for the exit code gets -1 and has no way
+to recover the real value -- the engine no longer holds it.
+
+To decide:
+  - the POD must say this outright, and say it where a reader looks before
+    calling attach, not in a caveat section
+  - whether containers->attach should refuse against a non-running container
+    on Podman, or warn, or do nothing but document
+  - whether entity API::Docker::Container->attach needs the same treatment
+  - whether this is worth reporting upstream to Podman; it looks like a bug
+    rather than a documented divergence
+
+Related: #52 (the hang, now known to affect Docker equally), #45 (stats),
+#50 (croak text). The theme is the same -- attach and stats are where both
+engines behave worst.
