@@ -1,0 +1,50 @@
+---
+class: standard
+completed: 2026-08-27T19:44:15Z
+created: 2026-08-27T19:11:06Z
+id: 62
+priority: medium
+started: 2026-08-27T19:44:15Z
+status: done
+tags:
+- podman
+- docs
+- drift
+title: Podman on this machine is now 5.8.4 / API 1.44, not 5.4.2 / 1.41
+updated: 2026-08-27T19:44:15Z
+---
+
+The rootless Podman behind unix:///run/user/1000/podman/podman.sock was upgraded
+during the #59 work: 5.4.2 (Debian /usr/bin/podman) -> 5.8.4 (~/.local/bin/podman
+via a systemd override). Same socket path, newer binary.
+
+MEASURED via GET /version through this client on 2026-08-27:
+
+  Version:    5.8.4
+  ApiVersion: 1.44          <- was 1.41
+  Components: Podman Engine 5.8.4, Conmon 2.1.12, crun 1.21
+
+The announced API version changed, which matters because negotiate_version
+negotiates within whatever the daemon reports.
+
+Every '5.4.2' and 'API 1.41' currently written down is correct for the old
+measurements and stale as a description of this machine. It appears in:
+
+  - CLAUDE.md ('announces API 1.41')
+  - .claude/rules/api-docker-rules.md ('announces API 1.41')
+  - the skill api-docker-core (Podman references)
+  - tickets #45, #50, #52, #54, #59 and the POD that quotes their numbers
+    (API::Docker::Error::HTTP names 'rootless Podman 5.4.2' for the kill
+    message; Containers::attach and others quote 5.4.2)
+
+Do NOT rewrite the old measurements to say 5.8.4 -- they were taken against
+5.4.2 and that is what they measured. Rewrite only the sentences that describe
+what is on this machine *now*, and leave each recorded measurement labelled with
+the version it was taken against.
+
+Re-verified on 5.8.4 during #59, still true:
+  - attach to an exited container never closes (the #52 hang)
+  - the full suite is green live, read-only and write
+
+Not re-measured on 5.8.4: the #45 error-inside-a-200 shape, the #50 kill message
+text, the #54 stats-on-exit behaviour.
