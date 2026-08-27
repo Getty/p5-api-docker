@@ -1,0 +1,50 @@
+---
+claimed_at: 2026-08-27T18:07:43Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T18:07:43Z
+created: 2026-08-27T17:04:13Z
+id: 55
+priority: medium
+started: 2026-08-27T17:54:09Z
+status: done
+tags:
+- tests
+- docker
+- swarm
+title: t/secrets_configs.t dies against a non-swarm Docker daemon (503 not a swarm
+  manager)
+updated: 2026-08-27T18:07:43Z
+---
+
+Found 2026-08-27 on the first live run against real Docker (29.7.2, API 1.55).
+
+  sg docker -c 'API_DOCKER_TEST_HOST=unix:///var/run/docker.sock \
+    API_DOCKER_TEST_WRITE=1 prove -lr t/'
+
+t/secrets_configs.t does not skip, it DIES:
+
+  503 "This node is not a swarm manager"
+
+Docker serves /secrets and /configs only on a swarm manager. This daemon is
+a plain single-node install with no swarm initialised, which is the normal
+state for a development machine and the state most users will have.
+
+Podman hides the problem: it serves /secrets from its own local secret
+store with no swarm anywhere in sight, so the test file has never had to
+consider the case. That difference is already recorded in the Changes entry
+for the Secrets/Configs work -- what was missed is that the DOCKER side of
+the same endpoint needs a gate.
+
+The fix is a skip, not a swarm init: `docker swarm init` on a developer
+machine is a real side effect on the host's networking, and no test should
+do it. Gate on the 503, or probe /info for Swarm.LocalNodeState eq 'active'
+before the live subtests run.
+
+Note while fixing: the failure is a die, not a failed assertion, so it takes
+the whole file down rather than one subtest. Check whether other files have
+the same shape.
+
+Related: the engine-detection helper live_engine() added to
+Test::API::Docker::Mock in the same session is the natural place for a
+can_swarm() sibling.
