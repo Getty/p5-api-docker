@@ -1,0 +1,68 @@
+---
+claimed_at: 2026-08-27T22:21:38Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T22:21:38Z
+created: 2026-08-27T19:10:32Z
+id: 60
+priority: medium
+started: 2026-08-27T21:23:43Z
+status: done
+tags:
+- streaming
+- transport
+- hazard
+title: read() fills, so the streaming callback path does not stream on raw endpoints
+updated: 2026-08-27T22:21:38Z
+---
+
+Found while implementing the read timeout (#59). Not fixed there: it needs its own
+design and the fix is the alternative that #59's design deliberately did not take.
+
+MEASURED on a blocking AF_UNIX socketpair, no daemon involved:
+
+  peer writes 6 bytes, waits 0.5s, writes 6 more, waits 0.5s, closes
+
+  read($sock, $buf, 65536)     -> n=12 after 0.90s   (it waited for EOF)
+  sysread($sock, $buf, 65536)  -> n=6  after 0.00s
+
+perl's read() is fread-shaped: it loops until it has LENGTH bytes or hits end of
+stream. It does not return what has arrived.
+
+Consequence. _read_streaming_response's close-delimited branch reads with
+$READ_SIZE (64K):
+
+    my ($n, $buf) = $self->_read_bytes($sock, $READ_SIZE, $ctx);
+
+so on an endpoint with neither Content-Length nor chunked encoding -- which is
+what attach and logs(follow) are, application/vnd.docker.raw-stream -- the
+callback is not called until 64K has accumulated or the daemon closes. The
+on_frame/on_chunk streaming of those endpoints therefore does not stream; it
+delivers in 64K blocks. The chunked branch is unaffected: it asks for exactly
+$chunk_size, which is exactly what is there.
+
+The comment above $READ_SIZE states the opposite and is wrong:
+
+    # Only an upper bound: read() returns whatever has arrived, which on a live
+    # feed is usually one event.
+
+Fix it or remove it as part of this.
+
+Visible in the wild: an attach to an exited container on Podman 5.8.4 delivered
+0 frames to an on_frame callback until #59's read timeout expired, even though
+all 42 bytes had arrived. #59 works around the data loss (the bytes of the read
+that expires are fed before the exception is raised) but not the latency.
+
+The real fix is sysread plus a buffer of our own, and it is NOT a local change:
+_read_head reads the status line and headers with <$sock>, so PerlIO has
+already buffered ahead past the header block. Switching the body reads to
+sysread without moving the head reads too would silently drop whatever readahead
+is sitting in the PerlIO buffer. Either all read sites move together or none do.
+
+Note this is exactly the rewrite #59 measured and rejected for the timeout
+(select() is blind to the PerlIO buffer; SO_RCVTIMEO is not). If this ticket is
+done, the timeout has to be re-verified on top of it -- SO_RCVTIMEO still works
+with sysread, but the short-read/EAGAIN discrimination in _read_bytes is written
+against read()'s fill semantics and would need rewriting for sysread's.
+
+Related: #52, #59.
