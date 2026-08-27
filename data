@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-08-27T06:35:08Z
+claimed_by: images-worker
+class: standard
+completed: 2026-08-27T06:35:08Z
+created: 2026-08-27T04:24:17Z
+id: 22
+priority: low
+started: 2026-08-27T04:48:44Z
+status: done
+tags:
+- images
+- coverage
+title: No images->commit
+updated: 2026-08-27T06:35:08Z
+---
+
+POST /commit is not exposed. It turns a container into an image, taking
+container, repo, tag, comment, author, pause and changes as query
+parameters, plus an optional ContainerConfig body.
+
+It is the one image-producing path that does not go through a build context,
+and it is how a caller snapshots a container it has been exec-ing into.
+
+2026-08-27 05:05 images->commit added. POST /commit measured against the rootless Podman socket (5.4.2, API 1.41): 201 Created with {"Id":"<64 hex>"} and no sha256: prefix, where Docker prefixes it. container/repo/tag/comment/author/pause/changes ride in the query string, config is the JSON body. changes takes a string or an ArrayRef -- an ArrayRef is joined with newlines, because the engine parses each value as a Dockerfile snippet and a snippet may span lines, so the joined form and repeated changes= pairs produced the same image; the joined form is the one the transport's one-value-per-key params encoder can express. Live check with body config plus changes: Cmd replaced, Env merged onto the inherited environment, and body Labels landed alongside the changes LABEL. New t/images_commit.t. No Changes entry written.
