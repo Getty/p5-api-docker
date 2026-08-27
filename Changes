@@ -762,6 +762,24 @@ Revision history for API-Docker
     daemon was available; it has since been measured and hangs identically,
     so the attach hang is unspecified behaviour on both engines rather than
     a Podman quirk.
+  - Fix a container leak in the live build-failure test: a failed build's
+    intermediate container was never removed, because `rm=1` -- the default
+    -- only fires on a successful build, and the daemon creates the
+    container unnamed, so `register_cleanup` never saw it. Measured after a
+    day of live runs: 14 `Exited (7)` containers on Docker, one per run. The
+    subtest now passes `forcerm => 1`, which both engines honour to remove
+    the intermediate even on failure, so the fix is prevention inside the
+    build call rather than cleanup afterwards and cannot be skipped by an
+    earlier failure. Two things the measurement corrected: parsing the id
+    out of the build stream, the obvious fix, works only on Docker -- its
+    classic builder prints `---> Running in <id>` while Podman sends only
+    `STEP N/M` lines and an `errorDetail`. And Podman's half of the leak is
+    invisible to this API entirely: it is a buildah storage container that
+    `GET /containers/json?all=true` never lists, so the new assertion is
+    deliberately limited to Docker rather than passing vacuously on Podman.
+    Successful builds were measured too and leak nothing, on either engine;
+    of everything under `t/` only this file and `t/images.t` build against a
+    real daemon at all.
 
 0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the

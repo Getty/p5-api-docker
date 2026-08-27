@@ -41,7 +41,13 @@ use overload
 
 L<API::Docker::Role::HTTP> croaks with an object of this class when a request
 was given a L<API::Docker::Role::HTTP/read_timeout> and the daemon then went
-quiet for longer than it.
+quiet for longer than it -- and, with L</phase> set to C<'connect'>, when a
+request was given a L<API::Docker::Role::HTTP/connect_timeout> and the socket
+never came up within it.
+
+The rest of this describes the read timeout, which is the one that has
+something to hand back. A connect timeout carries no L</partial> and no
+L</summary>, for the reason L</phase> gives: nothing was ever sent.
 
 It is an B<idle> timeout, not a deadline: the clock is the time since the last
 byte arrived, so a stream that keeps producing runs as long as it likes and one
@@ -127,6 +133,30 @@ path, no query string.
 
 =cut
 
+has phase => (
+  is      => 'ro',
+  default => sub { 'read' },
+);
+
+=attr phase
+
+Which of the two bounds fired: C<'read'> for
+L<API::Docker::Role::HTTP/read_timeout>, C<'connect'> for
+L<API::Docker::Role::HTTP/connect_timeout>. C<'read'> is the default, so an
+object built without it describes what every one of them used to describe.
+
+One class rather than two, because the question a caller catches this to ask
+-- "did the request finish in time?" -- has the same answer either way, and a
+second class would make every such caller name two of them or find their
+common base. What differs is one bit: whether the daemon was ever reached.
+That bit is this attribute.
+
+It is also the only thing that tells a C<'connect'> timeout apart from a
+C<'read'> one that expired before the first byte: L</partial> is the empty
+string and L</summary> is C<undef> for both.
+
+=cut
+
 has timeout => (
   is       => 'ro',
   required => 1,
@@ -135,7 +165,8 @@ has timeout => (
 =attr timeout
 
 The number of seconds of silence that triggered this, i.e. the effective
-C<read_timeout> of the request. Not the total time the request took: a stream
+C<read_timeout> of the request -- or, when L</phase> is C<'connect'>, the
+C<connect_timeout> that expired. Not the total time the request took: a stream
 that sent something every second for an hour and then stopped reports the same
 value as one that never said anything.
 
