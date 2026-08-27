@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-08-27T23:31:55Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T23:31:55Z
+created: 2026-08-27T23:15:17Z
+id: 69
+priority: medium
+started: 2026-08-27T23:31:55Z
+status: done
+tags:
+- changes
+- verification
+title: 'Changes: ''GET /plugins/privileges answers bare null'' entry has no live-daemon
+  evidence, unlike the rest of {{$NEXT}}'
+updated: 2026-08-27T23:31:55Z
+---
+
+The 'A response body that is a bare JSON scalar ... is now decoded' entry justifies the null-body claim for GET /plugins/privileges purely by reading Go source (computePrivileges nil slice) -- t/plugins.t's matching subtest also uses a hand-built fixture ('null'), not a captured one, and the file has no is_live()-gated subtest at all. Podman doesn't implement /plugins (measured 404 elsewhere in the same Changes block), and nothing in the round measured this specific response against a real Docker daemon. Every other entry in {{$NEXT}} is scrupulous about citing 'Measured on <engine> <version>' or an exact captured error string; this is the one that instead argues from source code. Found during release audit, house-standard check (measured claim, not summary). Fix: either measure it against a real Docker daemon and cite that, or add the same honest caveat other entries use elsewhere ('documented rather than verified').
