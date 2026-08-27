@@ -1,0 +1,33 @@
+---
+claimed_at: 2026-08-27T15:55:35Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T15:55:35Z
+created: 2026-08-27T05:38:27Z
+id: 43
+priority: medium
+started: 2026-08-27T15:34:18Z
+status: done
+tags:
+- images
+- transport
+title: Images::_names_query is deletable now that params expands an ArrayRef
+updated: 2026-08-27T15:55:35Z
+---
+
+karr #33 is done: _request's params loop expands an ArrayRef value into one pair per element.
+
+API::Docker::API::Images can drop its private workaround:
+
+  sub get_all {
+    my ($self, @names) = @_;
+    @names = @{$names[0]} if @names == 1 && ref $names[0] eq 'ARRAY';
+    croak 'At least one image name required' unless @names;
+    return $self->client->get('/images/get', params => { names => \@names }, raw => 1);
+  }
+
+and _names_query goes with its comment block (currently lines 547-562).
+
+The wire form is byte-identical, checked against the hand-built query for four inputs: 'alpine:3','registry:2' -> names=alpine:3&names=registry:2; 'my repo/img:1' -> names=my%20repo/img:1; 'a&b' -> names=a%26b; 'reg.example.com:5000/x/y:tag' unescaped throughout. So t/images_tar.t's 'get_all: names is a repeated query parameter' and 'get_all: the escaping keeps an image reference intact' carry over unchanged.
+
+Images.pm was locked to another agent while the transport work ran, which is why this was not done in the same change.
