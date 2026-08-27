@@ -1,0 +1,50 @@
+---
+claimed_at: 2026-08-27T17:20:57Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T17:20:57Z
+created: 2026-08-27T15:44:04Z
+id: 50
+priority: low
+started: 2026-08-27T16:11:28Z
+status: done
+tags:
+- containers
+- podman
+- errors
+title: 'kill croak text is engine-dependent: Podman and Docker disagree on the 409/404
+  body'
+updated: 2026-08-27T17:20:57Z
+---
+
+Measured on rootless Podman 5.4.2 (API 1.41), 2026-08-27, while closing #29.
+
+_request croaks with the response's `message` field. That field's content for
+a failed kill is engine-specific, so anything matching on the croak text is
+Podman-specific here:
+
+  Podman  409  {"cause":"container state improper",
+                "message":"can only kill running containers. <id> is in state
+                           stopped: container state improper",
+                "response":409}
+  Podman  404  {"cause":"no such container",
+                "message":"no container with name or ID \"x\" found:
+                           no such container","response":404}
+
+  Docker's swagger example for the same 409 is {"message":"Container <id> is
+  not running"} -- a different shape (no cause/response keys) and entirely
+  different prose.
+
+NOT measured against Docker: there is no Docker on this machine.
+
+Two things to decide, neither urgent:
+  - whether the POD should warn that croak text is not a stable interface
+    and callers should branch on nothing but the fact that it croaked
+  - whether the transport should expose the status code on the exception so
+    a caller can distinguish 404 from 409 without regex-matching prose.
+    That second one is the useful half, and it touches Role::HTTP -- the
+    seam under all modules -- so it wants its own measurement of what the
+    exception object currently carries.
+
+Related: #45 is the other case where an engine-specific error shape reaches
+a caller.
