@@ -1,0 +1,41 @@
+---
+claimed_at: 2026-08-27T22:21:38Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T22:21:38Z
+created: 2026-08-27T19:10:49Z
+id: 61
+priority: low
+started: 2026-08-27T21:23:43Z
+status: done
+tags:
+- transport
+- streaming
+title: 'No connect timeout: a socket that never accepts still hangs'
+updated: 2026-08-27T22:21:38Z
+---
+
+Noticed while implementing the read timeout (#59), deliberately left out of it.
+
+#59 added read_timeout, which is SO_RCVTIMEO on the connected socket. It bounds
+reading and nothing else. _build__socket still passes no Timeout to any of the
+three constructors:
+
+  IO::Socket::UNIX->new(Peer => $path, Type => SOCK_STREAM)
+  IO::Socket::INET->new(PeerAddr => ..., PeerPort => ..., Proto => 'tcp')
+  IO::Socket::SSL->new(PeerAddr => ..., PeerPort => ..., Proto => 'tcp', %ssl)
+
+So a daemon that accepts the connection and then says nothing is now caught,
+while a tcp:// host that drops SYNs is not -- that blocks in connect(2) for the
+kernel's own timeout, which on Linux is over two minutes. Writing the request is
+unbounded too (SO_SNDTIMEO), though that only matters for a large /build context
+against a daemon that has stopped reading.
+
+Cheap to add (Timeout => N on all three constructors) but it is a separate
+decision: it needs its own attribute, or an explicit statement that read_timeout
+covers connecting as well, which today it does not and its POD says so.
+
+Also unmeasured here: IO::Socket::SSL's Timeout covers the TCP connect but not
+necessarily the whole handshake.
+
+Related: #59.
