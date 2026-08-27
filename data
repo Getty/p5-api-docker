@@ -1,0 +1,24 @@
+---
+class: standard
+completed: 2026-08-27T15:55:28Z
+created: 2026-08-27T15:41:42Z
+id: 49
+priority: low
+started: 2026-08-27T15:55:28Z
+status: done
+tags:
+- docs
+- scope
+title: lib/API/Docker.pm POD does not list the new entity classes
+updated: 2026-08-27T15:55:28Z
+---
+
+The 'Entity Classes' =over list in lib/API/Docker.pm (around line 107) names Container, Image, Network and Volume only. Three entity classes are being added around it: API::Docker::Plugin (karr #31, landed) and API::Docker::Secret / API::Docker::Config (karr #35, in flight).
+
+None of the three agents may touch lib/API/Docker.pm without racing the others on the same =over block, so the list was deliberately left stale. One pass afterwards adds the missing =item lines:
+
+  =item * L<API::Docker::Plugin> - Plugin entity
+  =item * L<API::Docker::Secret> - Secret entity
+  =item * L<API::Docker::Config> - Config entity
+
+Do it once #31 and #35 are both done, and check nothing else in that POD (the SYNOPSIS, the resource list) went stale with them. README.md does not list entity classes, so it needs nothing.
