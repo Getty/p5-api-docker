@@ -1,0 +1,39 @@
+---
+claimed_at: 2026-08-27T06:35:27Z
+claimed_by: transport-worker-2
+class: standard
+completed: 2026-08-27T06:35:27Z
+created: 2026-08-27T04:24:54Z
+id: 26
+priority: low
+started: 2026-08-27T05:18:44Z
+status: done
+tags:
+- transport
+- security
+title: tcp:// is always cleartext - TLS is unimplemented by decision
+updated: 2026-08-27T06:35:27Z
+---
+
+Recorded so the decision stays visible rather than being rediscovered.
+
+tls => 1 croaks at construction and cert_path is accepted but read by
+nothing, which is the honest state and better than the silent cleartext this
+replaced. The consequence stands: a tcp:// daemon can only be reached
+unencrypted, so any remote daemon is either on a trusted network, behind an
+SSH tunnel, or out of reach for this client.
+
+Wiring it means IO::Socket::SSL in Role::HTTP, client certificate handling
+(cert.pem, key.pem, ca.pem - the layout cert_path already points at),
+verification defaults, and a decision about whether tls => 1 without
+certificates means system CAs or an error.
+
+Not urgent while the unix socket covers local Docker and rootless Podman.
+Worth stating: it is the one thing keeping this client from talking to a
+remote daemon the way the docker CLI does.
+
+
+--- DECISION 2026-08-27 (maintainer) ---
+IN. TLS gets wired: IO::Socket::SSL in Role::HTTP, client certificates from
+cert_path (cert.pem / key.pem / ca.pem), and an explicit answer to what
+tls => 1 without certificates means. Not deferred any longer.
