@@ -395,6 +395,7 @@ sub logs {
   return $self->client->stream_frames('GET', "/containers/$id/logs",
     params => \%params,
     defined $opts{tty} ? ( tty => $opts{tty} ) : (),
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_frame} ? ( on_frame => $opts{on_frame} ) : (),
   );
 }
@@ -454,6 +455,10 @@ With C<on_frame> it is a declaration rather than a hint; see below
 
 =item * C<on_frame> - CodeRef called with each frame as it arrives, instead of
 the ArrayRef being collected and returned; see below
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
 
 =back
 
@@ -555,6 +560,7 @@ sub attach {
   return $self->client->stream_frames('POST', "/containers/$id/attach",
     params => \%params,
     defined $opts{tty} ? ( tty => $opts{tty} ) : (),
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_frame} ? ( on_frame => $opts{on_frame} ) : (),
   );
 }
@@ -617,6 +623,12 @@ running and B<croaks instead of attaching> when it is not:
 
 C<< require_running => 0 >> turns that off and attaches anyway; the check is
 then not performed at all, so opting out costs no round trip either.
+
+With the guard off, the hang this section exists to explain becomes reachable:
+attaching to a container that has already exited never returns on rootless
+Podman (measured 5.4.2, still true on 5.8.4, API 1.44). C<< read_timeout => 2 >>
+is how to bound that call instead of blocking on it forever; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">.
 
 B<What the check does not do is close the race.> It is a pre-flight question,
 and the container can stop between the answer and the attach arriving -- in
@@ -780,6 +792,10 @@ attach to a stopped container anyway, which also skips the round trip; see
 L</"This method refuses a container that is not running"> for what the check
 does and does not guarantee
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
 =back
 
 =cut
@@ -921,6 +937,7 @@ sub stats {
 
   my $result = $self->client->get("/containers/$id/stats",
     params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $on_event )
       : $stream            ? ( ndjson   => 1 )
       : (),
@@ -1004,6 +1021,12 @@ reading it has always been
 
 =item * C<on_event> - CodeRef called with each reading as it arrives, instead
 of them being collected and returned; see above
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends"> -- and
+L</"On Docker the stream does not end when the container does"> for a case it
+does B<not> cover
 
 =back
 
@@ -1101,6 +1124,15 @@ A caller that follows a container's stats until it stops is asking for
 something this endpoint does not offer on that engine: give C<on_event> its
 own stopping condition -- a reading count, a deadline, or the Go zero time in
 C<read> -- and do not wait for the stream to end on its own.
+
+B<C<read_timeout> does not bound this.> It is an idle timeout -- silence since
+the last byte -- and this stream is never silent: it keeps producing a
+zero-filled reading once a second, indefinitely, so the clock that C<read_timeout>
+measures never runs out. C<read_timeout> bounds a daemon that goes quiet; a
+Docker stats stream after container exit does the opposite -- it keeps talking,
+just not truthfully. C<on_event> still has to notice the Go zero time in
+C<read> and call C<< $stop->() >> itself; do not rely on C<read_timeout> to end
+this case.
 
 =head2 Why this is documented and not guarded
 

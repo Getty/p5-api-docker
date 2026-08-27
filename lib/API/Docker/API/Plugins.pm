@@ -255,6 +255,7 @@ sub install {
   return $self->client->post('/plugins/pull', $privileges,
     params => \%params,
     $self->_auth_headers(\%opts),
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -292,6 +293,10 @@ from C<remote>. A digest is not allowed here
 
 =item * C<on_event> - CodeRef called with each progress event as it arrives,
 instead of the ArrayRef being collected and returned; see below
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
 
 =back
 
@@ -465,6 +470,7 @@ sub upgrade {
   return $self->client->post("/plugins/$name/upgrade", $privileges,
     params => { remote => $remote },
     $self->_auth_headers(\%opts),
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -504,6 +510,10 @@ which is what you want unless the plugin was installed under a local name
 The return value is then the summary HashRef; see
 L</"Progress as it arrives">
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
 =back
 
 Returns an ArrayRef of progress events, C<[]> when the engine sent no
@@ -516,6 +526,7 @@ sub push {
   croak __PACKAGE__ . '->push plugin name required' unless $name;
   return $self->client->post("/plugins/$name/push", undef,
     $self->_auth_headers(\%opts),
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -542,6 +553,10 @@ C<X-Registry-Auth>
 =item * C<on_event> - CodeRef called with each progress event as it arrives --
 layer by layer, rather than the whole upload in one silence. The return value
 is then the summary HashRef; see L</"Progress as it arrives">
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
 
 =back
 

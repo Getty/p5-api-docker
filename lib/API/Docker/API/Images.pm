@@ -151,6 +151,7 @@ sub build {
     raw_body     => $raw,
     content_type => 'application/x-tar',
     params       => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -252,6 +253,10 @@ Options:
 =item * C<on_event> - CodeRef called with each build event as it arrives,
 instead of the ArrayRef being collected and returned; see below
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
 =back
 
 =head2 Progress as it arrives
@@ -325,6 +330,7 @@ sub pull {
   $params{tag}       = $opts{tag} // 'latest';
   return $self->client->post('/images/create', undef,
     params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -376,6 +382,10 @@ instead of the ArrayRef being collected and returned. The return value is then
 the summary HashRef and a stream failure croaks one event in, exactly as for
 L</build>; see L</"Progress as it arrives">
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
 =back
 
 =cut
@@ -422,6 +432,7 @@ sub push {
     undef,
     params  => \%params,
     headers => { 'X-Registry-Auth' => $auth_header },
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -477,6 +488,10 @@ layer by layer, rather than the whole upload in one silence -- instead of the
 ArrayRef being collected and returned. The return value is then the summary
 HashRef and a stream failure croaks one event in, exactly as for L</build>;
 see L</"Progress as it arrives">
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
 
 =back
 
@@ -592,6 +607,7 @@ sub get {
   # bytes over undecoded -- so only one of them is sent: with a callback there
   # is no return value for `raw` to describe.
   return $self->client->get("/images/$name/get",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_chunk} ? ( on_chunk => $opts{on_chunk} ) : ( raw => 1 ));
 }
 
@@ -662,6 +678,10 @@ Options:
 =item * C<on_chunk> - CodeRef called with each piece of the archive as it
 arrives, instead of the whole thing being returned
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
 =back
 
 =cut
@@ -690,6 +710,7 @@ sub get_all {
   # _request escapes each element with its own _uri_encode, which leaves `/`
   # and `:` raw so an image reference survives intact.
   return $self->client->get('/images/get', params => { names => \@names },
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_chunk} ? ( on_chunk => $opts{on_chunk} ) : ( raw => 1 ));
 }
 
@@ -716,6 +737,9 @@ only be passed with the ArrayRef form:
     my $summary = $images->get_all([ 'alpine:3', 'registry:2' ],
         on_chunk => sub { print {$out} $_[0] });
 
+C<read_timeout> is accepted the same way, again only with the ArrayRef form;
+see L<API::Docker::Role::HTTP/"Bounding a request that never ends">.
+
 The list form takes names and nothing else: a trailing option pair in it would
 be indistinguishable from two more image names. Options after the ArrayRef
 must come in pairs; an odd number croaks.
@@ -738,6 +762,7 @@ sub load {
     raw_body     => $raw,
     content_type => 'application/x-tar',
     params       => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -772,6 +797,10 @@ stream
 instead of the ArrayRef being collected and returned. The return value is then
 the summary HashRef and a stream failure croaks one event in, exactly as for
 L</build>; see L</"Progress as it arrives">
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
 
 =back
 

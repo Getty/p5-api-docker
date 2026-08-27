@@ -135,6 +135,7 @@ sub events {
   return $self->client->get('/events',
     params         => \%params,
     croak_on_error => 0,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -178,6 +179,10 @@ misspelt one is a failed request rather than a quiet no-match
 
 =item * C<on_event> - CodeRef called with each event as it arrives, instead of
 the ArrayRef being collected and returned; see below
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
 
 =back
 

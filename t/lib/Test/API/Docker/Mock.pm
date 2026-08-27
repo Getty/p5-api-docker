@@ -282,6 +282,15 @@ sub _mock_docker {
     croak "No mock route for: $key (available: " . join(', ', sort keys %routes) . ")"
       unless $matched;
 
+    # A mocked request can never time out -- nothing here reads a socket -- so
+    # read_timeout is accepted and ignored, exactly as a route ignores every
+    # other transport option. What is not ignored is its shape: that is part
+    # of the contract this stands in for, and a value the real transport would
+    # refuse has to fail here rather than only once a test is run live. The
+    # role's own check is called rather than copied, so the two cannot drift.
+    $self->_read_timeout_value($opts{read_timeout})
+      if exists $opts{read_timeout};
+
     my $result = ref $handler eq 'CODE'
       ? $handler->($method, $clean_path, %opts)
       : $handler;

@@ -679,6 +679,52 @@ Revision history for API-Docker
     anyway: unlike `attach` the blind spot is the whole stream rather than
     one round trip, and nothing here is destroyed -- `inspect` still reports
     the truth afterwards.
+  - New `read_timeout` on the HTTP role, as a client attribute and as a
+    per-request option of `get`, `post`, `put`, `delete_request` and `head`:
+    the seconds of silence after which a request gives up and croaks with the
+    new `API::Docker::Error::Timeout`. It is an idle timeout -- time since the
+    last byte, not since the request started -- because the hangs it exists
+    for deliver their data first and stall afterwards, so a time-to-first-byte
+    bound would never fire. Off by default and with no per-endpoint default,
+    so no existing call changes behaviour; `read_timeout => 0` turns a
+    client-wide default off for one request. Implemented with `SO_RCVTIMEO`,
+    measured to behave the same over `unix://`, plain `tcp://` and TLS: the
+    timeout fires, the handle is not left unusable, and reading afterwards
+    works. It bounds reading only -- connecting and writing are still
+    unbounded.
+  - The twelve read sites in the HTTP role now tell a timeout apart from the
+    end of a response. That is the substance of the change rather than the
+    `setsockopt`. Measured on a socketpair with `SO_RCVTIMEO` set: an expired
+    read comes back looking exactly like one that reached the end of the
+    stream -- `eof()` and `$fh->error` are both true either way, an
+    interrupted readline hands back the half a line it has, and errno is the
+    only difference. Every `last unless $n` would otherwise have read a
+    timeout as the end of the body and returned a truncated response as a
+    whole one, so switching the option on without this would have turned a
+    hang into silent data loss.
+  - `API::Docker::Error::Timeout` carries what did arrive: `partial` for a
+    buffered request, `summary` for one streaming through `on_event`,
+    `on_frame` or `on_chunk`, plus `endpoint` and `timeout`. The bytes of the
+    read that expired are put through the callback before the exception is
+    raised, so a streamed request loses nothing either -- measured on an
+    attach to an exited container (Podman 5.8.4, API 1.44): 42 bytes in a
+    single read, 0 frames delivered before this and 2 after. The expiry is
+    fatal on every path rather than a flag on the summary, because a
+    truncated body satisfies every return shape the role promises and would
+    be indistinguishable from a complete one.
+  - `containers->attach` on a container that has already exited no longer has
+    to hang. Measured on rootless Podman 5.8.4 (API 1.44), the behaviour
+    recorded on 5.4.2 is unchanged: the buffered frames arrive and the daemon
+    then holds the connection open indefinitely. With `read_timeout => 2` the
+    call croaks after 2.1s carrying all 42 bytes it received. An unbounded
+    `system->events` likewise ends after the timeout instead of never (2.3s
+    on Podman, 2.0s on Docker 29.7.2).
+  - `containers->stats` is NOT bounded by `read_timeout`, and its POD says so.
+    Measured on Docker 29.7.2 (API 1.55): a `stream => 1` feed on a container
+    that exits does not go quiet -- it keeps sending one zero-filled reading
+    (`read` = `0001-01-01T00:00:00`) every second indefinitely. An idle
+    timeout never fires on a stream that keeps producing, so that case still
+    needs the caller's own `$stop->()`.
 
 0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the

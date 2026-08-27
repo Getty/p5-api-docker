@@ -85,6 +85,7 @@ sub start {
   return $self->client->stream_frames('POST', "/exec/$exec_id/start",
     body => $body,
     $opts{Tty} ? ( tty => 1 ) : (),
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{on_frame} ? ( on_frame => $opts{on_frame} ) : (),
   );
 }
@@ -126,6 +127,10 @@ L<API::Docker::Role::HTTP/"Detecting a framed stream">
 
 =item * C<on_frame> - CodeRef called with each frame as it arrives, instead of
 the ArrayRef being collected and returned; see below
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
 
 =back
 
