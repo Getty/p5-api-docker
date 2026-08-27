@@ -1,0 +1,40 @@
+---
+claimed_at: 2026-08-27T06:36:15Z
+claimed_by: engine-worker-final
+class: standard
+completed: 2026-08-27T06:36:15Z
+created: 2026-08-27T05:55:51Z
+id: 44
+priority: low
+started: 2026-08-27T05:58:51Z
+status: done
+tags:
+- docs
+title: POD claims ndjson can return undef; _decode_stream always returns an ArrayRef
+updated: 2026-08-27T06:36:15Z
+---
+
+Four POD blocks promise a return value the transport cannot produce.
+
+  API::Docker::API::Plugins/install:  'or C<undef> when the engine sent no
+                                       progress at all'
+  API::Docker::API::Plugins/upgrade:  same sentence
+  API::Docker::API::Plugins/push:     same sentence
+  API::Docker::API::Images/load:      'Should an engine answer a quiet load
+                                       with a body of no bytes at all, the
+                                       transport returns undef rather than an
+                                       empty ArrayRef, so a caller that
+                                       iterates the result unconditionally
+                                       must guard for it.'
+
+Role::HTTP::_request with ndjson => 1 calls _decode_stream, which returns
+\@events -- an ArrayRef, empty when the body carried nothing. The empty-body
+check that returns undef sits *after* the ndjson branch, and its own comment
+says so: 'ndjson promises an ArrayRef of events even for a stream carrying a
+single object, so a stream that carried none is []'.
+
+So the guard those four blocks tell a caller to write is for a case that
+cannot happen. Fix: say [] in all four places. No code change.
+
+Found while wiring the streaming callbacks (#21); left alone there to keep
+that change to one subject.
