@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-08-27T23:31:55Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T23:31:55Z
+created: 2026-08-27T23:15:29Z
+id: 70
+priority: medium
+started: 2026-08-27T23:31:55Z
+status: done
+tags:
+- docs
+- http-role
+title: connect_timeout is not actually a per-resource-method option, despite Changes/POD
+  implying parity with read_timeout
+updated: 2026-08-27T23:31:55Z
+---
+
+Changes: 'New connect_timeout, beside read_timeout and shaped the same way: a client attribute and a per-request option'. In practice read_timeout is threaded through every resource method's %opts (grep 'exists $opts{read_timeout}' hits Images.pm, Containers.pm, Plugins.pm, System.pm, Exec.pm -- ~14 sites) and documented in each method's own Options list. connect_timeout appears NOWHERE in lib/API/Docker/API/*.pm -- only in Role/HTTP.pm's own get/post/put/delete_request/head and in Error/Timeout.pm. So $docker->images->pull(fromImage => 'x', connect_timeout => 5) silently ignores connect_timeout (it's just an unused key in %opts), while the identical call with read_timeout works. Either this is intentional (connecting happens once per _request regardless of endpoint, so only the client attribute and the raw HTTP verbs need it) -- in which case Changes overclaims 'shaped the same way' and no POD explains the asymmetry to a caller who reasonably expects parity -- or it's a real gap that should be wired through like read_timeout was. Found during release audit, POD-vs-forwarded-options check. Needs a maintainer/worker decision: wire it through, or correct the Changes/POD claim to state the narrower scope explicitly.
