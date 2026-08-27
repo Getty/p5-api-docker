@@ -79,7 +79,20 @@ token L</update> needs; L</version_index> reaches it directly.
 =cut
 
 has CreatedAt => (is => 'ro');
+
+=attr CreatedAt
+
+RFC3339 timestamp string of when the secret was created.
+
+=cut
+
 has UpdatedAt => (is => 'ro');
+
+=attr UpdatedAt
+
+RFC3339 timestamp string of when the secret was last updated.
+
+=cut
 
 sub version_index {
   my ($self) = @_;

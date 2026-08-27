@@ -259,6 +259,7 @@ sub install {
     params => \%params,
     $self->_auth_headers(\%opts),
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -300,6 +301,11 @@ instead of the ArrayRef being collected and returned; see below
 =item * C<read_timeout> - Seconds of silence after which the request gives up
 and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
 L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -474,6 +480,7 @@ sub upgrade {
     params => { remote => $remote },
     $self->_auth_headers(\%opts),
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -517,6 +524,11 @@ L</"Progress as it arrives">
 and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
 L<API::Docker::Role::HTTP/"Bounding a request that never ends">
 
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 Returns an ArrayRef of progress events, C<[]> when the engine sent no
@@ -530,6 +542,7 @@ sub push {
   return $self->client->post("/plugins/$name/push", undef,
     $self->_auth_headers(\%opts),
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -560,6 +573,11 @@ is then the summary HashRef; see L</"Progress as it arrives">
 =item * C<read_timeout> - Seconds of silence after which the request gives up
 and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
 L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 

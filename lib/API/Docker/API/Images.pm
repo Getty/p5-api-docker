@@ -152,6 +152,7 @@ sub build {
     content_type => 'application/x-tar',
     params       => \%params,
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -257,6 +258,11 @@ instead of the ArrayRef being collected and returned; see below
 and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
 L<API::Docker::Role::HTTP/"Bounding a request that never ends">
 
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =head2 Progress as it arrives
@@ -331,6 +337,7 @@ sub pull {
   return $self->client->post('/images/create', undef,
     params => \%params,
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -386,6 +393,11 @@ L</build>; see L</"Progress as it arrives">
 and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
 L<API::Docker::Role::HTTP/"Bounding a request that never ends">
 
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
@@ -433,6 +445,7 @@ sub push {
     params  => \%params,
     headers => { 'X-Registry-Auth' => $auth_header },
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -492,6 +505,11 @@ see L</"Progress as it arrives">
 =item * C<read_timeout> - Seconds of silence after which the request gives up
 and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
 L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -608,6 +626,7 @@ sub get {
   # is no return value for `raw` to describe.
   return $self->client->get("/images/$name/get",
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     exists $opts{on_chunk} ? ( on_chunk => $opts{on_chunk} ) : ( raw => 1 ));
 }
 
@@ -682,6 +701,11 @@ arrives, instead of the whole thing being returned
 and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
 L<API::Docker::Role::HTTP/"Bounding a request that never ends">
 
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
@@ -711,6 +735,7 @@ sub get_all {
   # and `:` raw so an image reference survives intact.
   return $self->client->get('/images/get', params => { names => \@names },
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     exists $opts{on_chunk} ? ( on_chunk => $opts{on_chunk} ) : ( raw => 1 ));
 }
 
@@ -737,8 +762,10 @@ only be passed with the ArrayRef form:
     my $summary = $images->get_all([ 'alpine:3', 'registry:2' ],
         on_chunk => sub { print {$out} $_[0] });
 
-C<read_timeout> is accepted the same way, again only with the ArrayRef form;
-see L<API::Docker::Role::HTTP/"Bounding a request that never ends">.
+C<read_timeout> and C<connect_timeout> are accepted the same way, again only
+with the ArrayRef form; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends"> and
+L<API::Docker::Role::HTTP/"Bounding the connection itself">.
 
 The list form takes names and nothing else: a trailing option pair in it would
 be indistinguishable from two more image names. Options after the ArrayRef
@@ -763,6 +790,7 @@ sub load {
     content_type => 'application/x-tar',
     params       => \%params,
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -801,6 +829,11 @@ L</build>; see L</"Progress as it arrives">
 =item * C<read_timeout> - Seconds of silence after which the request gives up
 and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
 L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 

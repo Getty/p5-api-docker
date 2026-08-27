@@ -396,6 +396,7 @@ sub logs {
     params => \%params,
     defined $opts{tty} ? ( tty => $opts{tty} ) : (),
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     exists $opts{on_frame} ? ( on_frame => $opts{on_frame} ) : (),
   );
 }
@@ -459,6 +460,11 @@ the ArrayRef being collected and returned; see below
 =item * C<read_timeout> - Seconds of silence after which the request gives up
 and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
 L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -561,6 +567,7 @@ sub attach {
     params => \%params,
     defined $opts{tty} ? ( tty => $opts{tty} ) : (),
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     exists $opts{on_frame} ? ( on_frame => $opts{on_frame} ) : (),
   );
 }
@@ -796,6 +803,11 @@ does and does not guarantee
 and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
 L<API::Docker::Role::HTTP/"Bounding a request that never ends">
 
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
@@ -938,6 +950,7 @@ sub stats {
   my $result = $self->client->get("/containers/$id/stats",
     params => \%params,
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     exists $opts{on_event} ? ( on_event => $on_event )
       : $stream            ? ( ndjson   => 1 )
       : (),
@@ -1027,6 +1040,11 @@ and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
 L<API::Docker::Role::HTTP/"Bounding a request that never ends"> -- and
 L</"On Docker the stream does not end when the container does"> for a case it
 does B<not> cover
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 

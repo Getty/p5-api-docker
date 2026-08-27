@@ -142,7 +142,8 @@ Revision history for API-Docker
     in `read` (`0001-01-01T00:00:00Z`) and an empty `memory_stats`, and not
     `num_procs`: a reading taken from a genuinely running container on
     Docker carries `num_procs` of 0 as well, so it separates nothing. The
-    POD says to ask `inspect` whether the container is running instead. Also newly documented: `stream => 1` on a container
+    POD says to ask `inspect` whether the container is running instead.
+    Also newly documented: `stream => 1` on a container
     that is not running is an unbounded stream on Docker -- one zero-filled
     reading per second, forever, measured as 5 objects in 5s and 12 in 12s
     -- where Podman sends one error object and closes. Only `on_event` with
@@ -175,9 +176,9 @@ Revision history for API-Docker
     against a local `IO::Socket::SSL` server with generated self-signed
     certificates (t/tls.t), not against a live daemon: there is no `tcp://`
     engine, TLS or otherwise, on this machine to measure against.
-    `DOCKER_TLS_VERIFY`, which the `docker` CLI reads to turn TLS on from
-    the environment, is deliberately not consulted -- `tls` still defaults
-    to 0 regardless of what the environment exports.
+    `DOCKER_TLS_VERIFY` was deliberately left out of scope while this
+    landed, and is read as of a later entry in this same release: `tls`
+    defaults from it now rather than always being 0.
   - New `API::Docker::Role::Filters`, a `Moo::Role` consumed by all eight
     resource classes and applied at every one of the fourteen call sites
     that accept a `filters` option (`list` and `prune` on containers,
@@ -226,12 +227,15 @@ Revision history for API-Docker
     being handed back as its raw bytes. The guard used to be "starts with
     `{` or `[`", which is not the whole of JSON: `GET
     /plugins/privileges` for a plugin that demands no privileges answers
-    a bare `null` (a nil Go slice reaching the wire from
-    `computePrivileges`), and that arrived at the caller as the
-    four-character string `'null'` rather than `undef` -- indistinguishable
-    from a real string and, before `plugins->privileges` guarded against
-    it locally, exactly what would have been posted straight back to
-    `/plugins/pull` as a JSON string where the engine expects an array.
+    a bare `null`, a nil Go slice reaching the wire from
+    `computePrivileges` -- read from moby's source rather than measured,
+    because Podman serves no `/plugins` at all and no plugin that demands
+    nothing was to hand to ask a real daemon with. That arrived at the
+    caller as the four-character string `'null'` rather than `undef`,
+    indistinguishable from a real string and, before
+    `plugins->privileges` guarded against it locally, exactly what would
+    have been posted straight back to `/plugins/pull` as a JSON string
+    where the engine expects an array.
     Whether a body decodes is still decided by attempting `decode_json`
     and checking the eval's success, not its result, because
     `decode_json('null')` is a successful decode to `undef`; a plain-text
@@ -818,7 +822,21 @@ Revision history for API-Docker
     `SO_RCVTIMEO` bounds the underlying receives rather than the time since
     the last plaintext byte, so it is not an exact idle timer under TLS.
   - New `connect_timeout`, beside `read_timeout` and shaped the same way: a
-    client attribute and a per-request option, off by default.
+    client attribute and a per-request option, off by default, forwarded by
+    the same fourteen resource methods that forward `read_timeout` --
+    `images->build`, `->pull`, `->push`, `->get`, `->get_all`, `->load`,
+    `containers->logs`, `->attach`, `->stats`, `exec->start`,
+    `plugins->install`, `->upgrade`, `->push` and `system->events` -- and
+    documented in each of their option lists. Measured at the seam the value
+    has to cross, what `_build__socket` is handed as `IO::Socket`'s
+    `Timeout`: it arrives as the value passed rather than as undef. An
+    explicit `connect_timeout => 0` turns a client-wide default off for one
+    call, because the option is resolved with `exists` rather than for
+    truth, and every request reconnects, so a per-request bound is never a
+    stale one. The preflight requests two of those methods make first --
+    `attach`'s running check and `install`/`upgrade`'s privileges fetch
+    under `accept_privileges` -- carry the client attribute only, as they
+    already did for `read_timeout`.
     `IO::Socket`'s own `Timeout` was measured rather than assumed -- against
     a host dropping SYNs it gives up at 2.00s where the kernel takes over
     two minutes, and on a unix socket whose listener backlog is full it
@@ -831,6 +849,14 @@ Revision history for API-Docker
   - `cpanfile` lists `Errno`, `IO::Handle`, `Scalar::Util` and `Socket`,
     which `API::Docker::Role::HTTP` loads. Three of the four were missing
     before this round. All are core.
+  - `README.md`'s `tls` option still documented an unconditional default of
+    0 after this release moved that default to `$ENV{DOCKER_TLS_VERIFY}`.
+    Only the module POD had been brought along.
+  - `API::Docker::Secret` and `API::Docker::Config` document `CreatedAt` and
+    `UpdatedAt`, the only fields left without an `=attr` in the three entity
+    classes this release adds. The RFC3339 shape is taken from a captured
+    daemon response rather than assumed, since it is not the Unix epoch
+    integer `API::Docker::Container`'s `Created` carries.
 
 0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the

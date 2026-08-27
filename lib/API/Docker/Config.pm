@@ -83,7 +83,20 @@ token L</update> needs; L</version_index> reaches it directly.
 =cut
 
 has CreatedAt => (is => 'ro');
+
+=attr CreatedAt
+
+RFC3339 timestamp string of when the config was created.
+
+=cut
+
 has UpdatedAt => (is => 'ro');
+
+=attr UpdatedAt
+
+RFC3339 timestamp string of when the config was last updated.
+
+=cut
 
 sub decoded_data {
   my ($self) = @_;
