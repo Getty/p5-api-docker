@@ -1,0 +1,59 @@
+---
+claimed_at: 2026-08-27T06:35:46Z
+claimed_by: transport-worker-2
+class: standard
+completed: 2026-08-27T06:35:46Z
+created: 2026-08-27T05:04:44Z
+id: 33
+priority: medium
+started: 2026-08-27T05:18:53Z
+status: done
+tags:
+- transport
+- images
+title: _request cannot emit a repeated query parameter
+updated: 2026-08-27T06:35:46Z
+---
+
+_request's params encoder walks `sort keys %{$opts{params}}` and pushes exactly
+one `k=v` pair per key. A HashRef value is JSON-encoded; an ArrayRef value is
+not handled at all and stringifies to ARRAY(0x...). There is no way to ask for
+`names=a&names=b`.
+
+That shape is not optional for GET /images/get. Measured against the rootless
+Podman socket (5.4.2, API 1.41):
+
+  ?names=alpine%3A3&names=registry%3A2   -> 200, both images in manifest.json
+  ?names=alpine%3A3%2Cregistry%3A2       -> 500, {"message":"normalizing image:
+                                            normalizing name for compat API:
+                                            parsing reference
+                                            \"alpine:3,registry:2\": invalid
+                                            reference format"}
+  (no names at all)                      -> 400, {"message":"no images to
+                                            download"}
+
+Docker reads r.Form["names"], so a single comma-joined value is one literal
+image name there too. Repeated pairs are the only spelling either engine
+accepts.
+
+images->get_all (karr #20) therefore builds its query string by hand and hands
+it over as part of the path, with a private _names_query in
+API::Docker::API::Images that mirrors Role::HTTP::_uri_encode's rule (`/` and
+`:` left raw so an image reference survives). That is a workaround, not a
+design: the encoding now lives in two places and can drift.
+
+The fix: teach _request's params loop to expand an ArrayRef value into one
+pair per element. Then get_all becomes
+
+    $self->client->get('/images/get', params => { names => \@names }, raw => 1)
+
+and _names_query is deleted along with its comment block. t/images_tar.t's
+'get_all: names is a repeated query parameter' and 'get_all: the escaping keeps
+an image reference intact' subtests assert the wire form, not the mechanism, so
+they carry over unchanged.
+
+POST /commit's `changes` is the other multi-value parameter in the API, but it
+does not need this: measured on the same engine, one newline-joined value and
+two repeated pairs produce the same image, because the engine parses each value
+as a Dockerfile snippet and a snippet may span lines. images->commit sends the
+joined form.
