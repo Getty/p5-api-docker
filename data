@@ -1,0 +1,42 @@
+---
+class: standard
+completed: 2026-08-27T17:21:18Z
+created: 2026-08-27T15:44:17Z
+id: 51
+priority: low
+started: 2026-08-27T17:21:18Z
+status: done
+tags:
+- containers
+- podman
+title: 'kill on a paused container: Podman answers 204, Docker''s documented behaviour
+  is unverified'
+updated: 2026-08-27T17:21:18Z
+---
+
+MEASURED and documented. Closed.
+
+Docker 29.7.2 (API 1.55) vs rootless Podman 5.4.2 (API 1.41), 2026-08-27,
+kill?signal=SIGUSR1 against a paused container:
+
+                        Docker              Podman
+  status                204                 204
+  state right after     running             paused
+  Paused flag           false               true
+  handler ran?          yes, at once        no -- queued until unpause
+
+So both answer 204, but Docker UNPAUSES the container as a side effect the
+caller never asked for, and the process handles the signal normally. Podman
+leaves it paused and queues the signal.
+
+The ticket's own reasoning was half right: "a signal delivered to a paused
+process is queued rather than handled" holds on Podman and is refuted on
+Docker. The 204 hides a different surprise there -- an undocumented
+paused -> running transition. Measured consequence: a caller's following
+unpause then croaks 500 "Container <id> is not paused".
+
+Documented in the kill POD of API::Docker::API::Containers as the one place
+the two engines genuinely part, alongside both engines' 409 texts. No code
+change: the behaviour is the engine's, and neither answer is wrong.
+
+Landed in 2992997.
