@@ -1,6 +1,6 @@
 package API::Docker::API::System;
 # ABSTRACT: Docker Engine System API
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 use Moo;
 use Carp qw( croak );
 use namespace::clean;

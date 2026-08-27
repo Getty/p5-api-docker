@@ -1,6 +1,6 @@
 package API::Docker::Error::Stream;
 # ABSTRACT: Failure reported inside a Docker Engine progress stream
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 use Moo;
 # namespace::clean has to come BEFORE "use overload" here, not after it as
 # everywhere else in this distribution. It sweeps the symbols `overload`

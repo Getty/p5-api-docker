@@ -1,6 +1,6 @@
 package API::Docker::Image;
 # ABSTRACT: Docker image entity
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 use Moo;
 use namespace::clean;
 

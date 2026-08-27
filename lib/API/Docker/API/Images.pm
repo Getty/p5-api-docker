@@ -1,6 +1,6 @@
 package API::Docker::API::Images;
 # ABSTRACT: Docker Engine Images API
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 use Moo;
 use API::Docker::Image;
 use Carp qw( croak );
