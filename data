@@ -1,0 +1,36 @@
+---
+claimed_at: 2026-08-27T06:34:58Z
+claimed_by: images-worker
+class: standard
+completed: 2026-08-27T06:34:58Z
+created: 2026-08-27T04:23:49Z
+id: 20
+priority: medium
+started: 2026-08-27T04:48:40Z
+status: done
+tags:
+- images
+- coverage
+title: No image tar roundtrip - get, get_all and load are missing
+updated: 2026-08-27T06:34:58Z
+---
+
+Three endpoints, none exposed:
+
+  GET  /images/{name}/get  - export one image (plus its history) as a tar
+  GET  /images/get?names=  - export several in one tar
+  POST /images/load        - import such a tar back, quiet= toggles the
+                             progress stream
+
+This is the air-gapped path: build here, carry the tar over, load there.
+Right now the only way in or out of a daemon is a registry.
+
+Both GET variants return a raw tar stream rather than JSON, so this shares
+the raw-body requirement with the container archive ticket - worth doing
+that transport piece once and using it from both.
+
+POST /images/load takes the tarball as the request body and streams
+newline-delimited progress back, so the existing ndjson path applies to the
+response.
+
+2026-08-27 05:05 images->get, ->get_all and ->load added, all three measured against the rootless Podman socket (5.4.2, API 1.41). get/get_all use the transport's existing raw => 1 and return the tar bytes undecoded; a live export of alpine:3 came back md5-identical to curl's, 8705536 bytes. load sends the tar as raw_body with content_type application/x-tar and decodes the response through the existing ndjson path. quiet is a query parameter only, not a change of return shape -- Podman ignores it entirely (unset/0/1 identical). New fixtures t/fixtures/images_get.tar (a real one-layer export) and t/fixtures/images_load_stream.ndjson; new t/images_tar.t. Transport gap found and filed as #33: _request cannot emit a repeated query parameter, so get_all builds names=a&names=b into the path with a private _names_query mirroring _uri_encode. #34 covers the empty-body/undef wart the load POD documents. No Changes entry written -- lines handed to the orchestrator.
