@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-08-27T15:55:35Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-27T15:55:35Z
+created: 2026-08-27T05:04:02Z
+id: 31
+priority: low
+started: 2026-08-27T15:34:18Z
+status: done
+tags:
+- scope
+- coverage
+title: No API::Docker::Plugin entity class - plugins->list/inspect return raw
+updated: 2026-08-27T15:55:35Z
+---
+
+API::Docker::API::Plugins (karr #28) returns the decoded engine response from list and inspect -- an ArrayRef of HashRefs and a HashRef -- rather than entity objects. Every other resource class wraps those two methods via _wrap/_wrap_list into API::Docker::{Container,Image,Network,Volume}.
+
+The deviation is deliberate and documented in the class POD under 'What this class returns': the implementing agent's scope was Plugins.pm and its test file only, and adding lib/API/Docker/Plugin.pm was outside it while other agents were in the tree.
+
+Closing this means adding the entity class and switching list/inspect to wrap -- which is a public return-shape change on a method surface that shipped raw, so it wants doing before /plugins reaches CPAN rather than after. Useful convenience methods on the entity: enable, disable, remove, configure, upgrade, push, all of which already exist on the resource class and only need the name threading through.
+
+No consumer depends on the current shape yet; ../p5-dist-zilla-plugin-docker-api does not touch plugins.
