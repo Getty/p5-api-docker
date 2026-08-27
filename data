@@ -1,0 +1,56 @@
+---
+class: standard
+completed: 2026-08-27T16:09:48Z
+created: 2026-08-27T05:37:11Z
+id: 39
+priority: low
+started: 2026-08-27T16:09:48Z
+status: done
+tags:
+- api
+- ergonomics
+title: 'Filter NAMES are not checked client-side - decided out of scope for #24, revisit
+  only with evidence'
+updated: 2026-08-27T16:09:48Z
+---
+
+API::Docker::Role::Filters (karr #24) normalises the SHAPE of `filters` --
+wraps a bare value, stringifies numbers, translates JSON booleans, croaks on
+a ref or an empty value. It deliberately does NOT check filter NAMES.
+
+The decision and the evidence, so this is not re-litigated from scratch:
+
+A client-side name table would need one accepted set per endpoint, and the
+daemon already has them. Measured against rootless Podman 5.4.2 (API 1.41)
+on 2026-08-27, an unknown filter name is a hard 500, not a silent no-match:
+
+  GET /containers/json  {"bogusname":["x"]}  500 bogusname is an invalid filter
+  GET /images/json      {"danglin":["true"]} 500 invalid image filter "danglin":
+                                                 must be in the format
+                                                 "filter=value or filter!=value"
+  GET /volumes          {"bogusname":["x"]}  500 "bogusname" is an invalid volume filter
+  GET /networks         {"bogusname":["x"]}  500 invalid filter "bogusname"
+  GET /events           {"bogusname":["x"]}  500 failed to parse event filters:
+                                                 bogusname is an invalid filter
+
+and Docker validates GET /plugins the same way (acceptedPluginFilterTags =
+{enabled, capability}, checked by pluginFilters.Validate before List runs) --
+which is how the published reference's documented `enable` turns out to be a
+failed request rather than an empty list. Podman does not serve /plugins at
+all: every path in the family answers 404.
+
+So the loud case is already loud on both engines, and a client-side table
+buys nothing except a new failure mode: the first time it lags the daemon it
+refuses a filter the daemon would have accepted. That is strictly worse than
+what it prevents.
+
+What is genuinely silent, and what no name table would catch either:
+  {"label":["1"]}       200, empty list -- a well-formed filter matching nothing
+  {"reference":["nope"]} 200, empty list -- likewise
+  {"dangling":["yes"]}  500 non-boolean value ... strconv.ParseBool: parsing "yes"
+
+Reopen this only with evidence of an endpoint that accepts an unknown filter
+name silently AND where the client can know the accepted set without going
+stale. Documenting the accepted names per method in POD (already done for
+Plugins, Secrets, Configs, Containers, Images, Networks, Volumes as part of
+#24) is the cheaper half of this and is finished.
