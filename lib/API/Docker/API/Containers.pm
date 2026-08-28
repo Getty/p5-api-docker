@@ -144,6 +144,14 @@ this model was generated from -- is not dropped: it stays under the name it
 arrived with in L<API::Docker::Role::Type/unknown_fields> and goes back out
 unchanged.
 
+A field whose B<value> disagrees with the swagger is kept the same way and
+costs only itself. An engine answering C<State> with the bare status string
+rather than the object the spec declares leaves C<< ->state >> C<undef> while
+every other field of the inspect reads normally; the raw value is in
+C<unknown_fields> under C<State>, and
+L<API::Docker::Role::Type/rejected_fields> names it, so "not sent" and "sent
+and not usable" are two different answers.
+
 =cut
 
 has client => (
@@ -162,12 +170,17 @@ Reference to L<API::Docker> client. Weak reference to avoid circular dependencie
 # `list` and `inspect` are two definitions in the swagger and therefore two
 # generated classes. Both carry the same convenience methods, composed by
 # API::Docker::Role::Entity::Container -- see "The two container shapes".
+#
+# from_data, not new: this is a daemon response, and the two entry points of
+# API::Docker::Role::Type read it differently. from_data takes the swagger's
+# wire names and nothing else, so a key it has not heard of keeps its own
+# spelling instead of being read as the Perl name of one it has, and a value
+# that disagrees with the swagger costs its own field rather than the whole
+# response. `client` is ours rather than the engine's, so it goes beside the
+# data instead of into it.
 sub _wrap {
   my ($self, $class, $data) = @_;
-  return $class->new(
-    client => $self->client,
-    %$data,
-  );
+  return $class->from_data($data, client => $self->client);
 }
 
 sub _wrap_list {
@@ -630,21 +643,15 @@ frames rather than the single one the buffered path builds.
 sub _assert_container_running {
   my ($self, $id) = @_;
 
-  # A response the model cannot inflate is one more shape the check does not
-  # recognise, and it is refused a step earlier than the others: the generated
-  # classes type their fields from the swagger, so a State that is not the
-  # object ContainerInspectResponse declares -- the bare status string of the
-  # list shape, say -- croaks out of the constructor with an
-  # Error::TypeTiny::Assertion before there is anything to read. Failing open
-  # on that is the same rule as failing open on a State without Running.
-  # Anything else, the daemon's own 404 included, is the caller's error and
-  # goes up.
-  local $@;
-  my $inspected = eval { $self->inspect($id) };
-  if (my $err = $@) {
-    return if blessed($err) && $err->isa('Error::TypeTiny');
-    die $err;
-  }
+  # A State the model could not use is one more shape the check does not
+  # recognise, and it arrives as one: the generated classes type their fields
+  # from the swagger, and a State that is not the object
+  # ContainerInspectResponse declares -- the bare status string of the list
+  # shape, say -- leaves ->state unset and keeps the raw value in
+  # unknown_fields rather than taking the response down with it. So there is
+  # nothing to catch here; an error that does reach this line, the daemon's
+  # own 404 included, is the caller's and goes up.
+  my $inspected = $self->inspect($id);
 
   # An API::Docker::Type::ContainerState, or undef where the daemon sent no
   # State at all -- which is the "does not recognise" case above, not a stopped

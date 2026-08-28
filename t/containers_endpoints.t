@@ -583,6 +583,24 @@ subtest 'attach: the check reads State.Running, and fails open when it cannot' =
     my $out = do { local $@; eval { $t->containers->attach('deadbeef') } };
     is ref $out, 'ARRAY', "$name: the check fails open and the attach proceeds";
   }
+
+  # The third case above used to be carried by an eval inside
+  # _assert_container_running, which swallowed the Error::TypeTiny a typed
+  # class threw on a State the swagger does not allow. The model keeps such a
+  # value now instead of croaking (karr k83), so the inspect itself is what
+  # holds the case up -- the same claim, resting on the model rather than on
+  # the workaround.
+  my $t = test_docker('GET /containers/deadbeef/json' => { Id => 'deadbeef',
+    Name => '/keep', State => 'exited' });
+  my $inspected = $t->containers->inspect('deadbeef');
+  isa_ok $inspected, 'API::Docker::Type::ContainerInspectResponse';
+  is $inspected->name, '/keep',
+    'a State the swagger does not allow no longer costs the whole inspect';
+  is $inspected->state, undef, 'the field it could not use is unset';
+  is_deeply $inspected->rejected_fields, { State => 'state' },
+    'and is reported as sent-but-refused rather than as absent';
+  is $inspected->TO_JSON->{State}, 'exited',
+    'while the raw value still reaches TO_JSON unchanged';
 };
 
 subtest 'attach: an empty stream is an empty ArrayRef' => sub {

@@ -25,6 +25,11 @@ use API::Docker::Type::VolumeListResponse;
 # reads the JSON straight off disk either way -- but the point under test is
 # the shape of these specific captured files, not of whatever a live daemon
 # on this machine happens to hold right now.
+#
+# Inflated through from_data, which is the entry point a daemon response goes
+# through: it reads the swagger's wire names and nothing else, so a fixture
+# key the model has not heard of keeps its own spelling rather than being
+# read as the Perl name of one it has (karr k85).
 plan skip_all => 'asserts captured fixture content, not live daemon state'
   if is_live();
 
@@ -62,7 +67,7 @@ for my $case (@CASES) {
 
   for my $i (0 .. $#items) {
     my $item = $items[$i];
-    my $obj  = $class->new(%$item);
+    my $obj  = $class->from_data($item);
     my $out  = $obj->TO_JSON;
     my @missing = grep { !exists $out->{$_} } keys %$item;
     is_deeply \@missing, [],
@@ -83,7 +88,7 @@ subtest 'the VirtualSize regression this ticket exists to pin down' => sub {
     or return;
 
   for my $item (@$data) {
-    my $obj = API::Docker::Type::ImageSummary->new(%$item);
+    my $obj = API::Docker::Type::ImageSummary->from_data($item);
     ok exists $obj->unknown_fields->{VirtualSize},
       "$item->{Id}: VirtualSize is not in the model, so it is filed as unknown "
       . 'rather than silently discarded';

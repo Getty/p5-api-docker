@@ -2,10 +2,16 @@ use strict;
 use warnings;
 use Test::More;
 use JSON::MaybeXS;
+use API::Docker::Role::Entity::Container;
+use API::Docker::Type::ContainerConfig;
+use API::Docker::Type::ContainerInspectResponse;
+use API::Docker::Type::ContainerSummary;
 use API::Docker::Type::HostConfig;
 use API::Docker::Type::Mount;
+use API::Docker::Type::Network;
 use API::Docker::Type::Port;
 use API::Docker::Type::Resources;
+use API::Docker::Type::VolumeCreateOptions;
 
 # The generated type model: API::Docker::Type's DSL, the attribute registry
 # it writes, and serialisation in both directions.
@@ -67,6 +73,32 @@ subtest 'caller-data keys survive in both directions' => sub {
   ok(!exists $out->{PortBindings}{port_bindings}
        && !exists $out->{PortBindings}{'80_tcp'},
     'nothing invented a snake_case spelling of a caller key');
+
+  # The invariant names ten fields and the block above exercises six. These
+  # are the other four: a generator that misread one of them as structure
+  # rather than as caller data would show up nowhere else.
+  my $cc = API::Docker::Type::ContainerConfig->from_data({
+    ExposedPorts => { '80/tcp' => {}, '53/udp' => {} },
+    Volumes      => { '/var/lib/Some-App' => {} },
+  });
+  is_deeply([ sort keys %{ $cc->TO_JSON->{ExposedPorts} } ], [ '53/udp', '80/tcp' ],
+    'an exposed port keeps its <port>/<protocol> form');
+  is_deeply([ sort keys %{ $cc->TO_JSON->{Volumes} } ], ['/var/lib/Some-App'],
+    'a volume path is not touched');
+
+  my $vco = API::Docker::Type::VolumeCreateOptions->from_data({
+    DriverOpts => { 'com.example.Some-Opt' => 'x', type => 'nfs' },
+  });
+  is_deeply([ sort keys %{ $vco->TO_JSON->{DriverOpts} } ],
+    [ 'com.example.Some-Opt', 'type' ],
+    'a volume driver option name is not touched, not even one that spells '
+      . 'a Perl attribute name of some other class');
+
+  my $net = API::Docker::Type::Network->from_data({
+    Options => { 'com.docker.network.bridge.name' => 'br0' },
+  });
+  is_deeply([ sort keys %{ $net->TO_JSON->{Options} } ],
+    ['com.docker.network.bridge.name'], 'a network option name is not touched');
 };
 
 # ---------------------------------------------------------------------------
@@ -270,6 +302,237 @@ subtest 'the registry is what the drift checker reads' => sub {
   is_deeply(API::Docker::Type::Mount->docker_attributes->{type}{enum},
     [qw( bind cluster image npipe tmpfs volume )],
     'and an enumeration, for the POD to state');
+};
+
+# ---------------------------------------------------------------------------
+# The two entry points have different jobs (karr k85)
+# ---------------------------------------------------------------------------
+
+subtest 'from_data reads a response, so a key it does not know stays a key' => sub {
+  # A decoded daemon response is a map of WIRE names, and the swagger spells
+  # 114 of them with a lowercase first letter -- BuildInfo.id among them. So
+  # a lowercase key off an engine is ordinary, not exotic, and reading it as
+  # the Perl spelling of a field we happen to know renames the engine's data.
+  my $both = API::Docker::Type::ContainerInspectResponse->from_data({
+    Id => 'known', id => 'lowercase-new-field' });
+  is($both->id, 'known', 'the wire name Id is what fills the id attribute');
+  is_deeply($both->unknown_fields, { id => 'lowercase-new-field' },
+    'and a key that is only a Perl spelling is a field we have not heard of');
+  is_deeply($both->TO_JSON, { Id => 'known', id => 'lowercase-new-field' },
+    'both go back out under the name they arrived with');
+
+  my $only = API::Docker::Type::ContainerInspectResponse->from_data({
+    id => 'lowercase-new-field' });
+  is($only->id, undef, 'an unknown key fills no attribute');
+  is_deeply($only->TO_JSON, { id => 'lowercase-new-field' },
+    'and is not rewritten to Id on the way out');
+
+  # The same one level down: the coercion that inflates a nested hashref is
+  # on the response path too when from_data is what started it.
+  my $nested = API::Docker::Type::ContainerInspectResponse->from_data({
+    State => { Status => 'running', status => 'newer-engine' } });
+  is($nested->state->status, 'running', 'a nested wire name inflates');
+  is_deeply($nested->state->unknown_fields, { status => 'newer-engine' },
+    'and a nested key we do not know is kept, not folded into the one we do');
+
+  # The entity hook has to work on this path as well: without it `client`
+  # would be filed as a daemon field and TO_JSON would offer the client
+  # object to the engine.
+  my $client = bless {}, 'API::Docker';
+  my $summary = API::Docker::Type::ContainerSummary->from_data({
+    client => $client, Id => 'abc' });
+  is($summary->client, $client, 'an entity attribute reaches the object');
+  is_deeply($summary->unknown_fields, {},
+    'and is not mistaken for something the daemon sent');
+};
+
+subtest 'new builds a request, so a Perl name still works' => sub {
+  my $hc = API::Docker::Type::HostConfig->new(privileged => 1, Binds => ['/a:/b']);
+  is_deeply($hc->TO_JSON, { Privileged => JSON->true, Binds => ['/a:/b'] },
+    'either spelling reaches the attribute when the caller is the author');
+
+  # A nested hashref a caller wrote is caller data too, not a response.
+  my $nested = API::Docker::Type::HostConfig->new(
+    restart_policy => { name => 'always' });
+  is_deeply($nested->TO_JSON, { RestartPolicy => { Name => 'always' } },
+    'and so is a nested one');
+};
+
+subtest 'an ambiguous constructor is refused, not resolved by hash order' => sub {
+  # Both keys land on the same attribute and only hash order decided which
+  # one won -- measured at 9 zeroes and 11 ones over 20 constructions.
+  like(
+    do { local $@; eval {
+      API::Docker::Type::HostConfig->new(privileged => 0, Privileged => 1) }; $@ },
+    qr/\Qgot 'Privileged' and 'privileged' for the same field 'privileged'\E/,
+    'two spellings of one field croak instead of picking one');
+  like(
+    do { local $@; eval {
+      API::Docker::Type::HostConfig->new(privileged => 1, Privileged => 1) }; $@ },
+    qr/\Qfor the same field 'privileged'\E/,
+    'and they croak when the two values agree -- accidentally equal is not '
+      . 'unambiguous, and the caller should see the mistake, not the luck');
+
+  ok(API::Docker::Type::HostConfig->new(privileged => 1),
+    'one spelling on its own is still fine');
+  ok(API::Docker::Type::HostConfig->new(Privileged => 1), 'either one');
+};
+
+subtest 'BUILDARGS is idempotent, unknown_fields included' => sub {
+  # HostConfig resolves an allOf, so this role is composed into it AND into
+  # Resources and the modifier runs twice over the same arguments. The
+  # second pass must not refile the first pass's work as unknown.
+  my $hc = API::Docker::Type::HostConfig->new(
+    unknown_fields => { AlreadyThere => 'kept' },
+    privileged     => 1,
+    Binds          => ['/a:/b'],
+    CpuShares      => 512,
+    SomethingNew   => 'x',
+  );
+  is_deeply($hc->unknown_fields, { AlreadyThere => 'kept', SomethingNew => 'x' },
+    'a populated unknown_fields survives the second pass and is added to');
+  is($hc->privileged, 1, 'a Perl name resolved on the first pass stays resolved');
+  is($hc->cpu_shares, 512, 'and so does an inherited wire name');
+  is_deeply($hc->TO_JSON, {
+    AlreadyThere => 'kept', SomethingNew => 'x',
+    Privileged   => JSON->true, Binds => ['/a:/b'], CpuShares => 512,
+  }, 'and all of it goes out together');
+
+  my $round = API::Docker::Type::HostConfig->from_data($hc->TO_JSON);
+  is($json->encode($round->TO_JSON), $json->encode($hc->TO_JSON),
+    'the response path is idempotent over the same two passes');
+};
+
+# ---------------------------------------------------------------------------
+# A value that disagrees with the swagger costs its own field, not the
+# response it arrived in -- on the response path only (karr k83, option b)
+# ---------------------------------------------------------------------------
+
+subtest 'from_data keeps a value it cannot use instead of croaking' => sub {
+  # The swagger declares ContainerInspectResponse.State as an object. An
+  # engine that answers with the bare status string of the list shape used to
+  # take the whole inspect down with an Error::TypeTiny; now it costs that
+  # one field. We are not the authority on what an engine answers -- Podman
+  # announces 1.44 and Docker 1.55 on this machine, the model is v1.51.
+  my $c = API::Docker::Type::ContainerInspectResponse->from_data({
+    Id => 'x', Name => '/keep', State => 'exited' });
+
+  is($c->id, 'x', 'every other field of the response is still there');
+  is($c->name, '/keep', 'including the ones after the one that did not fit');
+  is($c->state, undef, 'the field that did not fit is not set');
+  is_deeply($c->rejected_fields, { State => 'state' },
+    'the wire name is recorded, with the attribute it would have filled');
+  is_deeply($c->unknown_fields, { State => 'exited' },
+    'and the raw value is kept under that wire name');
+  is_deeply($c->TO_JSON, { Id => 'x', Name => '/keep', State => 'exited' },
+    'so TO_JSON writes it back byte for byte -- nothing is lost');
+
+  # The precedence question k85 defect 4 asks does not arise out of a
+  # response: a value lands in unknown_fields under a KNOWN wire name only
+  # when its attribute was left unset, and TO_JSON omits an unset attribute,
+  # so the two never meet on this path.
+  my $round = API::Docker::Type::ContainerInspectResponse->from_data($c->TO_JSON);
+  is($json->encode($round->TO_JSON), $json->encode($c->TO_JSON),
+    'a rejected value survives a second pass through the model unchanged');
+  is_deeply($round->rejected_fields, { State => 'state' },
+    'and is still reported as rejected rather than as merely unknown');
+
+  # Absent and rejected must not be the same observation.
+  my $absent = API::Docker::Type::ContainerInspectResponse->from_data({ Id => 'x' });
+  is($absent->state, undef, 'an absent field leaves the accessor undef too');
+  is_deeply($absent->rejected_fields, {},
+    'but nothing is recorded as rejected, which is how the two are told apart');
+  ok(!exists $absent->unknown_fields->{State},
+    'and nothing is kept under its name');
+
+  # Anything the coercion itself refuses is the same case, not a special one.
+  my $bool = API::Docker::Type::Mount->from_data({ Target => '/x', ReadOnly => [1] });
+  is($bool->read_only, undef, 'a Bool that can mean neither is not set');
+  is_deeply($bool->rejected_fields, { ReadOnly => 'read_only' },
+    'it is reported as rejected');
+  is_deeply($bool->TO_JSON, { Target => '/x', ReadOnly => [1] },
+    'and its value still reaches the daemon as it arrived');
+
+  # One level down, through the coercion that inflates a nested object.
+  my $nested = API::Docker::Type::HostConfig->from_data({
+    RestartPolicy => { Name => 'always', MaximumRetryCount => 'many' } });
+  is($nested->restart_policy->name, 'always', 'the nested object still inflates');
+  is($nested->restart_policy->maximum_retry_count, undef,
+    'and only the field inside it that did not fit is unset');
+  is_deeply($nested->TO_JSON,
+    { RestartPolicy => { Name => 'always', MaximumRetryCount => 'many' } },
+    'the nested raw value goes back out too');
+};
+
+subtest 'new is strict, and stays strict' => sub {
+  # The leniency belongs to the path that inflates an engine response. A
+  # caller who writes a value the swagger does not allow has made a typo, and
+  # a typo in a request is worth dying on.
+  like(
+    do { local $@; eval {
+      API::Docker::Type::ContainerInspectResponse->new(State => 'exited') }; $@ },
+    qr/did not pass type constraint|State/,
+    'a value that does not fit croaks out of new');
+  like(
+    do { local $@; eval {
+      API::Docker::Type::HostConfig->new(
+        restart_policy => { Name => 'always', MaximumRetryCount => 'many' }) }; $@ },
+    qr/did not pass type constraint|MaximumRetryCount|maximum_retry_count/,
+    'and so does one inside a nested hashref the caller wrote');
+  like(
+    do { local $@; eval { API::Docker::Type::Mount->new(read_only => [1]) }; $@ },
+    qr/Bool wants a scalar/,
+    'a Bool that can mean neither still croaks rather than being guessed at');
+
+  my $ok = API::Docker::Type::ContainerInspectResponse->new(Id => 'x');
+  is_deeply($ok->rejected_fields, {},
+    'an object a caller built never has anything in rejected_fields');
+
+  # The leniency hangs on the entry point, not on the flag that tells a
+  # nested coercion which entry point it is under. Were it the flag, a `new`
+  # reached from inside a response inflation would go soft with it.
+  like(
+    do { local $@;
+         local $API::Docker::Role::Type::RESPONSE = 1;
+         eval { API::Docker::Type::ContainerInspectResponse->new(State => 'exited') };
+         $@ },
+    qr/did not pass type constraint|State/,
+    'new croaks even while a response is being inflated around it');
+};
+
+subtest 'the DSL refuses two fields on one wire name' => sub {
+  # _docker_wire_index is a map from wire name to Perl name, so a second
+  # field claiming a wire name would make the first unreachable on
+  # inflation while TO_JSON wrote both to the one key. Nothing in the 201
+  # generated classes does this; the generator could emit it tomorrow.
+  my $err = do { local $@; eval q{
+    package API::Docker::Type::TypeTestDuplicateWire;
+    use API::Docker::Type;
+    docker cpu_shares => Int, wire => 'CPUShares';
+    docker shares     => Int, wire => 'CPUShares';
+    1;
+  }; $@ };
+  like($err, qr/\Qwire name 'CPUShares'\E/,
+    'a duplicate wire name is refused where a duplicate Perl name already is');
+  like($err, qr/cpu_shares/, 'and the message names the field that has it');
+
+  my $ok = do { local $@; eval q{
+    package API::Docker::Type::TypeTestDistinctWire;
+    use API::Docker::Type;
+    docker cpu_shares => Int, wire => 'CPUShares';
+    docker shares     => Int;
+    1;
+  }; $@ };
+  is($ok, '', 'two fields with distinct wire names are still fine');
+
+  my $dup = do { local $@; eval q{
+    package API::Docker::Type::TypeTestDuplicatePerl;
+    use API::Docker::Type;
+    docker shares => Int;
+    docker shares => Int, wire => 'Other';
+    1;
+  }; $@ };
+  like($dup, qr/declared twice/, 'and the Perl-name guard is untouched');
 };
 
 done_testing;

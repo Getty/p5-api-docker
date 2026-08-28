@@ -73,6 +73,12 @@ spec's spelling -- C<IP>, C<UTSMode>, C<KernelMemoryTCP>, C<DeviceIDs>,
 C<IOMaximumIOps>, C<os.features> -- the declaration carries an explicit
 C<< wire => '...' >> and the Perl name is chosen by hand.
 
+A wire name belongs to one field. C<docker> refuses a declaration asking for
+a name an earlier field in the same class already has, the way it refuses a
+duplicate Perl name: both halves of the pair have to be unique, or inflation
+would reach one of the two fields and C<TO_JSON> would write both to that one
+key.
+
 =head2 What C<since> can and cannot say
 
 C<spec/> holds v1.41, v1.44 and v1.51, which is what the C<--from>/C<--to>
@@ -114,7 +120,10 @@ the single most damaging mistake this model could make.
 Anything arriving under a name the registry does not know is kept verbatim
 in L<API::Docker::Role::Type/unknown_fields> and written back out unchanged.
 A caller whose engine is newer than the swagger we generated from still
-reaches the daemon. See that role for the reasoning.
+reaches the daemon, and so does a field an engine sends that the swagger
+does not describe. Which names count as known depends on the entry point --
+C<from_data> reads an engine response and takes wire names only, C<new>
+builds a request and takes either spelling; see that role for the reasoning.
 
 =head2 C<allOf> becomes inheritance
 
@@ -204,7 +213,7 @@ my %SCALAR_TYPE = (
 # instead -- the generator has to pick another Perl name and say so with an
 # explicit `wire`.
 my %RESERVED = map { ($_ => 1) } qw(
-  new BUILDARGS unknown_fields from_data from_json TO_JSON to_json
+  new BUILDARGS unknown_fields rejected_fields from_data from_json TO_JSON to_json
   docker_attributes docker_attribute_order docker docker_extends
 );
 
@@ -338,12 +347,16 @@ sub _normalize_bool {
   return $value ? 1 : 0;
 }
 
-# A hashref handed to an object-typed field is inflated through from_data, so
-# ->new, ->from_data and a nested literal all behave the same way. The class
-# is loaded on first use rather than at declaration time: the registry is the
-# only place its name appears, and loading it while the declaring class is
-# still compiling would close a cycle the moment two definitions reference
-# each other.
+# A hashref handed to an object-typed field is inflated the way the entry
+# point that started the construction reads keys: through from_data while an
+# engine response is being inflated, through new otherwise. So a nested
+# literal in a request a caller assembled takes both spellings, and a nested
+# object in a daemon response resolves wire names only -- the same
+# distinction the two entry points draw at the top level, carried one level
+# down. The class is loaded on first use rather than at declaration time: the
+# registry is the only place its name appears, and loading it while the
+# declaring class is still compiling would close a cycle the moment two
+# definitions reference each other.
 sub _coerce_for {
   my ($d) = @_;
   my $kind = $d->{kind};
@@ -355,7 +368,9 @@ sub _coerce_for {
       my ($value) = @_;
       return $value unless ref $value eq 'HASH';
       $loaded ||= use_module($class);
-      return $class->from_data($value);
+      return $API::Docker::Role::Type::RESPONSE
+        ? $class->from_data($value)
+        : $class->new(%$value);
     };
   }
   my $inner = $kind eq 'array' || $kind eq 'hash' ? _coerce_for($d->{inner}) : undef;
@@ -405,6 +420,16 @@ sub _docker {
     if $REGISTRY{$target} && $REGISTRY{$target}{$name};
 
   my $wire     = delete $opt{wire} // _wire_from_perl($name);
+  # The Perl-name guard above has a twin: _docker_wire_index maps a wire name
+  # to one Perl name, so a second field claiming a wire name would make the
+  # first unreachable on inflation while TO_JSON wrote both to that one key.
+  # None of the 201 generated classes does this; the generator could emit it
+  # the day a hand-picked `wire` collides with a derived one (karr k85).
+  if (my ($taken) = sort grep { $REGISTRY{$target}{$_}{wire} eq $wire }
+                      keys %{ $REGISTRY{$target} || {} }) {
+    croak __PACKAGE__ . ": '$name' in $target asks for the wire name "
+      . "'$wire', which '$taken' already has";
+  }
   my $since    = delete $opt{since};
   my $enum     = delete $opt{enum};
   my $required = delete $opt{required} ? 1 : 0;
@@ -412,6 +437,8 @@ sub _docker {
     . join(', ', sort keys %opt) if %opt;
 
   my $descriptor = _parse_type($type_spec, "$target\::$name");
+  my $isa    = _isa_for($descriptor);
+  my $coerce = _coerce_for($descriptor);
   $REGISTRY{$target}{$name} = {
     name     => $name,
     wire     => $wire,
@@ -419,6 +446,11 @@ sub _docker {
     since    => $since,
     enum     => $enum,
     required => $required,
+    # The same two the Moo attribute below is given, kept so the response
+    # path can ask whether a value fits before handing it to the constructor
+    # rather than finding out by being croaked at (karr k83).
+    isa      => $isa ? Maybe[$isa] : undef,
+    coerce   => $coerce,
   };
   {
     no strict 'refs';
@@ -426,13 +458,12 @@ sub _docker {
   }
   API::Docker::Role::Type::_invalidate_docker_cache($target);
 
-  my $isa    = _isa_for($descriptor);
-  my $coerce = _coerce_for($descriptor);
-  my $has    = $target->can('has');
+  my $has = $target->can('has');
+  my $info = $REGISTRY{$target}{$name};
   $has->($name,
     is => 'rw',
-    ($isa    ? (isa    => Maybe[$isa]) : ()),
-    ($coerce ? (coerce => $coerce)     : ()),
+    ($info->{isa}    ? (isa    => $info->{isa})    : ()),
+    ($info->{coerce} ? (coerce => $info->{coerce}) : ()),
   );
   return;
 }

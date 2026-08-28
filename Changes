@@ -2,6 +2,37 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - A daemon value that disagrees with the swagger costs its own field rather
+    than the whole response. `from_data` leaves the typed attribute unset,
+    keeps the raw value in `unknown_fields` under its wire name and names it
+    in the new `rejected_fields` attribute, so `TO_JSON` writes it back
+    unchanged and a caller can tell "the engine did not send this" from "the
+    engine sent it and the model could not use it". An inspect response
+    whose `State` is the bare status string now inflates, with every other
+    field of it readable. `new` is unchanged and still croaks: there
+    the value came from the caller and is a typo worth stopping on, not an
+    engine being itself. `containers->list` and `containers->inspect` build
+    through `from_data`, which is what carries this and the wire-name rule
+    below out to the entity objects.
+  - `from_data` and `new` no longer read their keys the same way, because a
+    response and a request are not the same data. `from_data` inflates what
+    an engine sent and reads the swagger's wire names only, so a key it does
+    not know stays in `unknown_fields` under the name it arrived with:
+    `ContainerInspectResponse->from_data({ id => 'x' })` used to read `id`
+    as the Perl spelling of the known field `Id` and hand the value back
+    renamed, and now leaves it alone -- 114 fields have a wire name starting
+    lowercase, so a lowercase key off an engine is ordinary. `new` builds a
+    request out of what a caller wrote and still takes either spelling, and
+    a nested hashref follows whichever of the two started the construction.
+    `new` now also refuses two keys that resolve to one attribute --
+    `privileged` and `Privileged` together, which hash order used to decide
+    -- and refuses them when the two values agree as well.
+  - `docker` refuses a field asking for a wire name an earlier field of the
+    same class already has, the way it already refused a duplicate Perl
+    name. Two fields on one wire name would leave one of them unreachable on
+    inflation while `TO_JSON` wrote both to that key. None of the 201
+    generated classes does it; the generator could emit it the day a
+    hand-picked `wire` meets a derived one.
   - New `t/type_fixture_passthrough.t`: every fixture under `t/fixtures/*.json`
     is fed through the generated class its endpoint returns, and `TO_JSON`
     must carry every key the daemon sent. Pins the case that motivated it --
@@ -31,12 +62,12 @@ Revision history for API-Docker
     longer dropped either -- it survives under the name it arrived with in
     `unknown_fields` and goes back out unchanged.
   - `containers->attach`'s pre-flight running check still fails open on a
-    state it cannot read, and now on one more case. A typed class rejects a
-    value that disagrees with the swagger, so an inspect response whose
-    `State` is a bare status string rather than the declared object croaks
-    out of the constructor before the check sees it; that is treated as one
-    more unreadable shape and the attach proceeds. Every other error, the
-    daemon's own 404 included, still reaches the caller.
+    state it cannot read, and no longer needs an `eval` to manage it: an
+    inspect whose `State` is a bare status string rather than the declared
+    object now leaves `->state` unset instead of croaking out of the
+    constructor, so the check sees one more unreadable shape rather than an
+    exception. Every error that does reach it, the daemon's own 404
+    included, still goes to the caller.
   - The type model is complete: 201 classes under `API::Docker::Type::*`,
     one per definition and one per inline schema of `spec/v1.51.yaml`, all
     of them written by `maint/spec-to-type.pl`.
