@@ -1,0 +1,34 @@
+---
+claimed_at: 2026-08-28T14:28:47Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:28:47Z
+created: 2026-08-28T11:25:12Z
+id: 87
+priority: low
+started: 2026-08-28T11:31:08Z
+status: done
+tags:
+- cleanup
+title: Role::Type imports blessed and never uses it
+updated: 2026-08-28T14:28:47Z
+---
+
+Noticed while doing k82, deliberately left alone because that ticket scoped
+itself to one line and three agents were in the tree at the time.
+
+lib/API/Docker/Role/Type.pm line 7:
+
+  use Scalar::Util qw( blessed );
+
+blessed is never called in the role. The only other occurrence of the word
+is `convert_blessed => 1`, which is a hash key, not the function.
+
+Since k82 the import no longer leaks onto the 201 generated classes, so
+this costs nothing at runtime -- it is a dead import that tells the next
+reader the role does something with references that it does not.
+
+Check before removing whether anything reaches it through the role by
+composition rather than by a direct call.
+
+Done in 0978563, one deletion. The verification was the job and the agent did it by all three routes: no direct call and no fully-qualified one, the role is applied at exactly one site so the 201 generated classes are the whole consumer set and none answered ->blessed before or after, and every indirect dispatch in the role goes through a registry attribute name or a literal. Measured in a clean clone of HEAD rather than the shared tree, because k84 had staged deletions in the index at the time. No Changes entry, deliberately: since k82 the name was not exported to any class, so nothing a caller can observe moved.
