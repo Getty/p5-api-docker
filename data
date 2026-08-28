@@ -1,0 +1,46 @@
+---
+claimed_at: 2026-08-28T14:29:03Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:29:03Z
+created: 2026-08-28T11:39:56Z
+id: 90
+priority: medium
+started: 2026-08-28T11:40:43Z
+status: done
+tags:
+- tests
+title: Half of type_model.t's leak assertion went vacuous when k87 landed
+updated: 2026-08-28T14:29:03Z
+---
+
+Caused by k87 (0978563) and spotted by the agent that caused it.
+
+t/type_model.t line 75:
+
+  for my $leak (qw( croak blessed )) {
+    my @found = grep { $_->can($leak) } @classes;
+    is_deeply \@found, [], "no generated class answers ->$leak";
+  }
+
+The comment above it says: "Drop the namespace::clean line from
+API::Docker::Role::Type and this fails 201 times (karr k82)." That is still
+true of the `croak` half. It is no longer true of the `blessed` half: k87
+removed the blessed import from Role::Type, so that name cannot leak from
+there whatever the namespace::clean line does. The assertion still passes,
+and it now proves nothing.
+
+This is the repo's own rule 7 -- a test that cannot fail when the logic
+changes is wrong -- landing on a test written to enforce rule 7.
+
+The cheap fix is to drop `blessed` from the list and say why. The better one
+is to stop blacklisting names at all and assert the positive: a generated
+class's method surface is its registry attributes plus the documented handful
+from the role, and nothing else. That version cannot go vacuous, and it would
+have caught both croak and blessed without anyone naming them -- but check
+what it costs on 201 classes before committing to it.
+
+Whichever is chosen, mutation-check it: remove the namespace::clean line
+again and confirm the test fails.
+
+Done in 17b5365, and the agent took the harder option: the two-name blacklist is gone, replaced by a positive roster. It measured first -- across all 201 classes the non-attribute symbols are the same 33 names with no per-class variation -- so the roster is one literal list grouped by origin, asserted in BOTH directions, so it fails on a name that appears and on one that disappears. Cost is under a second. For the DSL package it used origin instead of a name list (B::svref_2object -> STASH -> NAME), because there the invariant really is 'nothing foreign lives here', which survives a rename. Three mutation probes, run in a throwaway git archive tree so k80's dirty working copy could not leak in. The third is the one that justifies the whole rewrite: an import placed AFTER the namespace::clean line, the line left in place -- the old blacklist passed, the roster names the leak. It caught something nobody had thought of.
