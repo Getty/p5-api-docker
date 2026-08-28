@@ -1,0 +1,69 @@
+---
+claimed_at: 2026-08-28T14:29:13Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:29:13Z
+created: 2026-08-28T11:49:31Z
+id: 92
+priority: high
+started: 2026-08-28T11:50:37Z
+status: done
+tags:
+- cpan
+- compat
+title: The seven removed entity classes must ship as legacy stubs, not vanish
+updated: 2026-08-28T14:29:13Z
+---
+
+MAINTAINER INSTRUCTION 2026-08-28, after k84 deleted the hand-written entity
+classes.
+
+A module that disappears from a distribution does not disappear from the
+disks it was installed on. The old file stays behind and keeps loading --
+which is k91's finding pointed the other way round: there, a deleted module
+still loaded from ~/perl5 during testing; here, it would still load for a
+user who upgrades. Shipping a stub OVERWRITES the old file. Deleting it
+leaves it.
+
+Measured, and the two obligations differ in reach:
+
+  Actually released to CPAN in 0.003 (API-Docker-0.003/lib/API/Docker/):
+    Container.pm  Image.pm  Network.pm  Volume.pm
+  Also installed in ~/perl5, from a local dzil install of an unreleased
+  0.004, never on CPAN:
+    Config.pm  Plugin.pm  Secret.pm
+
+Four carry the CPAN obligation. All seven carry the shadowing one, so all
+seven get a stub.
+
+WHAT THE STUB IS
+
+Same package name, same $VERSION as the rest of lib/. It does NOT work, and
+it is not supposed to: it refuses, loudly, naming the generated class that
+replaced it. The maintainer's words: it does not have to load successfully,
+it may crash -- but because of CPAN it has to be there.
+
+  API::Docker::Container -> API::Docker::Type::ContainerSummary (list)
+                            API::Docker::Type::ContainerInspectResponse
+  API::Docker::Image     -> API::Docker::Type::ImageSummary (list)
+                            API::Docker::Type::ImageInspect
+  API::Docker::Network   -> API::Docker::Type::Network
+  API::Docker::Volume    -> API::Docker::Type::Volume
+  API::Docker::Plugin    -> API::Docker::Type::Plugin
+  API::Docker::Secret    -> API::Docker::Type::Secret
+  API::Docker::Config    -> API::Docker::Type::Config
+
+NO use_ok TEST. Loading is not required to succeed, so asserting that it does
+would be asserting the wrong thing. A test that the refusal HAPPENS, with its
+message, is the right shape.
+
+THE TRAP TO CHECK FIRST: [@Author::GETTY] generates author tests, and a
+compile-all test is the usual kind. A module that dies at load would fail it.
+Find out what the bundle actually generates before choosing between dying at
+load and loading quietly with every method refusing -- and if the generated
+test is the constraint, say so rather than working around it silently.
+
+Also: Git::GatherDir only sees tracked files. A new .pm is invisible to
+dzil build until it is git add-ed, while prove stays green throughout.
+
+Done in 14509c5. The form was decided by measurement, as asked: dzil build generates only xt/author/pod-syntax.t and xt/release/changes_has_content.t, neither of which loads a module, so there is no compile-all author test and 'dies at load' was available. Confirmed by running the generated tests against the built tree with AUTHOR_TESTING=1 -- 237 assertions, all seven stubs ok and not skipped. $VERSION is set before the croak so a failed load still leaves it readable and BumpVersionAfterRelease still finds the line. AUTOLOAD with a DESTROY guard repeats the same message for a caller who swallowed the load error and called ->start anyway. POD distinguishes the four that shipped in 0.003 from the three that never were released, which is accurate on metacpan where 0.004 is their only appearance. The agent also corrected the k84 Changes bullet, which claimed the seven classes are gone -- now false. Verified here: the refusal message names the replacement classes and says the reader has not hit a fault, $VERSION reads 0.004 after a failed load, and all seven are in the built tree and the tarball.
