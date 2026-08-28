@@ -20,7 +20,8 @@ Implement, refactor, debug, and test the Perl side of this distribution. The con
 above are non-negotiable — apply silently, do not restate.
 
 **Where your lane ends.** You own how this distribution is built: `Role::HTTP`'s socket
-handling and chunked reader, Moo composition, the entity classes, `cpanfile`, dist
+handling and chunked reader, Moo composition, the entity roles composed onto the
+generated types, `cpanfile`, dist
 plumbing. You do not own what the Docker Engine accepts or answers. If the task turns on
 daemon semantics — a wire format, a query-parameter meaning, a response shape, registry
 auth, API version gating — stop and hand it to `api-docker-engine-worker`, which is
