@@ -1,0 +1,61 @@
+---
+claimed_at: 2026-08-28T00:26:18Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T00:26:18Z
+created: 2026-08-27T22:14:24Z
+id: 64
+priority: medium
+started: 2026-08-27T23:37:01Z
+status: done
+tags:
+- transport
+- hazard
+title: A daemon that hangs up mid-response returns a truncated body as a whole one
+updated: 2026-08-28T00:26:18Z
+---
+
+Found while implementing karr #60, and NOT introduced by it: the behaviour is
+identical before and after that change. It is a pre-existing defect of the
+buffered readers and wants its own decision, because fixing it adds a fatal
+path where there is none today.
+
+The readers end their loops on `last unless $n`, which is the end of the
+stream -- and they then return what they have as though the response were
+complete. Nothing checks the body against what the response said it would be.
+
+MEASURED, over an AF_UNIX socketpair whose peer writes the bytes below and
+closes immediately (no daemon, no timeout involved; _read_response driven
+directly):
+
+  Content-Length: 11 announced, 9 bytes sent   -> returned 'hello wor'
+  chunk announces 11 (b), 5 bytes sent         -> returned 'hello'
+  one complete chunk, no terminating 0-chunk   -> returned 'hello'
+  chunk header cut in half ("1" then EOF)      -> returned 'hello'
+
+All four are truncation the caller cannot see. It is the same class as karr
+#59's: a short body satisfies every return shape this role promises -- ndjson
+gives an ArrayRef, raw gives bytes, the default gives a decoded body -- and is
+indistinguishable from a complete one. A half tarball that looks whole is the
+worst of them.
+
+The fix is a structural completeness check in the buffered readers, most
+naturally a read_exact helper next to _read_bytes: an EOF before Content-Length
+is truncation, and so is one inside chunk data, inside a chunk header, or
+before the terminating zero chunk. A close-delimited body is the one shape
+where an EOF *is* the end, and must stay that way.
+
+Why it was not folded into #60. It replaces a claim t/read_timeout.t makes on
+purpose. That file drives every read site twice -- once for a timeout, once for
+the same short read at a real end of response -- and asserts that the second
+one does NOT croak, naming the returned truncation ('a truncated body is
+returned as though whole when the response really ended -- the exact silent
+loss the errno check prevents'). Making truncation fatal rewrites the
+non-timeout half of site_ok in five subtests, so it is a redesign of #59's
+safety net rather than an addition to it, and it wants to be a change someone
+can read on its own.
+
+Needs a Changes entry when it lands, and a live check on both engines: a new
+fatal path could fire on a legitimate early close.
+
+Related: #59, #60.
