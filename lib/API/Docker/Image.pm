@@ -80,10 +80,10 @@ has Created      => (is => 'ro');
 =attr Created
 
 Image creation timestamp, an integer Unix epoch (e.g. C<1705300000> in
-F<t/fixtures/images_list.json>) -- the same shape C<list> uses for
-L<API::Docker::Container/Created>. No fixture captures an image C<inspect>
-response, so whether it switches to an RFC3339 string there too, the way the
-container entity's does, is not verified.
+F<t/fixtures/images_list.json>) -- the same shape a container C<list> uses,
+see L<API::Docker::API::Containers/"The two container shapes">. No fixture
+captures an image C<inspect> response, so whether it switches to an RFC3339
+string there too, the way a container C<inspect> does, is not verified.
 
 =cut
 

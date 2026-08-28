@@ -3,11 +3,14 @@ package API::Docker::API::Containers;
 our $VERSION = '0.004';
 use Moo;
 with 'API::Docker::Role::Filters', 'API::Docker::Role::Using';
-use API::Docker::Container;
 use API::Docker::Error::HTTP;
+use API::Docker::Role::Entity::Container;
+use API::Docker::Type::ContainerInspectResponse;
+use API::Docker::Type::ContainerSummary;
 use Carp qw( croak shortmess );
 use JSON::MaybeXS qw( decode_json );
 use MIME::Base64 qw( decode_base64 );
+use Scalar::Util qw( blessed );
 use namespace::clean;
 
 =head1 SYNOPSIS
@@ -17,8 +20,8 @@ use namespace::clean;
     # List containers
     my $containers = $docker->containers->list(all => 1);
     for my $container (@$containers) {
-        say $container->Id;
-        say $container->Status;
+        say $container->id;
+        say $container->status;
     }
 
     # Create and start a container
@@ -31,7 +34,7 @@ use namespace::clean;
 
     # Inspect container details
     my $container = $docker->containers->inspect($result->{Id});
-    say $container->Name;
+    say $container->name;
 
     # Stop and remove
     $docker->containers->stop($result->{Id}, timeout => 10);
@@ -57,12 +60,89 @@ use namespace::clean;
 This module provides methods for managing Docker containers including creation,
 lifecycle operations (start, stop, restart), inspection, logs, and more.
 
-All C<list> and C<inspect> methods return L<API::Docker::Container> objects
-for convenient access to container properties and operations.
+C<list> and C<inspect> return generated L<API::Docker::Type> objects carrying
+the convenience methods of L<API::Docker::Role::Entity::Container>, so
+C<< $container->start >> and C<< $container->logs >> work on either. Which
+class each returns, and where the two disagree, is below.
 
 Accessed via C<< $docker->containers >>, or through
 L<API::Docker::Role::Using/using> for a run of calls that needs its own
 transport bound: C<< $docker->containers->using(read_timeout => 5) >>.
+
+=head2 The two container shapes
+
+The daemon describes a container two ways and the swagger has two
+definitions for it, so this class returns two classes:
+
+=over
+
+=item * L</list> returns L<API::Docker::Type::ContainerSummary> objects --
+one per entry of C<GET /containers/json>.
+
+=item * L</inspect> returns an L<API::Docker::Type::ContainerInspectResponse>
+-- the body of C<GET /containers/{id}/json>.
+
+=back
+
+They overlap but do not line up, and the field names are the swagger's own
+spelling in snake_case (C<Id> is C<< ->id >>, C<SizeRootFs> is
+C<< ->size_root_fs >>). The differences worth knowing before reading a value
+off the wrong one:
+
+=over
+
+=item * C<< ->image >> is the name the container was created from on a
+summary (C<nginx:latest>) and the resolved C<sha256:> digest on an inspect.
+A summary reports that digest separately as C<< ->image_id >>; an inspect
+has no such field.
+
+=item * C<< ->created >> is an integer Unix epoch on a summary and an
+RFC 3339 string on an inspect. Same field name, two types -- C<Int> and
+C<Str> in the model, which is the swagger's own answer, not a normalisation
+this client applies.
+
+=item * C<< ->state >> is the status string (C<running>, C<exited>) on a
+summary and an L<API::Docker::Type::ContainerState> object on an inspect,
+where that string is C<< ->state->status >> and the flags are
+C<< ->state->running >>, C<< ->state->paused >>, C<< ->state->exit_code >>.
+L<API::Docker::Role::Entity::Container/is_running> reads whichever it is
+given. C<< ->status >> -- the human sentence, C<"Up 2 hours"> -- is on the
+summary only.
+
+=item * C<< ->command >> is the whole command as one string, on a summary
+only. An inspect splits it into C<< ->path >> and C<< ->args >> and keeps
+the original C<Cmd> ArrayRef under C<< ->config->cmd >>.
+
+=item * C<< ->labels >> and C<< ->ports >> are top-level on a summary only.
+An inspect carries the labels under C<< ->config->labels >> and the port
+bindings under C<< ->network_settings->ports >>, which is a map of container
+port to host bindings rather than the summary's ArrayRef of
+L<API::Docker::Type::Port>.
+
+=item * C<< ->names >> (an ArrayRef, each with a leading C</>) is the
+summary's; C<< ->name >> (one string, also with the C</>) is the inspect's.
+
+=item * C<< ->config >>, C<< ->restart_count >>, C<< ->driver >>,
+C<< ->platform >>, C<< ->graph_driver >>, C<< ->exec_ids >> and the
+C<*_path> fields come from an inspect only.
+
+=item * C<< ->host_config >> and C<< ->network_settings >> exist on both and
+are B<different classes>: the summary's are
+L<API::Docker::Type::ContainerSummary::HostConfig> (C<NetworkMode> and
+C<Annotations>, nothing else) and
+L<API::Docker::Type::ContainerSummary::NetworkSettings> (C<Networks> alone),
+against the full L<API::Docker::Type::HostConfig> and
+L<API::Docker::Type::NetworkSettings> on an inspect.
+
+=item * C<< ->size_rw >> and C<< ->size_root_fs >> are on both, but a
+summary only carries them when C<< size => 1 >> was asked for.
+
+=back
+
+A field neither class knows -- a newer engine than the C<spec/v1.51.yaml>
+this model was generated from -- is not dropped: it stays under the name it
+arrived with in L<API::Docker::Role::Type/unknown_fields> and goes back out
+unchanged.
 
 =cut
 
@@ -78,17 +158,21 @@ Reference to L<API::Docker> client. Weak reference to avoid circular dependencie
 
 =cut
 
+# The class is the caller's argument rather than a constant of this module:
+# `list` and `inspect` are two definitions in the swagger and therefore two
+# generated classes. Both carry the same convenience methods, composed by
+# API::Docker::Role::Entity::Container -- see "The two container shapes".
 sub _wrap {
-  my ($self, $data) = @_;
-  return API::Docker::Container->new(
+  my ($self, $class, $data) = @_;
+  return $class->new(
     client => $self->client,
     %$data,
   );
 }
 
 sub _wrap_list {
-  my ($self, $list) = @_;
-  return [ map { $self->_wrap($_) } @$list ];
+  my ($self, $class, $list) = @_;
+  return [ map { $self->_wrap($class, $_) } @$list ];
 }
 
 # A state-change endpoint answers 204 when it changed something and 304 when
@@ -117,14 +201,16 @@ sub list {
     params => \%params,
     %{ $self->_request_options },
   );
-  return $self->_wrap_list($result // []);
+  return $self->_wrap_list('API::Docker::Type::ContainerSummary', $result // []);
 }
 
 =method list
 
     my $containers = $containers->list(%opts);
 
-List containers. Returns ArrayRef of L<API::Docker::Container> objects.
+List containers. Returns an ArrayRef of
+L<API::Docker::Type::ContainerSummary> objects -- see L</"The two container
+shapes"> for what a summary carries and L</inspect> does not.
 
 Options:
 
@@ -176,14 +262,16 @@ sub inspect {
   my $result = $self->client->get("/containers/$id/json",
     %{ $self->_request_options },
   );
-  return $self->_wrap($result);
+  return $self->_wrap('API::Docker::Type::ContainerInspectResponse', $result);
 }
 
 =method inspect
 
     my $container = $containers->inspect($id);
 
-Get detailed information about a container. Returns L<API::Docker::Container> object.
+Get detailed information about a container. Returns an
+L<API::Docker::Type::ContainerInspectResponse> -- see L</"The two container
+shapes">.
 
 =cut
 
@@ -542,11 +630,30 @@ frames rather than the single one the buffered path builds.
 sub _assert_container_running {
   my ($self, $id) = @_;
 
-  my $state = $self->inspect($id)->State;
-  return unless ref $state eq 'HASH' && exists $state->{Running};
-  return if $state->{Running};
+  # A response the model cannot inflate is one more shape the check does not
+  # recognise, and it is refused a step earlier than the others: the generated
+  # classes type their fields from the swagger, so a State that is not the
+  # object ContainerInspectResponse declares -- the bare status string of the
+  # list shape, say -- croaks out of the constructor with an
+  # Error::TypeTiny::Assertion before there is anything to read. Failing open
+  # on that is the same rule as failing open on a State without Running.
+  # Anything else, the daemon's own 404 included, is the caller's error and
+  # goes up.
+  local $@;
+  my $inspected = eval { $self->inspect($id) };
+  if (my $err = $@) {
+    return if blessed($err) && $err->isa('Error::TypeTiny');
+    die $err;
+  }
 
-  my $status = $state->{Status};
+  # An API::Docker::Type::ContainerState, or undef where the daemon sent no
+  # State at all -- which is the "does not recognise" case above, not a stopped
+  # container.
+  my $state = $inspected->state;
+  return unless blessed($state) && defined $state->running;
+  return if $state->running;
+
+  my $status = $state->status;
   $status = 'not running' unless defined $status && length $status;
 
   croak __PACKAGE__ . '->attach refused: container ' . $id . ' is ' . $status
@@ -1717,7 +1824,13 @@ L<API::Docker::Role::Filters>
 
 =item * L<API::Docker> - Main Docker client
 
-=item * L<API::Docker::Container> - Container entity class
+=item * L<API::Docker::Role::Entity::Container> - the convenience methods
+the returned objects carry
+
+=item * L<API::Docker::Type::ContainerSummary> - what L</list> returns
+
+=item * L<API::Docker::Type::ContainerInspectResponse> - what L</inspect>
+returns
 
 =item * L<API::Docker::API::Exec> - Execute commands in containers
 

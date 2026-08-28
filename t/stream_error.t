@@ -257,14 +257,14 @@ SKIP: {
     # runs -- and still finds the right containers -- even if an assertion
     # below fails or something after this point dies unexpectedly.
     my @before = live_engine() eq 'docker'
-      ? map { $_->Id } @{ $docker->containers->list(all => 1) }
+      ? map { $_->id } @{ $docker->containers->list(all => 1) }
       : ();
     if (live_engine() eq 'docker') {
       my %seen_before = map { $_ => 1 } @before;
       register_cleanup(sub {
         my $after = eval { $docker->containers->list(all => 1) } || [];
-        eval { $docker->containers->remove($_->Id, force => 1) }
-          for grep { !$seen_before{ $_->Id } } @$after;
+        eval { $docker->containers->remove($_->id, force => 1) }
+          for grep { !$seen_before{ $_->id } } @$after;
       });
     }
 
@@ -307,7 +307,7 @@ SKIP: {
     if (live_engine() eq 'docker') {
       my %seen_before = map { $_ => 1 } @before;
       my @leaked = grep { !$seen_before{$_} }
-        map { $_->Id } @{ $docker->containers->list(all => 1) };
+        map { $_->id } @{ $docker->containers->list(all => 1) };
       is_deeply [ sort @leaked ], [],
         'forcerm=1 left no intermediate container behind (karr #63)';
     }

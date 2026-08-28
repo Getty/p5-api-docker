@@ -677,7 +677,7 @@ subtest 'resize: form-identical to the one Exec already had' => sub {
 # The entity forwards
 # ===========================================================================
 
-subtest 'API::Docker::Container forwards all six' => sub {
+subtest 'the container entity forwards all six' => sub {
   plan skip_all => 'route assertions are fixture-only' if is_live();
 
   my %seen;
@@ -701,7 +701,7 @@ subtest 'API::Docker::Container forwards all six' => sub {
 
   # The client must stay in a live variable: entities hold it as a weak_ref.
   my ($container) = @{ $docker->containers->list };
-  isa_ok $container, 'API::Docker::Container';
+  isa_ok $container, 'API::Docker::Type::ContainerSummary';
 
   is $container->get_archive(path => '/etc/hostname'), $TAR, 'get_archive';
   is $container->put_archive($TAR, path => '/opt'), undef, 'put_archive';
@@ -728,7 +728,7 @@ subtest 'API::Docker::Container forwards all six' => sub {
 
 sub live_container {
   my $docker = shift;
-  my ($c) = grep { $_->Id } @{ $docker->containers->list(all => 1) };
+  my ($c) = grep { $_->id } @{ $docker->containers->list(all => 1) };
   return $c;
 }
 
@@ -739,7 +739,7 @@ subtest 'live: changes and the archive endpoints against a real container' => su
   my $container = live_container($docker);
   plan skip_all => 'no container on the daemon to read from' unless $container;
 
-  my $changes = $docker->containers->changes($container->Id);
+  my $changes = $docker->containers->changes($container->id);
   is ref $changes, 'ARRAY', 'changes returns an ArrayRef';
   for my $change (@$changes) {
     ok defined $change->{Path}, 'each entry has a Path';
@@ -748,7 +748,7 @@ subtest 'live: changes and the archive endpoints against a real container' => su
 
   my $engine = live_engine();
 
-  my $stat = $docker->containers->stat_archive($container->Id,
+  my $stat = $docker->containers->stat_archive($container->id,
     path => '/etc/hostname');
   ok defined $stat, 'stat_archive found /etc/hostname';
   is ref $stat, 'HASH', 'and decoded the header into a HashRef';
@@ -786,7 +786,7 @@ subtest 'live: changes and the archive endpoints against a real container' => su
   # not by itself tell them apart. A directory does, on both engines: Go sets
   # os.ModeDir (1<<31) above the permission bits, where POSIX would set
   # S_IFDIR (0040000) at an entirely different position.
-  my $dir_stat = $docker->containers->stat_archive($container->Id, path => '/etc');
+  my $dir_stat = $docker->containers->stat_archive($container->id, path => '/etc');
   ok $dir_stat->{mode} & (1 << 31),
     'mode carries Go os.ModeDir above the permission bits -- proof this is '
     . 'FileMode, not raw POSIX stat.st_mode, which never sets that bit';
@@ -798,7 +798,7 @@ subtest 'live: changes and the archive endpoints against a real container' => su
     ok !exists $dir_stat->{isDir}, 'Docker: isDir is absent for a directory too';
   }
 
-  my $tar = $docker->containers->get_archive($container->Id,
+  my $tar = $docker->containers->get_archive($container->id,
     path => '/etc/hostname');
   ok defined $tar && length $tar, 'get_archive returned bytes';
   is length($tar) % 512, 0, 'a whole number of tar blocks';

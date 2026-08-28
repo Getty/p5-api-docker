@@ -2,6 +2,29 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - `containers->list` and `containers->inspect` return generated type
+    objects -- an `API::Docker::Type::ContainerSummary` per list entry, an
+    `API::Docker::Type::ContainerInspectResponse` for an inspect -- in place
+    of the single `API::Docker::Container` that served both shapes, which is
+    gone. Field names are the swagger's own in snake_case: `$c->Id` is now
+    `$c->id`, `$c->SizeRootFs` is `$c->size_root_fs`, and `$c->state` is the
+    status string on a summary but an `API::Docker::Type::ContainerState` on
+    an inspect, where the flag is `$c->state->running`. The nineteen
+    convenience methods -- `start`, `stop`, `logs`, `attach`, `remove`,
+    `is_running` and the rest -- keep their signatures and their return
+    values, and live in `API::Docker::Role::Entity::Container`, composed onto
+    both generated classes at load time. Nothing was written into the
+    generated files: `maint/spec-to-type.pl --verify` still reports 201
+    compared, 201 identical, 0 different. A field neither class knows is no
+    longer dropped either -- it survives under the name it arrived with in
+    `unknown_fields` and goes back out unchanged.
+  - `containers->attach`'s pre-flight running check still fails open on a
+    state it cannot read, and now on one more case. A typed class rejects a
+    value that disagrees with the swagger, so an inspect response whose
+    `State` is a bare status string rather than the declared object croaks
+    out of the constructor before the check sees it; that is treated as one
+    more unreadable shape and the attach proceeds. Every other error, the
+    daemon's own 404 included, still reaches the caller.
   - The type model is complete: 201 classes under `API::Docker::Type::*`,
     one per definition and one per inline schema of `spec/v1.51.yaml`, all
     of them written by `maint/spec-to-type.pl`.

@@ -67,8 +67,10 @@ Podman needs nothing but `DOCKER_HOST`.
 
 The synchronous `_request` core lives in
 `API::Docker::Role::HTTP`; resource-specific API methods live in
-`API::Docker::API::*`. Entity wrappers (`API::Docker::Container`,
-`API::Docker::Image`, ...) hang off the resource APIs.
+`API::Docker::API::*`. Entities hang off the resource APIs: containers are
+generated `API::Docker::Type::*` classes with `API::Docker::Role::Entity::*`
+composed onto them (karr #79 step 6), the remaining six are still the
+hand-written wrappers (`API::Docker::Image`, ...).
 
 Architecture, transport invariants, the streaming and `X-Registry-Auth`
 details, and the mock harness are in skill `api-docker-core` — that is
@@ -91,7 +93,9 @@ lib/API/Docker/API/Distribution.pm      # /distribution registry manifest lookup
 lib/API/Docker/API/Secrets.pm           # /secrets
 lib/API/Docker/API/Configs.pm           # /configs
 lib/API/Docker/API/Plugins.pm           # /plugins
-lib/API/Docker/{Container,Image,Network,Volume}.pm  # entity classes
+lib/API/Docker/Role/Entity.pm           # the client an entity delegates through
+lib/API/Docker/Role/Entity/Container.pm # container operations, composed onto the generated types
+lib/API/Docker/{Image,Network,Volume}.pm            # entity classes (not yet converted)
 lib/API/Docker/{Plugin,Secret,Config}.pm            # entity classes
 lib/API/Docker/Error/Stream.pm          # croaked on a failed build/pull/push stream
 lib/API/Docker/Error/HTTP.pm            # croaked on a status of 400 or above

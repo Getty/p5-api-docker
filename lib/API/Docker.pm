@@ -110,7 +110,9 @@ The distribution is organized into several layers:
 
 =over
 
-=item * L<API::Docker::Container> - Container entity with convenience methods
+=item * L<API::Docker::Role::Entity::Container> - Container operations,
+composed into L<API::Docker::Type::ContainerSummary> and
+L<API::Docker::Type::ContainerInspectResponse>
 
 =item * L<API::Docker::Image> - Image entity
 

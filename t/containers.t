@@ -3,7 +3,7 @@ use warnings;
 use Test::More;
 use lib 't/lib';
 use Test::API::Docker::Mock;
-use API::Docker::Container;
+use API::Docker::Role::Entity::Container;
 
 check_live_access();
 
@@ -18,23 +18,23 @@ subtest 'list containers' => sub {
 
   is(ref $containers, 'ARRAY', 'returns array');
   if (@$containers) {
-    isa_ok($containers->[0], 'API::Docker::Container');
-    ok($containers->[0]->Id, 'has Id');
+    isa_ok($containers->[0], 'API::Docker::Type::ContainerSummary');
+    ok($containers->[0]->id, 'has an id');
   }
 
   unless (is_live()) {
     is(scalar @$containers, 2, 'two containers');
 
     my $first = $containers->[0];
-    is($first->Id, 'abc123def456', 'container id');
-    is_deeply($first->Names, ['/my-container'], 'container names');
-    is($first->Image, 'nginx:latest', 'container image');
-    is($first->State, 'running', 'container state');
+    is($first->id, 'abc123def456', 'container id');
+    is_deeply($first->names, ['/my-container'], 'container names');
+    is($first->image, 'nginx:latest', 'container image');
+    is($first->state, 'running', 'container state');
     ok($first->is_running, 'is_running returns true for running container');
 
     my $second = $containers->[1];
-    is($second->Id, 'def789ghi012', 'second container id');
-    is($second->State, 'exited', 'second container state');
+    is($second->id, 'def789ghi012', 'second container id');
+    is($second->state, 'exited', 'second container state');
     ok(!$second->is_running, 'is_running returns false for exited container');
   }
 };
@@ -93,7 +93,7 @@ subtest 'container lifecycle' => sub {
     'container started -- 204, a state change that happened');
 
   my $container = $docker->containers->inspect($id);
-  isa_ok($container, 'API::Docker::Container');
+  isa_ok($container, 'API::Docker::Type::ContainerInspectResponse');
   ok($container->is_running, 'container is running');
 
   my $top = $docker->containers->top($id);
@@ -149,8 +149,8 @@ subtest 'a state change reports whether it changed anything' => sub {
     'the no-op stays false, so a caller testing truth is unaffected by the '
     . 'change from undef to 0';
 
-  # The entity class forwards the value rather than swallowing it.
-  my $container = API::Docker::Container->new(
+  # The entity forwards the value rather than swallowing it.
+  my $container = API::Docker::Type::ContainerSummary->new(
     client => $docker,
     Id     => 'running',
   );

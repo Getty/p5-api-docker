@@ -498,7 +498,7 @@ subtest 'the entity classes forward the callback too' => sub {
   my @got;
   my $summary = $container->logs(follow => 1, on_frame => sub { push @got, $_[0] });
 
-  is scalar(@got), 2, 'API::Docker::Container->logs streams like the API class';
+  is scalar(@got), 2, 'the container entity->logs streams like the API class';
   is_deeply $summary, { delivered => 2, stopped => 0 },
     'and hands the same summary back rather than an ArrayRef of frames';
 };

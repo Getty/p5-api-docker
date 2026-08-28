@@ -31,6 +31,7 @@ C<maint/spec-drift-check.pl> exists to catch.
 my %ATTR_CACHE;    # class -> { perl_name => info }
 my %ORDER_CACHE;   # class -> [ perl_name, ... ]
 my %WIRE_CACHE;    # class -> { wire_name => perl_name }
+my %ENTITY_CACHE;  # class -> { perl_name => 1 }  (not daemon fields)
 
 =attr unknown_fields
 
@@ -65,11 +66,13 @@ around BUILDARGS => sub {
   my $args = $class->$orig(@args);
   my $known = $class->_docker_attr_registry;
   my $wire  = $class->_docker_wire_index;
+  my $mine  = $class->_entity_attribute_index;
   my %unknown = %{ delete($args->{unknown_fields}) || {} };
   my %out;
   for my $key (keys %$args) {
     if ($known->{$key})              { $out{$key} = $args->{$key} }
     elsif (defined $wire->{$key})    { $out{ $wire->{$key} } = $args->{$key} }
+    elsif ($mine->{$key})            { $out{$key} = $args->{$key} }
     else                             { $unknown{$key} = $args->{$key} }
   }
   $out{unknown_fields} = \%unknown;
@@ -175,6 +178,35 @@ is the order the fields appear in the swagger.
 
 sub docker_attribute_order { return $_[0]->_docker_attr_order }
 
+# --- attributes that are not the daemon's ----------------------------------
+#
+# API::Docker::Role::Entity puts `client` on a generated class so the
+# convenience methods have something to delegate through. It arrives at the
+# same constructor as the daemon's fields, and without being named here it is
+# neither a registry entry nor a wire name, so BUILDARGS would file it under
+# unknown_fields -- where TO_JSON would faithfully offer the client object to
+# the engine and JSON::MaybeXS would die trying to encode it. A class that
+# composes such a role answers _entity_attributes with their names.
+
+sub _entity_attribute_index {
+  my $class = ref($_[0]) || $_[0];
+  return $ENTITY_CACHE{$class} //= do {
+    my %mine = $class->can('_entity_attributes')
+      ? (map { ($_ => 1) } $class->_entity_attributes)
+      : ();
+    my $reg  = _docker_attr_registry($class);
+    my $wire = _docker_wire_index($class);
+    # Both sets reach the same constructor, so a name in both is an ambiguity
+    # nobody can resolve at runtime -- say so instead of picking one.
+    for my $name (sort keys %mine) {
+      croak __PACKAGE__ . ": $class has '$name' as an entity attribute and as "
+        . 'a daemon field; one of the two has to be renamed'
+        if $reg->{$name} || defined $wire->{$name};
+    }
+    \%mine;
+  };
+}
+
 # --- merged views over @ISA ------------------------------------------------
 #
 # A generated class that resolves an `allOf` inherits its parent's fields
@@ -235,16 +267,19 @@ sub _docker_wire_index {
 sub _invalidate_docker_cache {
   my ($class) = @_;
   my %sweep;
-  @sweep{ keys %ATTR_CACHE, keys %ORDER_CACHE, keys %WIRE_CACHE } = ();
+  @sweep{ keys %ATTR_CACHE, keys %ORDER_CACHE, keys %WIRE_CACHE,
+          keys %ENTITY_CACHE } = ();
   for my $cached (keys %sweep) {
     next unless $cached eq $class || $cached->isa($class);
     delete $ATTR_CACHE{$cached};
     delete $ORDER_CACHE{$cached};
     delete $WIRE_CACHE{$cached};
+    delete $ENTITY_CACHE{$cached};
   }
   delete $ATTR_CACHE{$class};
   delete $ORDER_CACHE{$class};
   delete $WIRE_CACHE{$class};
+  delete $ENTITY_CACHE{$class};
   return;
 }
 
