@@ -1,0 +1,54 @@
+---
+claimed_at: 2026-08-28T14:28:42Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:28:42Z
+created: 2026-08-28T09:17:27Z
+id: 86
+priority: high
+started: 2026-08-28T09:56:02Z
+status: done
+tags:
+- tests
+- live
+title: The live run against Podman fails, and CLAUDE.md still calls it green at 26
+  files
+updated: 2026-08-28T14:28:42Z
+---
+
+Found 2026-08-28 by the orchestrating agent while checking documentation.
+
+  API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock prove -lr t/
+  -> Files=38, Tests=423, Result: FAIL
+     t/entity_container.t  (Wstat: 65280, exited 255) Tests: 2 Failed: 1
+       not ok - undef isa 'API::Docker::Type::ContainerSummary'
+       Can't call method "id" on an undefined value at t/entity_container.t line 52
+
+CAUSE, and it is a one-line omission rather than anything deep.
+
+test_docker() is a dual-mode helper: under API_DOCKER_TEST_HOST it returns a
+REAL client and ignores the routes it was handed (t/lib/Test/API/Docker/Mock.pm
+line 232). So any subtest built on fixture CONTENT has to opt out of live mode.
+t/entity_container.t knows this and does it twice -- line 75 and line 109 both
+carry `plan skip_all => 'fixture-only' if is_live();` -- and the subtest at
+line 44 ("the generated classes are still the model, not a wrapper around it")
+was missed. It asserts the fixture's abc123def456 and size_root_fs 187654321,
+and this machine has no containers, so ->list returns [] and $c is undef.
+
+The default fixture-only suite stays green, which is why nothing caught it.
+
+SECOND, AND THE REASON THIS IS NOT MERELY A TEST FIX:
+
+CLAUDE.md line 147 says "That run is green (26 files, 289 tests)." It is
+38 files and 423 tests, and it is not green. A written-down measurement that
+nobody re-measures is worse than no measurement -- it is what a reader trusts
+instead of running the command. Either re-measure it as part of whatever
+touches the live path, or replace the number with the command and let the
+reader find out.
+
+Note the same failure mode was already fixed once today in rule 11, which
+claimed a fixed count of lib files.
+
+Lane: api-docker-test-writer.
+
+Fixed in 327bcd7: the missing 'plan skip_all => fixture-only if is_live()' added to the one subtest of t/entity_container.t that lacked it; every other subtest in the file checked individually. Live run re-measured and green. The second half -- the stale count in CLAUDE.md -- was settled differently than the ticket proposed: in 21e72f7 the number was removed rather than corrected, along with the one in rule 6 of the house rules and three the type-model skill had picked up. The line names the command now. An earlier session of mine wrote that count unasked in 07b1c74, it was wrong when re-read, and the morning's correction promptly wrote another wrong one -- three times the same move, which is what a standing number does.
