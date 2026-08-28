@@ -15,7 +15,9 @@ docker id => Str;
 
 =attr id
 
-Undocumented upstream.
+Undocumented upstream. The plugin's own ID, a 64-character hex digest in the
+swagger's example. The C</plugins/{name}/...> endpoints address a plugin by
+L</name>, not by this.
 
 =cut
 
@@ -23,8 +25,13 @@ docker name => Str, required => 1;
 
 =attr name
 
-Undocumented upstream. The swagger lists this field as required; nothing
-here enforces that, see L<API::Docker::Type/C<since> is documentation>.
+Undocumented upstream. The plugin's reference,
+C<tiborvass/sample-volume-plugin> in the swagger's example, and what the
+C</plugins/{name}/...> endpoints take in their path -- where the swagger
+notes the C<:latest> tag is optional and the default when omitted.
+L</plugin_reference> is the full remote reference the plugin was pushed or
+pulled under. The swagger lists this field as required; nothing here
+enforces that, see L<API::Docker::Type/C<since> is documentation>.
 
 =cut
 

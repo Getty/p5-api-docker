@@ -357,10 +357,47 @@ API::Docker::Type::ImageManifestSummary::ImageData::Size:
     - One byte count, C<Unpacked>.
 API::Docker::Type::Plugin::Config::Args:
   abstract: The command-line arguments a plugin accepts
+  attr:
+    name:
+      extra:
+        - >-
+          C<args> in the swagger's example -- the whole command line is one
+          named item, not one item per argument.
+    description:
+      extra:
+        - C<"command line arguments"> in the swagger's example.
+    settable:
+      extra:
+        - >-
+          An array of strings, and the swagger never says what they hold. What
+          a user changes on an installed plugin goes in through C<POST
+          /plugins/{name}/set> and comes back out under
+          L<API::Docker::Type::Plugin/settings>.
+    value:
+      extra:
+        - The arguments themselves, one string each.
 API::Docker::Type::Plugin::Config::Linux:
   abstract: The Linux-specific capabilities and devices a plugin needs
+  attr:
+    capabilities:
+      extra:
+        - >-
+          The Linux capabilities the plugin's process needs, C<CAP_SYS_ADMIN>
+          and C<CAP_SYSLOG> in the swagger's example.
+    allow_all_devices:
+      extra:
+        - >-
+          A boolean, C<false> in the swagger's example, required beside the
+          explicit L</devices> list.
+    devices:
+      extra:
+        - The device list that stands beside L</allow_all_devices>.
 API::Docker::Type::Plugin::Config::Network:
   abstract: The network mode a plugin runs in
+  attr:
+    type:
+      extra:
+        - The object's only field; C<host> in the swagger's example.
 API::Docker::Type::Plugin::Config::RootFS:
   abstract: The root filesystem of a plugin
   description_append:
@@ -369,8 +406,27 @@ API::Docker::Type::Plugin::Config::RootFS:
       C<diff_ids>, and the property itself is C<rootfs>; the class is named
       C<RootFS> to match C<ImageInspect.RootFS>, which is recorded in
       C<maint/spec-drift-exceptions.yaml>.
+  attr:
+    type:
+      extra:
+        - >-
+          C<layers> in the swagger's example, the same value an image answers
+          with under L<API::Docker::Type::ImageInspect::RootFS/type>.
+    diff_ids:
+      extra:
+        - >-
+          One C<sha256:...> digest per layer, two of them in the swagger's
+          example -- what L<API::Docker::Type::ImageInspect::RootFS/layers>
+          holds for an image.
 API::Docker::Type::Plugin::Config::User:
   abstract: The user and group a plugin's process runs as
+  attr:
+    uid:
+      extra:
+        - A C<uint32>; the swagger's example is C<1000>.
+    gid:
+      extra:
+        - A C<uint32> too, C<1000> in the same example.
 API::Docker::Type::Service::Endpoint:
   abstract: The resolved endpoint of a service
   description_append:
@@ -827,3 +883,241 @@ API::Docker::Type::ContainerStorageStats:
     write_size_bytes:
       extra:
         - The write counterpart of L</read_size_bytes>.
+
+API::Docker::Type::Plugin:
+  attr:
+    id:
+      extra:
+        - >-
+          The plugin's own ID, a 64-character hex digest in the swagger's
+          example. The C</plugins/{name}/...> endpoints address a plugin by
+          L</name>, not by this.
+    name:
+      extra:
+        - >-
+          The plugin's reference, C<tiborvass/sample-volume-plugin> in the
+          swagger's example, and what the C</plugins/{name}/...> endpoints
+          take in their path -- where the swagger notes the C<:latest> tag is
+          optional and the default when omitted. L</plugin_reference> is the
+          full remote reference the plugin was pushed or pulled under.
+
+API::Docker::Type::Plugin::Config:
+  attr:
+    description:
+      extra:
+        - >-
+          The plugin's own one-line description, C<"A sample volume plugin for
+          Docker"> in the swagger's example.
+    documentation:
+      extra:
+        - >-
+          A URL, C<https://docs.docker.com/engine/extend/plugins/> in the
+          swagger's example.
+    entrypoint:
+      extra:
+        - >-
+          The command the plugin's process is started with, one string per
+          argument: C<< ["/usr/bin/sample-volume-plugin", "/data"] >> in the
+          swagger's example.
+    work_dir:
+      extra:
+        - >-
+          The working directory that process starts in, C<"/bin/"> in the
+          swagger's example.
+    user:
+      extra:
+        - >-
+          Two C<uint32>s, both C<1000> in the swagger's example.
+    network:
+      extra:
+        - One field, a network mode; C<host> in the swagger's example.
+    linux:
+      extra:
+        - >-
+          The Linux capabilities the plugin needs, whether it may use every
+          device, and the devices it declares by hand.
+    propagated_mount:
+      extra:
+        - >-
+          A path, C<"/mnt/volumes"> in the swagger's example. That example is
+          all the swagger offers about it.
+    mounts:
+      extra:
+        - >-
+          The mounts the plugin declares. L<API::Docker::Type::Plugin/settings>
+          carries the same list as it stands after a user has changed it.
+    env:
+      extra:
+        - >-
+          The environment variables the plugin declares, each an object with
+          its own description and value: the swagger's example is a single
+          C<DEBUG>, "if set, prints debug messages", currently C<"0">.
+          L<API::Docker::Type::Plugin::Settings/env> carries the same
+          variables as bare C<NAME=value> strings.
+    args:
+      extra:
+        - >-
+          The plugin's command line as one named item -- C<args>, "command
+          line arguments", in the swagger's example -- not one item per
+          argument.
+    rootfs:
+      extra:
+        - >-
+          A type and a list of layer digests, both spelled in lower case
+          upstream.
+
+API::Docker::Type::Plugin::Config::Interface:
+  attr:
+    types:
+      extra:
+        - >-
+          The plugin API contracts the plugin implements. The swagger's
+          example is the bare string C<docker.volumedriver/1.0> even though
+          the items are objects, and its three parts line up with the
+          C<Prefix>, C<Capability> and C<Version> of the class each item
+          actually is, in that order.
+    socket:
+      extra:
+        - >-
+          The socket the engine reaches the plugin over, C<plugins.sock> in
+          the swagger's example -- a name, not a path.
+
+API::Docker::Type::Plugin::Settings:
+  attr:
+    mounts:
+      extra:
+        - >-
+          The plugin's mounts as they now stand;
+          L<API::Docker::Type::Plugin::Config/mounts> is the same list as the
+          plugin declared it.
+    env:
+      extra:
+        - >-
+          The environment as bare C<NAME=value> strings, C<< ["DEBUG=0"] >> in
+          the swagger's example -- the shape C<POST /plugins/{name}/set> takes
+          in its body, whose own example is C<< ["DEBUG=1"] >>.
+          L<API::Docker::Type::Plugin::Config/env> carries the same variables
+          as objects with their descriptions.
+    args:
+      extra:
+        - >-
+          The command line as bare strings, against the single named item
+          L<API::Docker::Type::Plugin::Config/args> declares.
+    devices:
+      extra:
+        - >-
+          The plugin's devices as they now stand;
+          L<API::Docker::Type::Plugin::Config::Linux/devices> is the declared
+          list.
+
+API::Docker::Type::PluginMount:
+  attr:
+    name:
+      extra:
+        - C<"some-mount"> in the swagger's example.
+    description:
+      extra:
+        - >-
+          C<"This is a mount that's used by the plugin."> in the swagger's
+          example.
+    settable:
+      extra:
+        - >-
+          An array of strings, and the swagger never says what they hold. What
+          a user changes on an installed plugin goes in through C<POST
+          /plugins/{name}/set> and comes back out under
+          L<API::Docker::Type::Plugin/settings>.
+    source:
+      extra:
+        - >-
+          Where the mount comes from on the host, C<"/var/lib/docker/plugins/">
+          in the swagger's example -- what
+          L<API::Docker::Type::Mount/source> is for a container.
+    destination:
+      extra:
+        - >-
+          Where it appears inside the plugin, C<"/mnt/state"> in the swagger's
+          example -- what L<API::Docker::Type::Mount/target> is for a
+          container.
+    type:
+      extra:
+        - >-
+          C<"bind"> in the swagger's example. The container-side field this
+          mirrors, L<API::Docker::Type::Mount/type>, is an enumeration the
+          swagger describes value by value; this one is a bare string.
+    options:
+      extra:
+        - >-
+          Mount options, one string each: C<< ["rbind", "rw"] >> in the
+          swagger's example.
+
+API::Docker::Type::PluginDevice:
+  attr:
+    settable:
+      extra:
+        - >-
+          An array of strings, and the swagger never says what they hold. What
+          a user changes on an installed plugin goes in through C<POST
+          /plugins/{name}/set> and comes back out under
+          L<API::Docker::Type::Plugin/settings>.
+    path:
+      extra:
+        - The device node, C<"/dev/fuse"> in the swagger's example.
+
+API::Docker::Type::PluginEnv:
+  description_append:
+    - >-
+      None of its four fields is described, but the example the swagger gives
+      for that field shows all four at once: C<Name> C<"DEBUG">,
+      C<Description> C<"If set, prints debug messages">, C<Settable> C<null>
+      and C<Value> C<"0">.
+  attr:
+    name:
+      extra:
+        - The variable's name, C<"DEBUG"> in that example.
+    description:
+      extra:
+        - >-
+          What setting it does, C<"If set, prints debug messages"> in that
+          example.
+    settable:
+      extra:
+        - >-
+          An array of strings, C<null> in that example, and the swagger never
+          says what they hold. What a user changes on an installed plugin goes
+          in through C<POST /plugins/{name}/set> and comes back out under
+          L<API::Docker::Type::Plugin/settings>.
+    value:
+      extra:
+        - >-
+          The value it currently has, C<"0"> in that example -- a string, even
+          where it reads as a number.
+
+API::Docker::Type::PluginInterfaceType:
+  description_append:
+    - >-
+      The example the swagger gives for that field is the bare string
+      C<docker.volumedriver/1.0> rather than an object, and its three parts
+      line up with the three fields below in the order they appear.
+  attr:
+    prefix:
+      extra:
+        - C<docker> in that example.
+    capability:
+      extra:
+        - C<volumedriver> in that example.
+    version:
+      extra:
+        - C<1.0> in that example.
+
+API::Docker::Type::PluginPrivilege:
+  attr:
+    name:
+      extra:
+        - >-
+          What the permission is over, C<network> in the swagger's example.
+    value:
+      extra:
+        - >-
+          What is being asked for, one string each: C<< ["host"] >> beside
+          that C<network> in the swagger's example.

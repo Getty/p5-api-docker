@@ -13,7 +13,8 @@ docker name => Str;
 
 =attr name
 
-Undocumented upstream.
+Undocumented upstream. What the permission is over, C<network> in the
+swagger's example.
 
 =cut
 
@@ -29,7 +30,8 @@ docker value => [Str];
 
 =attr value
 
-Undocumented upstream.
+Undocumented upstream. What is being asked for, one string each: C<<
+["host"] >> beside that C<network> in the swagger's example.
 
 =cut
 

@@ -14,7 +14,8 @@ docker name => Str;
 
 =attr name
 
-Undocumented upstream.
+Undocumented upstream. C<args> in the swagger's example -- the whole command
+line is one named item, not one item per argument.
 
 =cut
 
@@ -22,7 +23,7 @@ docker description => Str;
 
 =attr description
 
-Undocumented upstream.
+Undocumented upstream. C<"command line arguments"> in the swagger's example.
 
 =cut
 
@@ -30,7 +31,10 @@ docker settable => [Str];
 
 =attr settable
 
-Undocumented upstream.
+Undocumented upstream. An array of strings, and the swagger never says what
+they hold. What a user changes on an installed plugin goes in through C<POST
+/plugins/{name}/set> and comes back out under
+L<API::Docker::Type::Plugin/settings>.
 
 =cut
 
@@ -38,7 +42,7 @@ docker value => [Str];
 
 =attr value
 
-Undocumented upstream.
+Undocumented upstream. The arguments themselves, one string each.
 
 =cut
 

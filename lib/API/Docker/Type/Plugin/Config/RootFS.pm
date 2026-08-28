@@ -18,8 +18,10 @@ docker type => Str, wire => 'type';
 
 =attr type
 
-Undocumented upstream. Serialised as C<type> -- spelled out, because
-deriving it from the Perl name would produce C<Type>.
+Undocumented upstream. C<layers> in the swagger's example, the same value an
+image answers with under L<API::Docker::Type::ImageInspect::RootFS/type>.
+Serialised as C<type> -- spelled out, because deriving it from the Perl name
+would produce C<Type>.
 
 =cut
 
@@ -27,8 +29,11 @@ docker diff_ids => [Str], wire => 'diff_ids';
 
 =attr diff_ids
 
-Undocumented upstream. Serialised as C<diff_ids> -- spelled out, because
-deriving it from the Perl name would produce C<DiffIds>.
+Undocumented upstream. One C<sha256:...> digest per layer, two of them in
+the swagger's example -- what
+L<API::Docker::Type::ImageInspect::RootFS/layers> holds for an image.
+Serialised as C<diff_ids> -- spelled out, because deriving it from the Perl
+name would produce C<DiffIds>.
 
 =cut
 

@@ -16,7 +16,9 @@ docker mounts => [ 'PluginMount' ];
 
 =attr mounts
 
-Undocumented upstream. See L<API::Docker::Type::PluginMount>.
+Undocumented upstream. The plugin's mounts as they now stand;
+L<API::Docker::Type::Plugin::Config/mounts> is the same list as the plugin
+declared it. See L<API::Docker::Type::PluginMount>.
 
 =cut
 
@@ -24,7 +26,11 @@ docker env => [Str];
 
 =attr env
 
-Undocumented upstream.
+Undocumented upstream. The environment as bare C<NAME=value> strings, C<<
+["DEBUG=0"] >> in the swagger's example -- the shape C<POST
+/plugins/{name}/set> takes in its body, whose own example is C<< ["DEBUG=1"]
+>>. L<API::Docker::Type::Plugin::Config/env> carries the same variables as
+objects with their descriptions.
 
 =cut
 
@@ -32,7 +38,8 @@ docker args => [Str];
 
 =attr args
 
-Undocumented upstream.
+Undocumented upstream. The command line as bare strings, against the single
+named item L<API::Docker::Type::Plugin::Config/args> declares.
 
 =cut
 
@@ -40,7 +47,9 @@ docker devices => [ 'PluginDevice' ];
 
 =attr devices
 
-Undocumented upstream. See L<API::Docker::Type::PluginDevice>.
+Undocumented upstream. The plugin's devices as they now stand;
+L<API::Docker::Type::Plugin::Config::Linux/devices> is the declared list.
+See L<API::Docker::Type::PluginDevice>.
 
 =cut
 

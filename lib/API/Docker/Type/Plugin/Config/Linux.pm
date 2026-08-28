@@ -15,7 +15,8 @@ docker capabilities => [Str];
 
 =attr capabilities
 
-Undocumented upstream.
+Undocumented upstream. The Linux capabilities the plugin's process needs,
+C<CAP_SYS_ADMIN> and C<CAP_SYSLOG> in the swagger's example.
 
 =cut
 
@@ -23,7 +24,8 @@ docker allow_all_devices => Bool;
 
 =attr allow_all_devices
 
-Undocumented upstream.
+Undocumented upstream. A boolean, C<false> in the swagger's example,
+required beside the explicit L</devices> list.
 
 =cut
 
@@ -31,7 +33,8 @@ docker devices => [ 'PluginDevice' ];
 
 =attr devices
 
-Undocumented upstream. See L<API::Docker::Type::PluginDevice>.
+Undocumented upstream. The device list that stands beside
+L</allow_all_devices>. See L<API::Docker::Type::PluginDevice>.
 
 =cut
 

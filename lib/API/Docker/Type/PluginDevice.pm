@@ -34,8 +34,12 @@ docker settable => [Str], required => 1;
 
 =attr settable
 
-Undocumented upstream. The swagger lists this field as required; nothing
-here enforces that, see L<API::Docker::Type/C<since> is documentation>.
+Undocumented upstream. An array of strings, and the swagger never says what
+they hold. What a user changes on an installed plugin goes in through C<POST
+/plugins/{name}/set> and comes back out under
+L<API::Docker::Type::Plugin/settings>. The swagger lists this field as
+required; nothing here enforces that, see L<API::Docker::Type/C<since> is
+documentation>.
 
 =cut
 
@@ -43,8 +47,9 @@ docker path => Str, required => 1;
 
 =attr path
 
-Undocumented upstream. The swagger lists this field as required; nothing
-here enforces that, see L<API::Docker::Type/C<since> is documentation>.
+Undocumented upstream. The device node, C<"/dev/fuse"> in the swagger's
+example. The swagger lists this field as required; nothing here enforces
+that, see L<API::Docker::Type/C<since> is documentation>.
 
 =cut
 

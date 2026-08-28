@@ -14,7 +14,8 @@ docker type => Str;
 
 =attr type
 
-Undocumented upstream.
+Undocumented upstream. The object's only field; C<host> in the swagger's
+example.
 
 =cut
 

@@ -14,8 +14,9 @@ docker uid => Int, wire => 'UID';
 
 =attr uid
 
-Undocumented upstream. Serialised as C<UID> -- spelled out, because deriving
-it from the Perl name would produce C<Uid>.
+Undocumented upstream. A C<uint32>; the swagger's example is C<1000>.
+Serialised as C<UID> -- spelled out, because deriving it from the Perl name
+would produce C<Uid>.
 
 =cut
 
@@ -23,8 +24,9 @@ docker gid => Int, wire => 'GID';
 
 =attr gid
 
-Undocumented upstream. Serialised as C<GID> -- spelled out, because deriving
-it from the Perl name would produce C<Gid>.
+Undocumented upstream. A C<uint32> too, C<1000> in the same example.
+Serialised as C<GID> -- spelled out, because deriving it from the Perl name
+would produce C<Gid>.
 
 =cut
 
