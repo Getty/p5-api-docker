@@ -1,0 +1,104 @@
+---
+claimed_at: 2026-08-28T14:29:19Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:29:19Z
+created: 2026-08-28T12:05:00Z
+id: 93
+priority: medium
+started: 2026-08-28T12:59:16Z
+status: done
+tags:
+- types
+- correctness
+title: TO_JSON drops a field the engine sent as explicit JSON null
+updated: 2026-08-28T14:29:19Z
+---
+
+Found 2026-08-28 by the k80 agent while measuring GET /images/{id}/history
+against Podman 5.8.4 (API 1.44). Not fixed -- it is a property of the DSL,
+not of the prose that ticket was about.
+
+The engine answers "Tags": null for a layer that carries no tag.
+
+  ImageHistoryResponseItem->from_data({ ..., Tags => undef })
+    ->tags                     undef      -- accepted cleanly
+    ->unknown_fields           {}         -- not filed as unrecognised
+    ->rejected_fields          {}         -- not rejected
+    ->TO_JSON                  no Tags key at all
+
+So an explicit JSON null and an absent field are indistinguishable after a
+round trip. TO_JSON omits an unset attribute by design -- Docker tells an
+absent flag from a false one, and that rule is right -- but "the engine said
+null" and "the engine said nothing" are two different statements, and the
+model currently collapses them.
+
+Nothing is red today: a history item is never sent back to the daemon, and
+no fixture covers that endpoint. It matters where a response is inflated and
+handed on, or compared, and for anything that ever round-trips a response
+into a request.
+
+Worth deciding rather than patching: is a JSON null a value the model should
+carry, or is it the daemon's way of saying "absent" and correctly collapsed?
+Docker's own swagger marks many fields x-nullable, which suggests it means
+something. Check what the engine does with an explicit null on the request
+side before choosing -- if the daemon treats null as unset, collapsing is
+right and this ticket closes as documentation.
+
+Note the same question already has a home: unknown_fields and rejected_fields
+both exist to keep what the model cannot represent, and a third case may not
+need a third store.
+
+Lane: api-docker-type-writer.
+
+
+MEASURED 2026-08-28 against Podman 5.8.4 (API 1.44), as the maintainer asked.
+Request side first, with a non-existent image so the daemon parses the body
+and then fails the lookup -- nothing was created.
+
+  POST /containers/create
+    {"Image":"does-not-exist-xyz-9999"}                 404 no such image
+    {"Image":"...","Labels":null}      map             404 no such image
+    {"Image":"...","Env":null}         array           404 no such image
+    {"Image":"...","AttachStdin":null} bool            404 no such image
+    {"Image":"...","HostConfig":null}  object          404 no such image
+
+  and the decisive triple, byte-identical errors all three:
+    {}                    500 parsing reference "": repository name must ...
+    {"Image":null}        500 parsing reference "": repository name must ...
+    {"Image":""}          500 parsing reference "": repository name must ...
+
+So the daemon CANNOT distinguish absent from null. Go's encoding/json
+unmarshals null into the type's zero value, and an absent field leaves the
+same zero value behind -- "" for a string, nil for a map or slice, false for
+a bool. The same holds outbound: a nil slice marshals to null, which is why
+history answers "Tags": null rather than omitting it.
+
+CONCLUSION: collapsing null to absent loses no MEANING, and TO_JSON omitting
+an unset attribute is right. This ticket is not a bug in the model.
+
+WHAT IT IS INSTEAD -- the claim is wider than the behaviour:
+
+  from_data({ FutureField => undef })->TO_JSON   {"FutureField":null}   kept
+  from_data({ Binds       => undef })->TO_JSON   {}                     dropped
+
+An unknown field round-trips its null; a KNOWN field with a null value loses
+its key. That is defensible on the measurement above, but the model's POD
+says a field is never dropped, without qualification, and t/type_fixture_
+passthrough.t asserts "round-trips every key the daemon sent".
+
+And that test cannot see it: it compares only the TOP-LEVEL keys of each item
+(keys %$item). The two nulls the fixtures actually contain are nested --
+networks_list[0].IPAM.Options and secrets_list[1].Spec.Labels -- so the case
+is untested at depth. Same shape as k90: an assertion narrower than the
+sentence above it.
+
+THE WORK, then, is precision rather than repair:
+  1. State the rule where the invariant is stated: a known field's null is
+     treated as unset, BECAUSE the daemon cannot tell the two apart, with
+     this measurement named. An unknown field keeps its null.
+  2. Deepen the passthrough test to compare nested keys, with the null rule
+     written into it explicitly -- deepening it without that would turn the
+     two fixture nulls red, and they are correct behaviour.
+
+Done in 1a8799c. No behaviour changed -- the measurement said collapsing null to absent costs no meaning, so what was narrowed is the promise, in four places: Role::Type's from_data (a new =head3 carrying the engine, the version, the three byte-identical request errors and the Go zero-value reasoning), its unknown_fields and TO_JSON paragraphs, and API::Docker::Type's 'Unknown fields survive' section, plus the type-model skill and its dsl reference. Re-measured here: from_data({Options=>{'com.docker.x'=>undef}, IPAM=>{Options=>undef, FutureNested=>undef}}) gives {IPAM:{FutureNested:null},Options:{'com.docker.x':null}} -- known field's null gone, unknown field's null kept, caller-keyed map's null kept. The deepened test names the two legitimate drops in a list asserted with is_deeply, so a third one is red and one of these two ceasing to drop is red too. The demonstration: a nested-only regression in _encode_value (grep on truthiness instead of defined) fails the deepened test on 3 of 24 and passes the old flat one 21/21, naming a value 0 four levels deep and an empty string through a caller-keyed map.
