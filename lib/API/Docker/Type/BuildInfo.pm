@@ -21,8 +21,11 @@ docker id => Str, wire => 'id';
 
 =attr id
 
-Undocumented upstream. Serialised as C<id> -- spelled out, because deriving
-it from the Perl name would produce C<Id>.
+Undocumented upstream. The build stream captured in
+F<t/fixtures/images_build_stream.ndjson> carries no C<id> at all. The same
+field on a pull, L<API::Docker::Type::CreateImageInfo/id>, names the layer
+each event is about. Serialised as C<id> -- spelled out, because deriving it
+from the Perl name would produce C<Id>.
 
 =cut
 
@@ -30,8 +33,12 @@ docker stream => Str, wire => 'stream';
 
 =attr stream
 
-Undocumented upstream. Serialised as C<stream> -- spelled out, because
-deriving it from the Perl name would produce C<Stream>.
+Undocumented upstream. The build log the way the daemon writes it, one line
+per event with the newline included -- C<< {"stream":"STEP 1/2: FROM
+alpine:3\n"} >> opens F<t/fixtures/images_build_stream.ndjson>. Nine of that
+capture's ten events are this field; the tenth is L</aux>. Serialised as
+C<stream> -- spelled out, because deriving it from the Perl name would
+produce C<Stream>.
 
 =cut
 
@@ -52,9 +59,13 @@ docker error_detail => 'ErrorDetail', wire => 'errorDetail';
 
 =attr error_detail
 
-Undocumented upstream. See L<API::Docker::Type::ErrorDetail>. Serialised as
-C<errorDetail> -- spelled out, because deriving it from the Perl name would
-produce C<ErrorDetail>.
+Undocumented upstream. The failure, structured. The C<error> field beside it
+carries the same text and the swagger deprecates it in favour of this one:
+F<t/fixtures/images_build_error_stream.ndjson> ends with both, spelling
+C<"building at STEP \"RUN exit 7\": while running runtime: exit status 7">
+twice. See L<API::Docker::Type::ErrorDetail>. Serialised as C<errorDetail>
+-- spelled out, because deriving it from the Perl name would produce
+C<ErrorDetail>.
 
 =cut
 
@@ -62,8 +73,11 @@ docker status => Str, wire => 'status';
 
 =attr status
 
-Undocumented upstream. Serialised as C<status> -- spelled out, because
-deriving it from the Perl name would produce C<Status>.
+Undocumented upstream. The same phase line a pull reports through
+L<API::Docker::Type::CreateImageInfo/status>; the captured build stream
+carries L</stream> instead and no C<status> at all. Serialised as C<status>
+-- spelled out, because deriving it from the Perl name would produce
+C<Status>.
 
 =cut
 
@@ -84,9 +98,11 @@ docker progress_detail => 'ProgressDetail', wire => 'progressDetail';
 
 =attr progress_detail
 
-Undocumented upstream. See L<API::Docker::Type::ProgressDetail>. Serialised
-as C<progressDetail> -- spelled out, because deriving it from the Perl name
-would produce C<ProgressDetail>.
+Undocumented upstream. The numbers behind L</progress>, which the swagger
+describes as a pre-formatted presentation of this field. See
+L<API::Docker::Type::ProgressDetail>. Serialised as C<progressDetail> --
+spelled out, because deriving it from the Perl name would produce
+C<ProgressDetail>.
 
 =cut
 

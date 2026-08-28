@@ -92,7 +92,9 @@ docker usage_count => Int;
 
 =attr usage_count
 
-Undocumented upstream.
+Undocumented upstream. A count of uses, C<26> in the swagger's example. The
+record's two other usage fields, L</in_use> and L</last_used_at>, are
+described upstream; this one is not.
 
 =cut
 

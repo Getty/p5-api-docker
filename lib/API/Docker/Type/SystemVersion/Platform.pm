@@ -14,7 +14,11 @@ docker name => Str;
 
 =attr name
 
-Undocumented upstream.
+Undocumented upstream. What the engine calls itself, and the two answers are
+nothing alike: F<t/fixtures/system_version.json>, captured from Docker
+27.4.1, carries C<"Docker Engine - Community">, while Podman 5.8.4 (API
+1.44) answers C<"linux/amd64/debian-13">. Free text, not a token to branch
+on.
 
 =cut
 

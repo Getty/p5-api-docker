@@ -21,9 +21,13 @@ docker io_service_bytes_recursive => [ 'ContainerBlkioStatEntry' ],
 
 =attr io_service_bytes_recursive
 
-Undocumented upstream. See L<API::Docker::Type::ContainerBlkioStatEntry>.
-Serialised as C<io_service_bytes_recursive> -- spelled out, because deriving
-it from the Perl name would produce C<IoServiceBytesRecursive>.
+Undocumented upstream. Bytes transferred, one entry per device and
+operation. It is the only one of the eight arrays a cgroup v2 host fills in,
+which is also why it is the only one carrying no description: the other
+seven each say they are cgroup v1 only, and this one had nothing left to
+qualify. See L<API::Docker::Type::ContainerBlkioStatEntry>. Serialised as
+C<io_service_bytes_recursive> -- spelled out, because deriving it from the
+Perl name would produce C<IoServiceBytesRecursive>.
 
 =cut
 

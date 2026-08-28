@@ -31,9 +31,11 @@ docker error_detail => 'ErrorDetail', wire => 'errorDetail', since => '1.51';
 
 =attr error_detail
 
-Undocumented upstream. See L<API::Docker::Type::ErrorDetail>. Serialised as
-C<errorDetail> -- spelled out, because deriving it from the Perl name would
-produce C<ErrorDetail>.
+Undocumented upstream. The failure, structured; the C<error> field beside it
+carries the same text and the swagger deprecates it in favour of this one.
+See L<API::Docker::Error::Stream>. See L<API::Docker::Type::ErrorDetail>.
+Serialised as C<errorDetail> -- spelled out, because deriving it from the
+Perl name would produce C<ErrorDetail>.
 
 =cut
 
@@ -41,8 +43,11 @@ docker status => Str, wire => 'status';
 
 =attr status
 
-Undocumented upstream. Serialised as C<status> -- spelled out, because
-deriving it from the Perl name would produce C<Status>.
+Undocumented upstream. The phase line, the same shape a pull's
+L<API::Docker::Type::CreateImageInfo/status> carries. No push stream is
+captured under F<t/fixtures/> -- pushing publishes to a real registry, so
+this distribution does not run one. Serialised as C<status> -- spelled out,
+because deriving it from the Perl name would produce C<Status>.
 
 =cut
 
@@ -63,9 +68,11 @@ docker progress_detail => 'ProgressDetail', wire => 'progressDetail';
 
 =attr progress_detail
 
-Undocumented upstream. See L<API::Docker::Type::ProgressDetail>. Serialised
-as C<progressDetail> -- spelled out, because deriving it from the Perl name
-would produce C<ProgressDetail>.
+Undocumented upstream. The numbers behind L</progress>, which the swagger
+describes as a pre-formatted presentation of this field. See
+L<API::Docker::Type::ProgressDetail>. Serialised as C<progressDetail> --
+spelled out, because deriving it from the Perl name would produce
+C<ProgressDetail>.
 
 =cut
 

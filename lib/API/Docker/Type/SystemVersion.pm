@@ -15,7 +15,10 @@ docker platform => 'SystemVersion::Platform';
 
 =attr platform
 
-Undocumented upstream. See L<API::Docker::Type::SystemVersion::Platform>.
+Undocumented upstream. One field, a name the engine gives itself. What the
+two engines put in it has nothing in common; see
+L<API::Docker::Type::SystemVersion::Platform/name>. See
+L<API::Docker::Type::SystemVersion::Platform>.
 
 =cut
 

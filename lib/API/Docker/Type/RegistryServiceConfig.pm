@@ -45,8 +45,14 @@ docker index_configs => { Str, 'IndexInfo' };
 
 =attr index_configs
 
-Undocumented upstream. See L<API::Docker::Type::IndexInfo>. B<The keys are
-the caller's data> and are never translated.
+Undocumented upstream. One L<API::Docker::Type::IndexInfo> per registry the
+daemon knows, keyed by the registry's own name -- C<docker.io>,
+C<127.0.0.1:5000> and C<< [2001:db8:a0b:12f0::1]:80 >> among the swagger's
+examples. L</insecure_registry_cidrs> describes this map as where a registry
+marked insecure by hostname is listed, with its C<Secure> set to false.
+Measured against Podman 5.8.4 (API 1.44), C<GET /info> answers an empty map
+here. See L<API::Docker::Type::IndexInfo>. B<The keys are the caller's data>
+and are never translated.
 
 =cut
 

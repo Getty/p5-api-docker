@@ -8,7 +8,10 @@ use API::Docker::Type;
 Generated from the C<ContainerStorageStats> definition of
 C<spec/v1.51.yaml>.
 
-This type is Windows-specific and omitted for Linux containers.
+This type is Windows-specific and omitted for Linux containers. None of its
+four fields is described. They are two counts and two byte totals, one pair
+per direction, every one of them nullable and every one of them given
+C<7593984> as its example.
 
 =cut
 
@@ -17,9 +20,9 @@ docker read_count_normalized => Int,
 
 =attr read_count_normalized
 
-Undocumented upstream. Serialised as C<read_count_normalized> -- spelled
-out, because deriving it from the Perl name would produce
-C<ReadCountNormalized>.
+Undocumented upstream. The count of the read pair, beside the byte total in
+L</read_size_bytes>. Serialised as C<read_count_normalized> -- spelled out,
+because deriving it from the Perl name would produce C<ReadCountNormalized>.
 
 =cut
 
@@ -27,8 +30,9 @@ docker read_size_bytes => Int, wire => 'read_size_bytes', since => '1.51';
 
 =attr read_size_bytes
 
-Undocumented upstream. Serialised as C<read_size_bytes> -- spelled out,
-because deriving it from the Perl name would produce C<ReadSizeBytes>.
+Undocumented upstream. The bytes read, the other half of that pair.
+Serialised as C<read_size_bytes> -- spelled out, because deriving it from
+the Perl name would produce C<ReadSizeBytes>.
 
 =cut
 
@@ -37,9 +41,9 @@ docker write_count_normalized => Int,
 
 =attr write_count_normalized
 
-Undocumented upstream. Serialised as C<write_count_normalized> -- spelled
-out, because deriving it from the Perl name would produce
-C<WriteCountNormalized>.
+Undocumented upstream. The write counterpart of L</read_count_normalized>.
+Serialised as C<write_count_normalized> -- spelled out, because deriving it
+from the Perl name would produce C<WriteCountNormalized>.
 
 =cut
 
@@ -47,8 +51,9 @@ docker write_size_bytes => Int, wire => 'write_size_bytes', since => '1.51';
 
 =attr write_size_bytes
 
-Undocumented upstream. Serialised as C<write_size_bytes> -- spelled out,
-because deriving it from the Perl name would produce C<WriteSizeBytes>.
+Undocumented upstream. The write counterpart of L</read_size_bytes>.
+Serialised as C<write_size_bytes> -- spelled out, because deriving it from
+the Perl name would produce C<WriteSizeBytes>.
 
 =cut
 

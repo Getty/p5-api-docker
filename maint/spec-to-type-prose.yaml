@@ -236,6 +236,41 @@ API::Docker::Type::BuildInfo:
       of these objects per line until the daemon closes the connection. A
       failed build is still C<200>, and arrives as an event carrying
       C<errorDetail>.
+  attr:
+    stream:
+      extra:
+        - >-
+          The build log the way the daemon writes it, one line per event
+          with the newline included -- C<< {"stream":"STEP 1/2: FROM
+          alpine:3\n"} >> opens
+          F<t/fixtures/images_build_stream.ndjson>. Nine of that capture's
+          ten events are this field; the tenth is L</aux>.
+    id:
+      extra:
+        - >-
+          The build stream captured in F<t/fixtures/images_build_stream.ndjson>
+          carries no C<id> at all. The same field on a pull,
+          L<API::Docker::Type::CreateImageInfo/id>, names the layer each event
+          is about.
+    status:
+      extra:
+        - >-
+          The same phase line a pull reports through
+          L<API::Docker::Type::CreateImageInfo/status>; the captured build
+          stream carries L</stream> instead and no C<status> at all.
+    progress_detail:
+      extra:
+        - >-
+          The numbers behind L</progress>, which the swagger describes as a
+          pre-formatted presentation of this field.
+    error_detail:
+      extra:
+        - >-
+          The failure, structured. The C<error> field beside it carries the
+          same text and the swagger deprecates it in favour of this one:
+          F<t/fixtures/images_build_error_stream.ndjson> ends with both,
+          spelling C<"building at STEP \"RUN exit 7\": while running runtime:
+          exit status 7"> twice.
 API::Docker::Type::CreateImageInfo:
   abstract: One event of the stream a C<POST /images/create> answers with
   description_append:
@@ -243,6 +278,35 @@ API::Docker::Type::CreateImageInfo:
       The pull progress stream: C<POST /images/create> answers C<200> and then
       writes one of these objects per line. Like a build, a failed pull is
       still C<200> and reports itself through C<errorDetail>.
+  attr:
+    id:
+      extra:
+        - >-
+          Which layer the event is about: a short image ID, repeated across
+          every event for that layer. F<t/fixtures/images_pull_stream.ndjson>
+          carries C<55afa1ecc21d> once and C<d529dd0c6e55> on three
+          consecutive events.
+    status:
+      extra:
+        - >-
+          The phase the layer named by L</id> has reached, as text. The
+          captured pull in F<t/fixtures/images_pull_stream.ndjson> carries
+          C<"Already exists">, C<"Pulling fs layer"> and C<"Download
+          complete">.
+    progress_detail:
+      extra:
+        - >-
+          The numbers behind L</progress>, which the swagger describes as a
+          pre-formatted presentation of this field. Empty in all four events
+          of F<t/fixtures/images_pull_stream.ndjson>, which had nothing left
+          to transfer.
+    error_detail:
+      extra:
+        - >-
+          The failure, structured; the C<error> field beside it carries the
+          same text and the swagger deprecates it in favour of this one. A
+          failed pull is still C<200>, so this is the verdict -- see
+          L<API::Docker::Error::Stream>.
 API::Docker::Type::PushImageInfo:
   abstract: One event of the stream a C<POST /images/{name}/push> answers with
   description_append:
@@ -250,6 +314,25 @@ API::Docker::Type::PushImageInfo:
       The push progress stream, the same shape as a pull's. A failed push is
       C<200> with an C<errorDetail> event, so the status line is not the
       verdict.
+  attr:
+    status:
+      extra:
+        - >-
+          The phase line, the same shape a pull's
+          L<API::Docker::Type::CreateImageInfo/status> carries. No push stream
+          is captured under F<t/fixtures/> -- pushing publishes to a real
+          registry, so this distribution does not run one.
+    progress_detail:
+      extra:
+        - >-
+          The numbers behind L</progress>, which the swagger describes as a
+          pre-formatted presentation of this field.
+    error_detail:
+      extra:
+        - >-
+          The failure, structured; the C<error> field beside it carries the
+          same text and the swagger deprecates it in favour of this one. See
+          L<API::Docker::Error::Stream>.
 
 # Inline objects the swagger writes without a description, and whose property
 # carries none either. The class name is the only thing the spec offers, so
@@ -298,6 +381,15 @@ API::Docker::Type::ServiceSpec::Mode::Replicated:
   abstract: The replicated mode of a service, and its replica count
 API::Docker::Type::SystemVersion::Platform:
   abstract: The name of the platform the daemon reports itself as
+  attr:
+    name:
+      extra:
+        - >-
+          What the engine calls itself, and the two answers are nothing alike:
+          F<t/fixtures/system_version.json>, captured from Docker 27.4.1,
+          carries C<"Docker Engine - Community">, while Podman 5.8.4 (API
+          1.44) answers C<"linux/amd64/debian-13">. Free text, not a token to
+          branch on.
 API::Docker::Type::TaskSpec::Placement:
   abstract: Where in the swarm a task may be scheduled
   description_append:
@@ -540,3 +632,198 @@ API::Docker::Type::IPAMConfig:
           A device name for each key and an IP address for each value, which
           is what C<< "AuxAddress": <device_name:IP address> >> in
           L<API::Docker::Type::IPAM/config> spells out.
+
+API::Docker::Type::AuthConfig:
+  attr:
+    username:
+      extra:
+        - >-
+          The registry account name, C<hannibal> in the definition's own
+          example.
+    password:
+      extra:
+        - >-
+          Its password, C<xxxx> in the definition's own example. The swagger's
+          introduction gives the same three keys as the structure that travels
+          base64url-encoded in C<X-Registry-Auth>, and notes that an identity
+          token from C<POST /auth> can be sent instead of a username and
+          password; see L<API::Docker::Role::RegistryAuth>.
+    serveraddress:
+      extra:
+        - >-
+          The registry to authenticate against. The swagger's introduction
+          says of this key that it is "a domain/IP without a protocol", while
+          the definition's own example gives
+          C<https://index.docker.io/v1/> -- which has one. The spec
+          contradicts itself here; this distribution forwards whatever the
+          caller wrote.
+
+API::Docker::Type::ErrorDetail:
+  description_append:
+    - >-
+      It is what a build, pull or push stream reports a failure through, and
+      what L<API::Docker::Error::Stream> is croaked on; neither of its two
+      fields is described either.
+  attr:
+    message:
+      extra:
+        - >-
+          The reason, as text. It ends in a newline in
+          F<t/fixtures/images_build_error_stream.ndjson>, which is why
+          L<API::Docker::Error::Stream/message> strips trailing whitespace
+          before Carp sees it.
+    code:
+      extra:
+        - >-
+          An integer. No captured stream under F<t/fixtures/> carries one --
+          the C<errorDetail> of F<t/fixtures/images_build_error_stream.ndjson>
+          has L</message> and nothing else.
+
+API::Docker::Type::ProgressDetail:
+  description_append:
+    - >-
+      The two numbers behind the C<progress> field of a build, pull or push
+      event, which the swagger describes as "a pre-formatted presentation of
+      progressDetail".
+  attr:
+    current:
+      extra:
+        - >-
+          How much is done. Absent from every event of
+          F<t/fixtures/images_pull_stream.ndjson>, where C<progressDetail> is
+          an empty object throughout.
+    total:
+      extra:
+        - How much there is to do, the other half of L</current>.
+
+API::Docker::Type::BuildCache:
+  attr:
+    usage_count:
+      extra:
+        - >-
+          A count of uses, C<26> in the swagger's example. The record's two
+          other usage fields, L</in_use> and L</last_used_at>, are described
+          upstream; this one is not.
+
+API::Docker::Type::SystemVersion:
+  attr:
+    platform:
+      extra:
+        - >-
+          One field, a name the engine gives itself. What the two engines put
+          in it has nothing in common; see
+          L<API::Docker::Type::SystemVersion::Platform/name>.
+
+API::Docker::Type::RegistryServiceConfig:
+  attr:
+    index_configs:
+      extra:
+        - >-
+          One L<API::Docker::Type::IndexInfo> per registry the daemon knows,
+          keyed by the registry's own name -- C<docker.io>,
+          C<127.0.0.1:5000> and C<< [2001:db8:a0b:12f0::1]:80 >> among the
+          swagger's examples. L</insecure_registry_cidrs> describes this map
+          as where a registry marked insecure by hostname is listed, with its
+          C<Secure> set to false. Measured against Podman 5.8.4 (API 1.44),
+          C<GET /info> answers an empty map here.
+
+API::Docker::Type::ProcessConfig:
+  description_append:
+    - >-
+      The swagger describes none of its five fields, but the example response
+      it gives for that endpoint shows all five, and the body of C<POST
+      /containers/{id}/exec> describes the options they report back.
+  attr:
+    privileged:
+      extra:
+        - >-
+          Whether the process runs with extended privileges, which is how the
+          swagger describes C<Privileged> on the exec-create body. C<false> in
+          the example response.
+    user:
+      extra:
+        - >-
+          The user, and optionally the group, the process runs as inside the
+          container -- one of C<user>, C<user:group>, C<uid> or C<uid:gid>, as
+          the swagger describes C<User> on the exec-create body. C<"1000"> in
+          the example response.
+    tty:
+      extra:
+        - >-
+          Whether a pseudo-TTY was allocated, which is what C<Tty> asks for on
+          the exec-create body. It decides how the output arrives: with a TTY
+          the stream is raw, without one it is the multiplexed frame format,
+          see L<API::Docker::Role::HTTP/"Detecting a framed stream">. C<true>
+          in the example response.
+    entrypoint:
+      extra:
+        - >-
+          The program being run, C<"sh"> in the example response. The
+          exec-create body takes it together with L</arguments> as one C<Cmd>,
+          which the swagger describes as the command to run.
+    arguments:
+      extra:
+        - >-
+          Its arguments, C<< ["-c", "exit 2"] >> beside that C<"sh"> in the
+          example response.
+
+API::Docker::Type::ContainerBlkioStatEntry:
+  attr:
+    major:
+      extra:
+        - >-
+          With L</minor>, the pair identifying the block device the entry
+          counts for. The example L<API::Docker::Type::ContainerBlkioStats>
+          gives for a whole object holds two entries under
+          C<io_service_bytes_recursive>, one read and one write, and both
+          carry C<254> here.
+    minor:
+      extra:
+        - The other half of that pair, C<0> on both of those entries.
+    op:
+      extra:
+        - >-
+          The operation counted, C<"read"> on one of those two entries and
+          C<"write"> on the other. The type holding them describes itself as
+          storing all IO service stats for data read and write.
+    value:
+      extra:
+        - >-
+          The count itself. What it counts depends on which of the eight
+          arrays of L<API::Docker::Type::ContainerBlkioStats> the entry sits
+          in; under C<io_service_bytes_recursive> it is bytes, C<7593984> on
+          the read entry of that object's example and C<100> on the write
+          one.
+
+API::Docker::Type::ContainerBlkioStats:
+  attr:
+    io_service_bytes_recursive:
+      extra:
+        - >-
+          Bytes transferred, one entry per device and operation. It is the
+          only one of the eight arrays a cgroup v2 host fills in, which is
+          also why it is the only one carrying no description: the other seven
+          each say they are cgroup v1 only, and this one had nothing left to
+          qualify.
+
+API::Docker::Type::ContainerStorageStats:
+  description_append:
+    - >-
+      None of its four fields is described. They are two counts and two byte
+      totals, one pair per direction, every one of them nullable and every one
+      of them given C<7593984> as its example.
+  attr:
+    read_count_normalized:
+      extra:
+        - >-
+          The count of the read pair, beside the byte total in
+          L</read_size_bytes>.
+    read_size_bytes:
+      extra:
+        - The bytes read, the other half of that pair.
+    write_count_normalized:
+      extra:
+        - The write counterpart of L</read_count_normalized>.
+    write_size_bytes:
+      extra:
+        - The write counterpart of L</read_size_bytes>.

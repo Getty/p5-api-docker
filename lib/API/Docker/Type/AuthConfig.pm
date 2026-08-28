@@ -15,7 +15,8 @@ docker username => Str, wire => 'username';
 
 =attr username
 
-Undocumented upstream. Serialised as C<username> -- spelled out, because
+Undocumented upstream. The registry account name, C<hannibal> in the
+definition's own example. Serialised as C<username> -- spelled out, because
 deriving it from the Perl name would produce C<Username>.
 
 =cut
@@ -24,8 +25,13 @@ docker password => Str, wire => 'password';
 
 =attr password
 
-Undocumented upstream. Serialised as C<password> -- spelled out, because
-deriving it from the Perl name would produce C<Password>.
+Undocumented upstream. Its password, C<xxxx> in the definition's own
+example. The swagger's introduction gives the same three keys as the
+structure that travels base64url-encoded in C<X-Registry-Auth>, and notes
+that an identity token from C<POST /auth> can be sent instead of a username
+and password; see L<API::Docker::Role::RegistryAuth>. Serialised as
+C<password> -- spelled out, because deriving it from the Perl name would
+produce C<Password>.
 
 =cut
 
@@ -45,7 +51,11 @@ docker serveraddress => Str, wire => 'serveraddress';
 
 =attr serveraddress
 
-Undocumented upstream. Serialised as C<serveraddress> -- spelled out,
+Undocumented upstream. The registry to authenticate against. The swagger's
+introduction says of this key that it is "a domain/IP without a protocol",
+while the definition's own example gives C<https://index.docker.io/v1/> --
+which has one. The spec contradicts itself here; this distribution forwards
+whatever the caller wrote. Serialised as C<serveraddress> -- spelled out,
 because deriving it from the Perl name would produce C<Serveraddress>.
 
 =cut
