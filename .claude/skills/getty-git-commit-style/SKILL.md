@@ -83,12 +83,13 @@ true now and what a user does differently because of it. The reasoning has homes
 keep it — the commit body, the ticket, an ADR; a changelog is read by someone who
 never saw the old behaviour.
 
-**Reference only the tracker the repo publishes.** A `#123` earns its place when a
-reader can open it — GitHub or Gitea issues on a repo that has them. An internal board
-ticket (karr) is unreadable outside the workspace and numbered independently of the
-public tracker, so `#254` in a changelog is a link GitHub resolves against *its* issue
-254: a dead one today, someone else's bug once the repo has that many. Where the
-internal ticket is the only record, name the change instead of the number.
+**Reference only the tracker the repo publishes.** In a changelog a `#123` earns its
+place when the reader can open it — GitHub or Gitea issues on a repo that has them. An
+internal board ticket is unreadable outside the workspace, so it does not appear there
+at all: name the change instead of the number. A commit message may carry one, written
+in the board's own notation (karr ids are `k254`) — never as `#254`, which every
+hosting platform resolves against *its* issue 254: a dead link today, someone else's
+bug once the repo has that many.
 
 Aim for one to three lines per entry, and let the count of entries fall out of the
 work rather than the detail per entry. For scale: a mature Getty distribution carries

@@ -44,6 +44,7 @@ This rule depends on whether the Agent/Task tool is available to you.
   | Anything turning on what the daemon does or expects — endpoints, wire formats, filters, registry auth, version gating | `api-docker-engine-worker` |
   | The Perl side — Moo, transport internals, entity classes, refactoring, cpanfile | `api-docker-worker` (default) |
   | Write/extend tests, add fixtures | `api-docker-test-writer` |
+  | The generated type model, the `API::Docker::Type` DSL, the drift checker, `spec/` | `api-docker-type-writer` |
   | Pre-release audit | `api-docker-release-checker` |
   | POD and README | `api-docker-doc-writer` |
 

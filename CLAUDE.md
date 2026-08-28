@@ -142,11 +142,15 @@ The principle, the lanes and the repo's hazards are in
 | What the daemon does or expects — endpoints, wire formats, filters, registry auth | `api-docker-engine-worker` |
 | The Perl side — Moo, transport internals, entities, refactoring, cpanfile | `api-docker-worker` (default) |
 | Write/extend tests, add fixtures | `api-docker-test-writer` |
+| The generated type model — `API::Docker::Type::*`, the DSL, the drift checker, `spec/` | `api-docker-type-writer` |
 | Pre-release audit | `api-docker-release-checker` |
 | POD and README | `api-docker-doc-writer` |
 
 The two workers split by question, not by file. Only `api-docker-engine-worker`
 is briefed with `docker-engine-api`, the shared Engine API reference.
+
+`api-docker-type-writer` is briefed with `api-docker-type-model`, which carries the
+pattern for the generated classes; see karr #79.
 
 The agents carry their skills via `briefing.skills` (see `.claude/agents/`);
 the main agent delegates rather than loading them. Skill sources live under
