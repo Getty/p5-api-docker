@@ -71,6 +71,12 @@ what we know and B<forwarding the rest verbatim> is worth more to this
 distribution than a tidy model: a field the caller set must never be dropped
 because we have not heard of it.
 
+That promise covers the value as well as the name, C<undef> included: a name
+the model does not know has no declared type, so there is no zero value we
+could read a null as, and inventing one would be us deciding what the engine
+meant. A B<known> field's null is the opposite case and is read as unset --
+see L</"A null on a known field is read as unset">.
+
 =cut
 
 has unknown_fields => (
@@ -227,6 +233,53 @@ This leniency is the response path's alone. L</new> croaks on a value that
 does not fit, because there the value came from the caller and is a mistake
 worth stopping on rather than an engine being itself.
 
+=head3 A null on a known field is read as unset
+
+An engine answering C<"Tags": null> is saying what an engine that omits the
+field is saying, and this reads both the same way: the attribute stays
+C<undef>, nothing is filed in L</unknown_fields> or L</rejected_fields>, and
+L</TO_JSON> writes no key for it. The null is not carried and the key does
+not come back.
+
+That is not a convenience, it is the daemon's own resolution. Measured
+2026-08-28 against Podman 5.8.4 (API 1.44) on C<POST /containers/create>,
+with an image name nothing can resolve so that the body is parsed and no
+container is created:
+
+    {}                  500  parsing reference "": repository name must ...
+    {"Image":null}      500  parsing reference "": repository name must ...
+    {"Image":""}        500  parsing reference "": repository name must ...
+
+Byte-identical, all three. Go's C<encoding/json> unmarshals a null into the
+type's zero value, and an absent field leaves that same zero value behind --
+C<""> for a string, nil for a map or a slice, false for a bool -- so the
+daemon B<cannot> tell an explicit null from an absent field, and collapsing
+the two loses no meaning it could have expressed. It holds outbound too,
+which is why a null reaches us where a key could simply have been left out:
+a nil slice marshals to C<null>, and C<GET /images/{id}/history> answers
+C<"Tags": null> for a layer that carries no tag (karr k93).
+
+Three things that all look like a null therefore behave differently, on
+purpose:
+
+    my $n = API::Docker::Type::Network->from_data({
+      Options => { 'com.docker.x' => undef },   # a key the caller chose
+      IPAM    => { Options      => undef,       # a field we know
+                   FutureNested => undef },     # a field we do not
+    });
+
+    $n->TO_JSON      # { Options => { 'com.docker.x' => undef },
+                     #   IPAM    => { FutureNested => undef } }
+
+The known field's null is a statement the daemon could have made in two ways,
+so its key goes. The unknown field's null is data we cannot type, so it
+stays. A null under a key the caller chose -- the C<additionalProperties>
+shape, see L<API::Docker::Type/"Keys that are the caller's data"> -- is that
+caller's value under that caller's key, and stays as well.
+
+F<t/type_fixture_passthrough.t> holds all three against the captured
+fixtures, at every depth rather than at the top level only.
+
 =cut
 
 sub from_data {
@@ -314,8 +367,13 @@ The structure the daemon expects: registry wire names as keys, JSON booleans
 for C<Bool>, nested objects serialised by their own C<TO_JSON>.
 
 An attribute that was never set is B<omitted>, not sent as null -- Docker
-tells an absent flag apart from a false one, and so does this. The contents
-of L</unknown_fields> are written first and a set field wins over them.
+tells an absent flag apart from a false one, and so does this. A known field
+the engine sent as an explicit C<null> is such an attribute, so its key does
+not come back either; that is measured rather than assumed, see
+L</"A null on a known field is read as unset">. The contents of
+L</unknown_fields> are written first and a set field wins over them -- and a
+null kept there, under a name the model could not translate, does go out as
+a null.
 
 That precedence never costs a value L</from_data> preserved. A field lands in
 C<unknown_fields> under a known wire name only when its typed attribute was

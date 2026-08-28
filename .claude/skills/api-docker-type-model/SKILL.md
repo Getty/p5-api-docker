@@ -98,6 +98,20 @@ theoretical: a real Podman `/info` answers with fields the swagger does not
 have, and `ImageSummary` still serves `VirtualSize`, which Docker dropped from
 the spec after v1.41.
 
+**A null is where that stops, and only for a field we know.** A known field an
+engine sends as `null` is read as unset: the attribute stays `undef` and
+`TO_JSON` writes no key for it. That is not a leak, it is the daemon's own
+resolution â measured 2026-08-28 against Podman 5.8.4 (API 1.44), where
+`POST /containers/create` answers `{}`, `{"Image":null}` and `{"Image":""}`
+with byte-identical errors, because Go's `encoding/json` unmarshals a null
+into the type's zero value and an absent field leaves that same zero value.
+It holds outbound too, which is why `/images/{id}/history` answers
+`"Tags": null` instead of omitting the field. An *unknown* field keeps its
+null, because with no declared type there is no zero value to read it as, and
+so does a null under a key the caller chose. Three shapes, three outcomes, on
+purpose; the reasoning lives in `API::Docker::Role::Type`'s POD and
+`t/type_fixture_passthrough.t` holds all three against the fixtures.
+
 **`since` is documentation, never a check.** It records which API version
 introduced a field, derived by diffing the specs in `spec/` against each
 other — the swagger itself carries no per-field version. Nothing is

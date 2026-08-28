@@ -214,10 +214,21 @@ Revision history for API-Docker
     flow maps closed at less indentation than the key that opens them.
   - New `t/type_fixture_passthrough.t`: every fixture under `t/fixtures/*.json`
     is fed through the generated class its endpoint returns, and `TO_JSON`
-    must carry every key the daemon sent. Pins the case that motivated it --
-    `ImageSummary`'s `VirtualSize`, gone from the swagger since v1.44 but
-    still sent by the engine, must stay filed in `unknown_fields` and reach
-    `TO_JSON` unchanged rather than being dropped by a future cleanup.
+    must carry every key the daemon sent, at every depth. Pins the case that
+    motivated it -- `ImageSummary`'s `VirtualSize`, gone from the swagger
+    since v1.44 but still sent by the engine, must stay filed in
+    `unknown_fields` and reach `TO_JSON` unchanged rather than being dropped
+    by a future cleanup -- and states the one exception rather than skipping
+    it: a field the model knows that an engine sends as an explicit `null`
+    is read as unset and loses its key. That is the daemon's own resolution,
+    not a leak. Measured against Podman 5.8.4 (API 1.44), `POST
+    /containers/create` answers `{}`, `{"Image":null}` and `{"Image":""}`
+    with byte-identical errors, because Go unmarshals a null into the type's
+    zero value and an absent field leaves that same zero value -- which is
+    also why `/images/{id}/history` sends `"Tags": null` rather than omitting
+    the field. A field the model does *not* know keeps its null, and so does
+    a null under a key the caller chose; `API::Docker::Role::Type` documents
+    all three.
   - `t/entity_container.t`'s subtest on the generated container classes now
     opts out of live mode like its two siblings already did; it was
     asserting `containers_list.json`'s captured id and size against whatever

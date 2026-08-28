@@ -126,6 +126,14 @@ does not describe. Which names count as known depends on the entry point --
 C<from_data> reads an engine response and takes wire names only, C<new>
 builds a request and takes either spelling; see that role for the reasoning.
 
+A null is where the two name spaces part. A field the registry knows that
+arrives as C<null> is read as unset and its key does not come back, because
+the daemon cannot tell an explicit null from an absent field in either
+direction; a field the registry does not know keeps its null, because
+without a declared type there is no zero value to read it as. The
+measurement and the three shapes it produces are in
+L<API::Docker::Role::Type/"A null on a known field is read as unset">.
+
 =head2 C<allOf> becomes inheritance
 
 Two definitions in v1.51 are composed with C<allOf>, and both have the same

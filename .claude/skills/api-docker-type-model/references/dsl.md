@@ -54,12 +54,16 @@ fit one case.
 
 `TO_JSON` walks the registry, not the object's keys:
 
-- an attribute that was never set is omitted, not sent as null
+- an attribute that was never set is omitted, not sent as null â and a known
+  field the engine sent as an explicit null is such an attribute, so its key
+  does not come back (the daemon cannot tell null from absent; measured, see
+  `API::Docker::Role::Type`)
 - a nested object is serialised by its own `TO_JSON`
 - an ArrayRef of objects maps over them
 - a HashRef whose keys are caller data passes its keys through untouched
 - anything the caller stored under a name the registry does not know is
-  forwarded verbatim, so a newer engine's field still reaches the daemon
+  forwarded verbatim, so a newer engine's field still reaches the daemon â
+  its null included, because an untyped name has no zero value to read one as
 
 Inflation is the mirror: a known wire name becomes the typed attribute, an
 unknown one is kept as-is under its original name.
