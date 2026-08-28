@@ -4,6 +4,7 @@ use Test::More;
 use File::Find;
 use File::Spec;
 use FindBin;
+use Package::Stash;
 
 # Every class of the generated type model, loaded and asked what it
 # registered. The suite otherwise exercises a handful of them by name, so a
@@ -63,19 +64,72 @@ subtest 'the whole model round-trips an empty object' => sub {
     'a class with nothing set serialises to an empty structure';
 };
 
-subtest 'the role leaks none of its imports as a method' => sub {
-  # Everything imported after `use Moo::Role` is composed into the consumer
-  # as a method unless the role closes with `use namespace::clean`, so
-  # Role::Type's own `croak` and `blessed` used to answer on all 201 classes.
-  # Nothing called them, which is the point: the method surface of a
-  # generated class is the daemon's fields plus a documented handful, and a
-  # name that arrives there by accident collides silently when the swagger
-  # one day spells a field that way. Drop the namespace::clean line from
-  # API::Docker::Role::Type and this fails 201 times (karr k82).
-  for my $leak (qw( croak blessed )) {
-    my @found = grep { $_->can($leak) } @classes;
-    is_deeply \@found, [], "no generated class answers ->$leak";
+subtest 'a generated class holds its fields and the documented roster' => sub {
+  # What `use API::Docker::Type` puts on a class is a fixed set: Moo's
+  # keywords, the type vocabulary, the two DSL keywords, and everything
+  # composing API::Docker::Role::Type contributes. Measured over all 201
+  # classes it is the same 33 names every time, so the surface of a
+  # generated class can be stated positively -- its registry attributes plus
+  # this roster, and nothing else.
+  #
+  # Stated that way on purpose. The assertion here used to be a list of two
+  # forbidden names, croak and blessed, which leaked onto every class until
+  # API::Docker::Role::Type gained its namespace::clean (karr k82). Half of
+  # it went vacuous the moment the blessed import was dropped from that role
+  # (karr k87): the name could no longer arrive, so forbidding it proved
+  # nothing, and nobody could tell by reading it. A roster cannot go vacuous
+  # -- it fails on a name that appears and on one that disappears -- and it
+  # names the leak without anyone having thought of it first.
+  #
+  # It is a name roster rather than a check on where each sub was compiled
+  # because a name is what collides: these classes are generated from a
+  # specification that grows fields without asking, and a field the swagger
+  # one day spells `Has` or `New` would quietly take the place of what is
+  # here.
+  #
+  # This holds while nothing under lib/API/Docker/Type/ pulls in an entity
+  # role -- API::Docker::Role::Entity::* attaches itself to its classes when
+  # the ROLE is loaded, and this file loads only the model. A class that
+  # gained ->start or ->remove that way would be reported here by name; that
+  # is a deliberate change to the surface and belongs in the roster.
+  my @roster = (
+    # Moo, imported into the class by API::Docker::Type::_setup_class
+    qw( has with extends around before after ),
+    # the type vocabulary, imported by the same sub, so that a class body
+    # can write `docker target => Str`
+    qw( Any Bool Int Num Str ),
+    # the two keywords, installed into the class through Package::Stash
+    qw( docker docker_extends ),
+    # what composing API::Docker::Role::Type leaves behind: its two
+    # attributes, all of its methods -- the private ones included, Role::Tiny
+    # composes every sub the role has -- and the new, BUILDARGS and DOES that
+    # the composition itself generates
+    qw( new BUILDARGS DOES
+        unknown_fields rejected_fields
+        from_data from_json TO_JSON to_json
+        docker_attributes docker_attribute_order
+        _fits _entity_attribute_index
+        _docker_attr_registry _merge_registry
+        _docker_attr_order _merge_order _append_order
+        _docker_wire_index _invalidate_docker_cache ),
+  );
+  my %roster = map { ($_ => 1) } @roster;
+
+  # Counted by name rather than collected per class: a leak out of the role
+  # or the DSL is on all 201 at once, and `{ croak => 201 }` says that in one
+  # line where 201 strings would bury it.
+  my (%extra, %absent);
+  for my $class (@classes) {
+    my $fields = $class->docker_attributes;
+    my %have = map { ($_ => 1) }
+      Package::Stash->new($class)->list_all_symbols('CODE');
+    $extra{$_}++  for grep { !$fields->{$_} && !$roster{$_} } keys %have;
+    $absent{$_}++ for grep { !$have{$_} } @roster;
   }
+  is_deeply \%extra, {},
+    'no generated class answers to a name outside its fields and the roster';
+  is_deeply \%absent, {},
+    'every generated class answers to the whole roster';
 };
 
 done_testing;
