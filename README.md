@@ -36,13 +36,22 @@ my $docker = API::Docker->new(
 my $info = $docker->system->info;
 my $version = $docker->system->version;
 
-# Container management
+# Container management -- list/inspect return generated
+# API::Docker::Type::* objects with snake_case accessors, not hashrefs
 my $containers = $docker->containers->list(all => 1);
+for my $container (@$containers) {
+    say $container->id;
+    say $container->status;
+}
+
 my $result = $docker->containers->create(
     Image => 'nginx:latest',
     name  => 'my-nginx',
 );
 $docker->containers->start($result->{Id});
+
+my $inspected = $docker->containers->inspect($result->{Id});
+say $inspected->state->running ? 'running' : 'not running';
 
 # Image operations
 $docker->images->pull(fromImage => 'nginx', tag => 'latest');
@@ -65,17 +74,62 @@ volumes without the overhead of heavy HTTP client libraries.
 - **Unix socket and TCP transport**, the latter in the clear or over TLS
   with client certificates (see `tls`, `cert_path` below)
 - **Automatic API version negotiation** with Docker daemon
-- **Object-oriented entity classes** (Container, Image, Network, Volume,
-  Secret, Config, Plugin)
+- **A typed object model generated from Docker's own swagger**
+  (`API::Docker::Type::*`) -- containers today, the remaining resources
+  incrementally; see [Typed object model](#typed-object-model) below
 - **HTTP/1.1 implementation** with chunked transfer encoding, including
   incremental delivery of a streaming response through a per-request
   callback (`on_event`/`on_frame`/`on_chunk`) for endpoints that never
   close on their own — `logs(follow => 1)`, `system->events`, `stats`
 - **Comprehensive logging** via Log::Any
 
+### Typed object model
+
+Docker publishes its own machine-readable API description (its swagger),
+listing around 200 shapes -- containers, images, networks, host configs,
+mounts, and everything nested inside them. `API::Docker::Type::*` mirrors
+every one of them as a generated Perl class, one class per swagger
+definition, so a deeply nested response comes back as real objects instead
+of a hashref tree to dig through by hand:
+
+```perl
+my $container = $docker->containers->inspect($id);
+say $container->state->running;      # not $container->{State}{Running}
+say $container->host_config->privileged;
+```
+
+Fields are snake_case on the Perl side (`host_config`, `size_root_fs`) and
+the daemon's own CamelCase on the wire (`HostConfig`, `SizeRootFs`); the
+mapping is mechanical, and spelled out by hand where it is not.
+
+Two things set this apart from a plain generated hashref-to-object mapper:
+
+- **An unrecognised field is not dropped.** Anything a response carries
+  under a name the model does not know -- an engine newer than the
+  swagger this model was generated from -- is kept under the name it
+  arrived with and written back out unchanged. A caller's own data is
+  never silently discarded just because this client has not caught up
+  yet.
+- **`since` is documentation, not a runtime check.** Every attribute's POD
+  records the API version that introduced it, but nothing is validated,
+  warned about, or stripped at request or response time on that basis.
+  Real engines have been measured serving fields their announced version
+  does not promise, and omitting ones it does -- this client is
+  deliberately not the authority on what a given engine can do.
+
+`containers->list` and `containers->inspect` return these generated
+classes today (`API::Docker::Type::ContainerSummary` and
+`API::Docker::Type::ContainerInspectResponse`), with the same convenience
+methods (`->start`, `->stop`, `->logs`, `->remove`, ...) composed onto
+both, so a list entry and an inspect result behave the same way. The
+other resources -- images, networks, volumes, secrets, configs, plugins
+-- still return their earlier hand-written entity classes
+(`API::Docker::Image` and friends) and are being moved onto the same
+generated model one at a time.
+
 ### Roles
 
-Behaviour shared across the resource classes, each documented on its own
+Behaviour composed into more than one class, each documented on its own
 page:
 
 - `API::Docker::Role::HTTP` — the HTTP transport layer every resource
@@ -85,6 +139,16 @@ page:
 - `API::Docker::Role::Filters` — the `filters` query parameter, normalised
   into the one shape the engine reads, shared by every `list`/`prune`
   method
+- `API::Docker::Role::Using` — `using`, the resource class clone that
+  bounds a run of calls with its own timeout
+- `API::Docker::Role::Type` — the instance behaviour of every generated
+  `API::Docker::Type::*` class: serialisation both ways and
+  `unknown_fields`
+- `API::Docker::Role::Entity` — the client reference an entity delegates
+  through
+- `API::Docker::Role::Entity::Container` — the container convenience
+  methods (`->start`, `->logs`, ...), composed onto the generated
+  `ContainerSummary` and `ContainerInspectResponse` classes at load time
 
 ## Methods
 

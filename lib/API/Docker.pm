@@ -32,13 +32,22 @@ use API::Docker::API::Plugins;
     my $info = $docker->system->info;
     my $version = $docker->system->version;
 
-    # Container management
+    # Container management -- list/inspect return generated
+    # API::Docker::Type::* objects with snake_case accessors, not hashrefs
     my $containers = $docker->containers->list(all => 1);
+    for my $container (@$containers) {
+        say $container->id;
+        say $container->status;
+    }
+
     my $result = $docker->containers->create(
         Image => 'nginx:latest',
         name  => 'my-nginx',
     );
     $docker->containers->start($result->{Id});
+
+    my $inspected = $docker->containers->inspect($result->{Id});
+    say $inspected->state->running ? 'running' : 'not running';
 
     # Image operations
     $docker->images->pull(fromImage => 'nginx', tag => 'latest');
@@ -65,8 +74,9 @@ with client certificates (L</tls>, L</cert_path>)
 
 =item * Automatic API version negotiation
 
-=item * Object-oriented entity classes (Container, Image, Network, Volume,
-Secret, Config, Plugin)
+=item * A typed object model generated from Docker's own swagger
+(L<API::Docker::Type>) -- containers today, the remaining resources
+incrementally; see L</Architecture> below
 
 =item * Comprehensive logging via L<Log::Any>
 
@@ -128,7 +138,7 @@ L<API::Docker::Type::ContainerInspectResponse>
 
 =back
 
-=item * B<Roles> - Behaviour shared across the API modules:
+=item * B<Roles> - Behaviour shared across more than one class:
 
 =over
 
@@ -142,6 +152,14 @@ normalised into the one shape the engine reads
 
 =item * L<API::Docker::Role::Using> - C<using>, the resource class clone that
 bounds a run of calls
+
+=item * L<API::Docker::Role::Type> - the instance behaviour of every
+generated L<API::Docker::Type> class: serialisation both ways and
+C<unknown_fields>
+
+=item * L<API::Docker::Role::Entity> - the client reference an entity
+delegates through, composed by a resource-specific entity role such as
+L<API::Docker::Role::Entity::Container>
 
 =back
 
@@ -761,6 +779,17 @@ encoding
 
 =item * L<API::Docker::Role::Using> - C<using>, the resource class clone that
 bounds a run of calls
+
+=item * L<API::Docker::Type> - the DSL and attribute registry behind the
+generated C<API::Docker::Type::*> classes
+
+=item * L<API::Docker::Role::Type> - the generated classes' own behaviour
+
+=item * L<API::Docker::Role::Entity> - the client reference an entity
+delegates through
+
+=item * L<API::Docker::Role::Entity::Container> - the container convenience
+methods, composed onto the generated container classes
 
 =item * L<API::Docker::API::System> - System and daemon operations
 

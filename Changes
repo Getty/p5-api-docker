@@ -1070,6 +1070,25 @@ Revision history for API-Docker
     the one transport where a short read is the ordinary case, one plaintext
     record per `sysread`, so the rule that a short read is not an end of
     stream has no margin there.
+  - README and the module POD catch up with the type model. README gained
+    a "Typed object model" section -- what it is, and the two things that
+    set it apart from a plain generated wrapper: an unrecognised field is
+    kept and re-sent rather than dropped, and `since` is documentation
+    only, checked at neither request nor response time. Its Synopsis now
+    shows `list` and `inspect` returning `API::Docker::Type::*` objects
+    with snake_case accessors instead of hashrefs, matching
+    `API::Docker.pm`'s own Synopsis. Both "Roles" lists now name all seven
+    roles instead of three, adding `Role::Using`, `Role::Type` and
+    `Role::Entity`. `CLAUDE.md`'s `## Layout` section was missing
+    `API::Docker::Type`, `Role::Type`, the generated `Type/` tree, `maint/`,
+    `spec/`, `Error::Timeout`, `Error::Truncated` and `Role::Using`; all
+    are listed now. The other resource classes (`Images`, `Networks`,
+    `Volumes`, `Secrets`, `Configs`, `Plugins`) were checked against their
+    code and still correctly document their own hand-written entity
+    classes -- they have not been moved onto the generated model yet.
+  - Fixed a POD example in `API::Docker::Role::Using` that called
+    `$container->Id`, a method that has not existed since `list`/`inspect`
+    started returning generated types; it is `$container->id` now.
 
 0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the

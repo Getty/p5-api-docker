@@ -109,7 +109,7 @@ daemon fields -- every one of them, verbatim -- rather than a call surface, so
 a clone would have to copy a record whose shape is the daemon's. The bound
 belongs where the request is built:
 
-    $docker->containers->using(read_timeout => 5)->logs($container->Id);
+    $docker->containers->using(read_timeout => 5)->logs($container->id);
 
 B<The client.> C<< $docker->using(...) >> would be a second client sharing
 one connection state and one negotiated API version with the first. The

@@ -83,6 +83,7 @@ lib/API/Docker.pm                       # main client, version negotiation
 lib/API/Docker/Role/HTTP.pm             # HTTP/1.1 transport (unix:// + tcp://, TLS)
 lib/API/Docker/Role/RegistryAuth.pm     # X-Registry-Auth / AuthConfig encoding
 lib/API/Docker/Role/Filters.pm          # the `filters` query parameter, shape-normalised
+lib/API/Docker/Role/Using.pm            # `using`, the resource class clone that bounds a run of calls
 lib/API/Docker/API/System.pm            # /version, /info, /_ping, /auth, /events
 lib/API/Docker/API/Containers.pm        # container endpoints (incl. archive, attach)
 lib/API/Docker/API/Images.pm            # image endpoints (build, pull, push, tar, commit, ...)
@@ -93,12 +94,24 @@ lib/API/Docker/API/Distribution.pm      # /distribution registry manifest lookup
 lib/API/Docker/API/Secrets.pm           # /secrets
 lib/API/Docker/API/Configs.pm           # /configs
 lib/API/Docker/API/Plugins.pm           # /plugins
+lib/API/Docker/Type.pm                  # the DSL and attribute registry behind the generated types
+lib/API/Docker/Role/Type.pm             # a generated type's own behaviour: serialisation, unknown_fields
+lib/API/Docker/Type/                    # generated from spec/, one class per swagger definition -- karr #79
 lib/API/Docker/Role/Entity.pm           # the client an entity delegates through
 lib/API/Docker/Role/Entity/Container.pm # container operations, composed onto the generated types
-lib/API/Docker/{Image,Network,Volume}.pm            # entity classes (not yet converted)
-lib/API/Docker/{Plugin,Secret,Config}.pm            # entity classes
-lib/API/Docker/Error/Stream.pm          # croaked on a failed build/pull/push stream
+lib/API/Docker/{Image,Network,Volume}.pm            # entity classes (not yet converted onto Type::*, karr k84)
+lib/API/Docker/{Plugin,Secret,Config}.pm            # entity classes (not yet converted onto Type::*, karr k84)
 lib/API/Docker/Error/HTTP.pm            # croaked on a status of 400 or above
+lib/API/Docker/Error/Stream.pm          # croaked on a failed build/pull/push stream
+lib/API/Docker/Error/Timeout.pm         # croaked when a read_timeout or connect_timeout runs out
+lib/API/Docker/Error/Truncated.pm       # croaked when the daemon closed before its announced response was complete
+maint/spec-to-type.pl                   # generates lib/API/Docker/Type/*.pm from spec/ -- never overwrites
+maint/spec-drift-check.pl               # diffs spec/ against the registry, and spec against spec
+maint/spec-common.pl                    # the spec loader shared by the two scripts above
+maint/spec-to-type-names.yaml           # inline-class naming exceptions the generator and checker share
+maint/spec-to-type-prose.yaml           # hand-written POD for fields/classes the swagger describes poorly
+maint/spec-drift-exceptions.yaml        # deliberate deviations the drift checker accepts
+spec/v1.41.yaml, v1.44.yaml, v1.51.yaml # Docker's own swagger, checked in; generation runs against v1.51
 t/                                      # tests (prove -lr t/)
 t/lib/Test/API/Docker/Mock.pm           # fixture-driven mock helper
 t/fixtures/*.json                       # captured daemon responses
