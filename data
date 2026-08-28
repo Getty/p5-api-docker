@@ -1,0 +1,43 @@
+---
+claimed_at: 2026-08-28T00:26:18Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T00:26:18Z
+created: 2026-08-27T22:15:18Z
+id: 65
+priority: low
+started: 2026-08-28T00:08:49Z
+status: done
+tags:
+- transport
+- testing
+title: The TLS read path has no automated coverage
+updated: 2026-08-28T00:26:18Z
+---
+
+t/tls.t covers option assembly and certificate handling; nothing in the suite
+reads a byte over TLS. The transport's reading was rebuilt in karr #60 and the
+TLS branch of it was verified by hand, against a local IO::Socket::SSL server
+with a self-signed certificate -- outside the suite, so nothing keeps it
+verified.
+
+MEASURED by hand during #60, before and after, identical both ways:
+
+  three writes 0.15s apart -> 3 on_chunk calls at 0.16s / 0.31s / 0.46s
+  100000 bytes over many records -> 7 calls, 100000 bytes, none lost
+  delivered, then silent, read_timeout 1 -> Error::Timeout after 1.07s,
+    phase read, summary delivered=1, the bytes already with the callback
+
+Those three are what a test would assert. What makes them worth automating is
+that TLS is the one transport where a short read is the normal case -- one
+plaintext record per sysread -- so the "a short read is not an end of stream"
+rule has no margin there, and IO::Socket::SSL's own read/sysread split
+(ssl_read_all on a blocking socket vs a single Net::SSLeay::read) is exactly
+the distinction #60 depends on.
+
+Costs a self-signed certificate and a forked server. Both are cheap, but the
+file would be the first in t/ to need either, so it is a decision rather than
+an addition: gate it on IO::Socket::SSL being installed (it is a recommended,
+not a required, dependency) and skip_all without it.
+
+Related: #60.
