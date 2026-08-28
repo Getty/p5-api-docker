@@ -1,0 +1,42 @@
+---
+claimed_at: 2026-08-28T01:14:36Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T01:14:36Z
+created: 2026-08-27T23:51:50Z
+id: 73
+priority: low
+started: 2026-08-28T00:33:48Z
+status: done
+tags:
+- transport
+- hazard
+title: A truncated status line or header block is still accepted silently
+updated: 2026-08-28T01:14:36Z
+---
+
+karr #64 made a response body that falls short of what it announced fatal --
+Content-Length, chunk data, chunk header, missing zero chunk. The head was
+left out on purpose and is this ticket.
+
+_read_head still ends on whatever _read_line hands back:
+
+  * a status line with no terminator is parsed anyway -- 'HTTP/1.1 20' comes
+    back as status '20', measured over a socketpair whose peer writes those
+    11 bytes and closes.
+  * the header loop is `while (my $line = $self->_read_line(...))`, so an EOF
+    inside the header block ends it as though the blank line had arrived. The
+    headers that did come are kept and the response is read on with them.
+
+Neither is covered by #64's check, and correctly so: nothing in a status line
+or a header block announces its own length, so there is no announcement to
+compare a short one against. Detecting it needs a different rule -- "the
+header block ended without its blank line" -- which is a claim about HTTP
+framing rather than about a promise the response made.
+
+Whether it is worth making fatal is the open question. A truncated head is
+followed by a body read with the wrong headers, which is usually a
+close-delimited read of nothing; the damage is a bogus status rather than a
+half body. t/read_timeout.t asserts the current behaviour in two site_ok
+subtests ('half a status line', 'the header block stops halfway'), both of
+which would be replaced the way #64 replaced four others.
