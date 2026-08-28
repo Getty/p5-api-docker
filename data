@@ -1,0 +1,44 @@
+---
+claimed_at: 2026-08-28T14:28:10Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:28:10Z
+created: 2026-08-28T04:07:09Z
+id: 80
+priority: low
+started: 2026-08-28T11:17:34Z
+status: done
+tags:
+- types
+- docs
+title: Curate the 199 fields the swagger leaves undocumented
+updated: 2026-08-28T14:28:10Z
+---
+
+Fallout of #79, and deliberately not blocking it.
+
+maint/spec-to-type.pl's curation list ends with:
+
+  the swagger gives this field no description at all (199)
+
+Each of those attributes carries `Undocumented upstream.` in its =attr
+block and nothing invented -- which is correct and honest, and also 199
+places where a reader learns nothing.
+
+Where the swagger gives an `example`, appending it mechanically was
+considered and rejected: the example explains the field only sometimes,
+and that judgement is not one a rule should make 199 times.
+
+The work: go through them by hand, in order of how often a caller
+actually touches the class, and write what the field is from a measured
+engine response plus what this distribution already knows. Anything that
+stays genuinely unknown keeps the honest line -- an invented sentence is
+worse than an admission.
+
+Get the list with:
+  perl maint/spec-to-type.pl --verify /tmp/x   (curation list at the end)
+
+Anything written here must go into maint/spec-to-type-prose.yaml, not
+into the generated file, or --verify stops being empty.
+
+Done in six commits, 0bba2aa / ea96f94 / 5410214 / 713e8e1 / 4822cde and the correction 47ee981. 192 of 199 fields described, 7 left standing with nothing invented -- ContainerState.error, EndpointPortConfig.name, Plugin::Config.ipc_host and pid_host, PluginDevice.name and description, PluginPrivilege.description. The 'Undocumented upstream.' marker stays and the description follows it, so a reader sees at a glance what came from Docker and what came from us. Two spec contradictions recorded rather than smoothed, and a third after I measured GET /images/{id}/history: the swagger's example shows a bare digest, the engine sends sha256:<missing> on nine of ten layers, which is a marker and not an id -- handing it to GET /images/{id}/json looks up nothing. The agent corrected one of its own generalisations in the same pass (a #(nop) COPY layer reports a non-zero size). It also caught me: I wrote API 1.41 from my curl path prefix, and the engine announces 1.44 -- .claude/rules/api-docker-rules.md carried the same error and is fixed.
