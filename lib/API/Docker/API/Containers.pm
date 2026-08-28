@@ -111,7 +111,11 @@ sub list {
   $params{size}    = $opts{size} ? 1 : 0 if defined $opts{size};
   $params{filters} = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
-  my $result = $self->client->get('/containers/json', params => \%params);
+  my $result = $self->client->get('/containers/json',
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
   return $self->_wrap_list($result // []);
 }
 
@@ -134,6 +138,15 @@ Options:
 =item * C<filters> - HashRef of filter name to ArrayRef of string values, e.g.
 C<< { status => ['running'], label => ['stage=build'] } >>. Shape-checked and
 normalised by L<API::Docker::Role::Filters>
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -166,9 +179,12 @@ Common config keys: C<Image>, C<Cmd>, C<Env>, C<ExposedPorts>, C<HostConfig>.
 =cut
 
 sub inspect {
-  my ($self, $id) = @_;
+  my ($self, $id, %opts) = @_;
   croak "Container ID required" unless $id;
-  my $result = $self->client->get("/containers/$id/json");
+  my $result = $self->client->get("/containers/$id/json",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
   return $self->_wrap($result);
 }
 
@@ -178,12 +194,30 @@ sub inspect {
 
 Get detailed information about a container. Returns L<API::Docker::Container> object.
 
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
+
 =cut
 
 sub start {
-  my ($self, $id) = @_;
+  my ($self, $id, %opts) = @_;
   croak "Container ID required" unless $id;
-  return $self->_state_change("/containers/$id/start");
+  return $self->_state_change("/containers/$id/start",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method start
@@ -202,6 +236,21 @@ to be C<undef> -- so a caller that ignores the return or tests it for falseness
 is unaffected; only a caller testing C<defined> sees a difference. A failure is
 still a croak, never a 0.
 
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
+
 =cut
 
 sub stop {
@@ -210,7 +259,11 @@ sub stop {
   my %params;
   $params{t}      = $opts{timeout} if defined $opts{timeout};
   $params{signal} = $opts{signal}  if defined $opts{signal};
-  return $self->_state_change("/containers/$id/stop", params => \%params);
+  return $self->_state_change("/containers/$id/stop",
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method stop
@@ -231,6 +284,15 @@ Options:
 
 =item * C<signal> - Signal to send (default SIGTERM)
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
@@ -240,7 +302,11 @@ sub restart {
   croak "Container ID required" unless $id;
   my %params;
   $params{t} = $opts{timeout} if defined $opts{timeout};
-  return $self->_state_change("/containers/$id/restart", params => \%params);
+  return $self->_state_change("/containers/$id/restart",
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method restart
@@ -256,6 +322,21 @@ Engine API documents no 304 for this endpoint either, so 0 is not expected
 here. The value is reported the same way rather than specially, so an engine
 that does answer 304 is not silently read as a change.
 
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
+
 =cut
 
 sub kill {
@@ -263,7 +344,11 @@ sub kill {
   croak "Container ID required" unless $id;
   my %params;
   $params{signal} = $opts{signal} if defined $opts{signal};
-  return $self->client->post("/containers/$id/kill", undef, params => \%params);
+  return $self->client->post("/containers/$id/kill", undef,
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method kill
@@ -345,6 +430,15 @@ Options:
 
 =item * C<signal> - Signal to send (default C<SIGKILL>)
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
@@ -356,7 +450,11 @@ sub remove {
   $params{v}     = $opts{volumes} ? 1 : 0 if defined $opts{volumes};
   $params{force} = $opts{force} ? 1 : 0   if defined $opts{force};
   $params{link}  = $opts{link} ? 1 : 0    if defined $opts{link};
-  return $self->client->delete_request("/containers/$id", params => \%params);
+  return $self->client->delete_request("/containers/$id",
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method remove
@@ -374,6 +472,15 @@ Options:
 =item * C<volumes> - Remove associated volumes
 
 =item * C<link> - Remove specified link
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -529,9 +636,9 @@ frames rather than the single one the buffered path builds.
 # not evidence that the container is stopped, and a guard that is unsure must
 # not be the thing that breaks a working call.
 sub _assert_container_running {
-  my ($self, $id) = @_;
+  my ($self, $id, %opts) = @_;
 
-  my $state = $self->inspect($id)->State;
+  my $state = $self->inspect($id, %opts)->State;
   return unless ref $state eq 'HASH' && exists $state->{Running};
   return if $state->{Running};
 
@@ -555,7 +662,13 @@ sub attach {
   # not even the round trip.
   my $require_running
     = defined $opts{require_running} ? $opts{require_running} : 1;
-  $self->_assert_container_running($id) if $require_running;
+  # The bounds the caller set apply to the pre-flight too: a check they never
+  # wrote is still a request they are waiting on, and one that hangs is
+  # exactly what read_timeout was passed to prevent (karr #72).
+  $self->_assert_container_running($id,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  ) if $require_running;
 
   my %params;
   $params{stream} = $opts{stream} ? 1 : 0;
@@ -817,7 +930,11 @@ sub top {
   croak "Container ID required" unless $id;
   my %params;
   $params{ps_args} = $opts{ps_args} if defined $opts{ps_args};
-  return $self->client->get("/containers/$id/top", params => \%params);
+  return $self->client->get("/containers/$id/top",
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method top
@@ -825,6 +942,24 @@ sub top {
     my $processes = $containers->top($id, ps_args => 'aux');
 
 List running processes in a container. Returns hashref with C<Titles> and C<Processes> arrays.
+
+Options:
+
+=over
+
+=item * C<ps_args> - Arguments passed to C<ps> inside the container, e.g.
+C<'aux'>. Omitted, the engine uses its own default
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
 
 =cut
 
@@ -1180,9 +1315,12 @@ and this method croaks on it, with no extra request and no race.
 =cut
 
 sub changes {
-  my ($self, $id) = @_;
+  my ($self, $id, %opts) = @_;
   croak "Container ID required" unless $id;
-  my $result = $self->client->get("/containers/$id/changes");
+  my $result = $self->client->get("/containers/$id/changes",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
   # A container with nothing changed answers with a JSON null, which the
   # transport decodes to undef. Normalised here so the return is always
   # something a caller can iterate.
@@ -1227,12 +1365,31 @@ rather than the 404 every other container endpoint gives -- so a caller
 distinguishing "no such container" from a real failure cannot do it on the
 status code alone on that engine.
 
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
+
 =cut
 
 sub export {
-  my ($self, $id) = @_;
+  my ($self, $id, %opts) = @_;
   croak "Container ID required" unless $id;
-  return $self->client->get("/containers/$id/export", raw => 1);
+  return $self->client->get("/containers/$id/export",
+    raw => 1,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method export
@@ -1252,6 +1409,21 @@ no C<manifest.json>, no layers, no image metadata. L<API::Docker::API::Images/lo
 will not take it back -- importing a flat filesystem is
 C<< POST /images/create?fromSrc=- >>, which this distribution does not expose.
 
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
+
 =cut
 
 sub resize {
@@ -1260,7 +1432,11 @@ sub resize {
   my %params;
   $params{h} = $opts{h} if defined $opts{h};
   $params{w} = $opts{w} if defined $opts{w};
-  return $self->client->post("/containers/$id/resize", undef, params => \%params);
+  return $self->client->post("/containers/$id/resize", undef,
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method resize
@@ -1282,6 +1458,15 @@ Options:
 
 =item * C<w> - New width in character columns
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
@@ -1291,7 +1476,11 @@ sub wait {
   croak "Container ID required" unless $id;
   my %params;
   $params{condition} = $opts{condition} if defined $opts{condition};
-  return $self->client->post("/containers/$id/wait", undef, params => \%params);
+  return $self->client->post("/containers/$id/wait", undef,
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method wait
@@ -1367,14 +1556,26 @@ Options:
 =item * C<condition> - What to wait for: C<not-running> (the engine's own
 default), C<next-exit> or C<removed>. Sent only when given
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
 
 sub pause {
-  my ($self, $id) = @_;
+  my ($self, $id, %opts) = @_;
   croak "Container ID required" unless $id;
-  return $self->_state_change("/containers/$id/pause");
+  return $self->_state_change("/containers/$id/pause",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method pause
@@ -1389,12 +1590,30 @@ C<500> with C<< "..." is already paused: container state improper >>, which
 croaks. The Docker Engine API documents no 304 for this endpoint either. So
 this method returns 1 or croaks in practice.
 
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
+
 =cut
 
 sub unpause {
-  my ($self, $id) = @_;
+  my ($self, $id, %opts) = @_;
   croak "Container ID required" unless $id;
-  return $self->_state_change("/containers/$id/unpause");
+  return $self->_state_change("/containers/$id/unpause",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method unpause
@@ -1405,13 +1624,32 @@ Unpause all processes in a container. Reports 1/0 like L</start>; as with
 L</pause>, the no-op is an error and not a 304 -- Podman 5.4.2 answers
 unpausing a running container with C<500>.
 
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
+
 =cut
 
 sub rename {
-  my ($self, $id, $name) = @_;
+  my ($self, $id, $name, %opts) = @_;
   croak "Container ID required" unless $id;
   croak "New name required" unless $name;
-  return $self->client->post("/containers/$id/rename", undef, params => { name => $name });
+  return $self->client->post("/containers/$id/rename", undef,
+    params => { name => $name },
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method rename
@@ -1419,6 +1657,21 @@ sub rename {
     $containers->rename($id, 'new-name');
 
 Rename a container.
+
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
 
 =cut
 
@@ -1470,6 +1723,8 @@ sub get_archive {
     params   => { path => $opts{path} },
     raw      => 1,
     response => \%response,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
   );
 
   if (my $out = $opts{stat}) {
@@ -1509,6 +1764,15 @@ one, so asking for it here saves the extra round trip L</stat_archive> would
 cost. Emptied when the engine sent no such header. See L</stat_archive> for
 the keys
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
@@ -1531,6 +1795,8 @@ sub put_archive {
     params       => \%params,
     raw_body     => $raw,
     content_type => 'application/x-tar',
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
   );
 }
 
@@ -1566,6 +1832,15 @@ the engine replaces either with the other
 =item * C<copyUIDGID> - Keep the UID and GID recorded in the archive instead
 of mapping the members to the container user
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
@@ -1579,6 +1854,8 @@ sub stat_archive {
   $self->client->head("/containers/$id/archive",
     params   => { path => $opts{path} },
     response => \%response,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
   );
 
   return $self->_decode_path_stat(\%response);
@@ -1647,6 +1924,15 @@ Options:
 
 =item * C<path> - Path inside the container to stat. Required
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
@@ -1656,7 +1942,11 @@ sub prune {
   my %params;
   $params{filters} = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
-  return $self->client->post('/containers/prune', undef, params => \%params);
+  return $self->client->post('/containers/prune', undef,
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method prune
@@ -1672,6 +1962,15 @@ Options:
 =item * C<filters> - HashRef of filter name to ArrayRef of string values; the
 engine accepts C<until> and C<label> here. Shape-checked and normalised by
 L<API::Docker::Role::Filters>
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 

@@ -857,6 +857,83 @@ Revision history for API-Docker
     classes this release adds. The RFC3339 shape is taken from a captured
     daemon response rather than assumed, since it is not the Unix epoch
     integer `API::Docker::Container`'s `Created` carries.
+  - A response the daemon cut short is an exception instead of a value. The
+    HTTP role compared nothing against what a response had announced: a body
+    shorter than its Content-Length, a chunk shorter than its own header, a
+    chunk header cut in half and a chunked body with no terminating zero
+    chunk all ended the reader's loop and came back as though whole.
+    Measured over an AF_UNIX socketpair whose peer writes the bytes and
+    closes, with no daemon and no timeout involved: `Content-Length: 11`
+    with 9 bytes sent returned `hello wor`, a chunk announcing 11 with 5
+    sent returned `hello`, a complete chunk with no zero chunk returned
+    `hello`, and a chunk header cut down to `1` returned `hello`. Through
+    `_request` the same close returned 700 bytes of an announced 2048-byte
+    image tar as the tar. All four croak with a new
+    `API::Docker::Error::Truncated` carrying `partial`, `summary`, `phase`,
+    `expected` and `received` -- the same "nothing is lost with the
+    exception" contract `Error::Timeout` has. A body delimited by nothing
+    but the close, as attach and a followed `logs` are, announces no end, so
+    there an EOF is still the end; and a stream a callback ended with
+    `$stop->()` is never truncation. Verified against Podman 5.8.4 (API
+    1.44) and Docker 29.7.2 (API 1.55): both terminate every chunked
+    response with the zero chunk, and 204 and 304 arrive with no
+    Content-Length and no Transfer-Encoding on either, so nothing legitimate
+    reaches the new fatal path.
+  - `read_timeout` and `connect_timeout` are options of every method that
+    reaches the daemon, not of fourteen of them. `Networks`, `Volumes`,
+    `Secrets`, `Configs` and `Distribution` forwarded neither from anywhere,
+    so `$docker->networks->list(read_timeout => 5)` returned having ignored
+    the bound -- `%opts` is a plain hash and a key nothing reads raises
+    nothing. 72 of the 83 public methods forward both now, always resolved
+    with `exists` rather than truth, so an explicit `0` still turns a
+    client-wide default off for one call. Methods that took no options hash
+    at all gained a trailing one; nothing that worked before calls
+    differently. `plugins->configure` takes them only behind its ArrayRef
+    form, as `images->get_all` already did, because in the plain list form a
+    trailing `read_timeout => 5` is indistinguishable from two more
+    settings.
+  - The requests a method makes on the caller's behalf carry the bounds too:
+    `containers->attach`'s running check, the `/plugins/privileges` fetch
+    that `install` and `upgrade` make under `accept_privileges => 1`, and
+    version negotiation -- which turns out to be bounded from the request
+    that triggers it rather than only from the client attribute, because the
+    `around _request` that fires it holds that request's own options. So
+    `$docker->containers->list(read_timeout => 5)` on a client with no
+    `api_version` bounds the `GET /version` as well as the list.
+  - Eleven methods still take neither, and say so: `create` and `update` on
+    `containers`, `secrets` and `configs`, `create` on `networks`, `volumes`
+    and `exec`, and `networks->connect`/`->disconnect`. Each takes its
+    arguments as the JSON request body itself, so a `read_timeout` key in
+    one of them would be a field sent to the daemon rather than an option
+    this client reads. Their bound is the client attribute.
+  - New `TIMEOUTS` section in `API::Docker` saying once what a bound covers
+    and what it does not: `read_timeout` is idle time since the last byte
+    rather than a deadline, `connect_timeout` bounds opening the connection,
+    neither bounds writing the request, and under TLS `SO_RCVTIMEO` measures
+    the receives underneath the record layer rather than plaintext arrival,
+    so a record dribbling in slowly enough resets the clock.
+  - Every field on the `Container`, `Image`, `Network` and `Volume` entity
+    classes has an `=attr`, closing the gap `Plugin`, `Secret` and `Config`
+    never had. Documenting all of them rather than a stated selection is the
+    honest option here: Moo's constructor drops a key with no matching
+    `has`, so the declared list is the whole of what the object answers to,
+    and there is no "more" a disclaimer could point at. Correcting
+    `Container`'s `Created` along the way, which said Unix epoch flatly: it
+    is an integer epoch from `list` and an RFC3339 string from `inspect`,
+    both taken from captured fixtures. Fields no fixture exercises say so
+    rather than describing a shape nobody measured.
+  - `t/images.t`'s live branch treated an untagged image's empty `RepoTags`
+    as true -- an empty ArrayRef is -- and handed `inspect` an undef name,
+    so the suite died against any engine whose store happened to sort an
+    untagged image first. It picks the first image that actually has a tag
+    now, falling back to an id only when none do, and a fixture-driven
+    subtest pins that choice so the bug cannot come back the next time a
+    store is tidy. New `t/tls_read.t` covers the TLS read path, which
+    nothing exercised: incremental delivery through `on_chunk`, 100000 bytes
+    over many records, and `read_timeout` on an idle TLS connection. TLS is
+    the one transport where a short read is the ordinary case, one plaintext
+    record per `sysread`, so the rule that a short read is not an end of
+    stream has no margin there.
 
 0.003     2026-08-27 03:37:00Z
   - t/containers.t: the registered cleanup tolerates the container the

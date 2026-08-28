@@ -183,7 +183,11 @@ sub list {
   my %params;
   $params{filters} = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
-  return $self->_wrap_list($self->client->get('/secrets', params => \%params) // []);
+  return $self->_wrap_list($self->client->get('/secrets',
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  ) // []);
 }
 
 =method list
@@ -201,6 +205,15 @@ Options:
 Engine API accepts C<id>, C<label>, C<name> and C<names>; values are always
 ArrayRefs of strings, shape-checked and normalised by
 L<API::Docker::Role::Filters>.
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -250,10 +263,13 @@ base64-encodes it. See L</"Data is raw bytes; this class does the base64">.
 =cut
 
 sub inspect {
-  my ($self, $id) = @_;
+  my ($self, $id, %opts) = @_;
   croak __PACKAGE__ . '->inspect secret ID or name required'
     unless defined $id && length $id;
-  return $self->_wrap($self->client->get("/secrets/$id"));
+  return $self->_wrap($self->client->get("/secrets/$id",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  ));
 }
 
 =method inspect
@@ -264,6 +280,21 @@ sub inspect {
 Get a secret's metadata by ID or name. Returns an L<API::Docker::Secret>, with
 C<ID>, C<Spec>, C<CreatedAt>, C<UpdatedAt> and C<Version>. Never the value --
 see L<API::Docker::Secret/"There is no accessor for the value">.
+
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
 
 =cut
 
@@ -306,10 +337,13 @@ endpoint and answers 501.
 =cut
 
 sub remove {
-  my ($self, $id) = @_;
+  my ($self, $id, %opts) = @_;
   croak __PACKAGE__ . '->remove secret ID or name required'
     unless defined $id && length $id;
-  return $self->client->delete_request("/secrets/$id");
+  return $self->client->delete_request("/secrets/$id",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method remove
@@ -318,6 +352,21 @@ sub remove {
 
 Remove a secret by ID or name. The daemon answers 204 with no body, so this
 returns nothing; a secret that is not there is a 404 and croaks.
+
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
 
 =cut
 

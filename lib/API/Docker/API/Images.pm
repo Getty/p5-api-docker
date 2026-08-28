@@ -90,7 +90,11 @@ sub list {
   $params{digests} = $opts{digests} ? 1 : 0 if defined $opts{digests};
   $params{filters} = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
-  my $result = $self->client->get('/images/json', params => \%params);
+  my $result = $self->client->get('/images/json',
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
   return $self->_wrap_list($result // []);
 }
 
@@ -111,6 +115,15 @@ Options:
 =item * C<filters> - HashRef of filter name to ArrayRef of string values, e.g.
 C<< { dangling => ['true'] } >>. Shape-checked and normalised by
 L<API::Docker::Role::Filters>
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -403,9 +416,12 @@ L<API::Docker::Role::HTTP/"Bounding the connection itself">
 =cut
 
 sub inspect {
-  my ($self, $name) = @_;
+  my ($self, $name, %opts) = @_;
   croak "Image name required" unless $name;
-  my $result = $self->client->get("/images/$name/json");
+  my $result = $self->client->get("/images/$name/json",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
   return $self->_wrap($result);
 }
 
@@ -415,12 +431,30 @@ sub inspect {
 
 Get detailed information about an image. Returns L<API::Docker::Image> object.
 
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
+
 =cut
 
 sub history {
-  my ($self, $name) = @_;
+  my ($self, $name, %opts) = @_;
   croak "Image name required" unless $name;
-  return $self->client->get("/images/$name/history");
+  return $self->client->get("/images/$name/history",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method history
@@ -428,6 +462,21 @@ sub history {
     my $history = $images->history('nginx:latest');
 
 Get image history (layers). Returns ArrayRef of layer information.
+
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
 
 =cut
 
@@ -521,7 +570,11 @@ sub tag {
   my %params;
   $params{repo} = $opts{repo} if defined $opts{repo};
   $params{tag}  = $opts{tag}  if defined $opts{tag};
-  return $self->client->post("/images/$name/tag", undef, params => \%params);
+  return $self->client->post("/images/$name/tag", undef,
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method tag
@@ -529,6 +582,21 @@ sub tag {
     $images->tag('nginx:latest', repo => 'myrepo/nginx', tag => 'v1');
 
 Tag an image with a new repository and/or tag name.
+
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
 
 =cut
 
@@ -538,7 +606,11 @@ sub remove {
   my %params;
   $params{force}   = $opts{force} ? 1 : 0   if defined $opts{force};
   $params{noprune} = $opts{noprune} ? 1 : 0 if defined $opts{noprune};
-  return $self->client->delete_request("/images/$name", params => \%params);
+  return $self->client->delete_request("/images/$name",
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method remove
@@ -555,6 +627,15 @@ Options:
 
 =item * C<noprune> - Do not delete untagged parents
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
@@ -567,7 +648,11 @@ sub search {
   $params{limit}   = $opts{limit}   if defined $opts{limit};
   $params{filters} = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
-  return $self->client->get('/images/search', params => \%params);
+  return $self->client->get('/images/search',
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method search
@@ -588,6 +673,15 @@ ones want the string, C<< { 'is-official' => ['true'] } >>, and C<stars> a
 number written as one -- L<API::Docker::Role::Filters> takes care of both and
 croaks on a shape the daemon would refuse
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
@@ -597,7 +691,11 @@ sub prune {
   my %params;
   $params{filters} = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
-  return $self->client->post('/images/prune', undef, params => \%params);
+  return $self->client->post('/images/prune', undef,
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method prune
@@ -613,6 +711,15 @@ Options:
 =item * C<filters> - HashRef of filter name to ArrayRef of string values; the
 engine accepts C<dangling>, C<until> and C<label> here. Shape-checked and
 normalised by L<API::Docker::Role::Filters>
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -887,7 +994,11 @@ sub commit {
       : $opts{changes};
   }
 
-  return $self->client->post('/commit', $opts{config}, params => \%params);
+  return $self->client->post('/commit', $opts{config},
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method commit
@@ -945,6 +1056,15 @@ is merged onto the environment the container inherited, and a C<Labels> here
 lands alongside a C<LABEL> given in C<changes> -- the two are applied
 together, not one instead of the other
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 =cut
@@ -965,7 +1085,11 @@ sub build_prune {
   $params{filters}        = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
 
-  return $self->client->post('/build/prune', undef, params => \%params);
+  return $self->client->post('/build/prune', undef,
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method build_prune
@@ -1008,6 +1132,15 @@ form exists because the hyphenated one has to be quoted in a Perl hash
 values are ArrayRefs of strings, shape-checked and normalised by
 L<API::Docker::Role::Filters>, and passed to the transport unencoded because
 it JSON-encodes a HashRef params value itself
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 

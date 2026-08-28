@@ -100,6 +100,16 @@ names a specific item to handle.
   removes actual containers, images, networks and volumes; cleanup runs in an `END`
   block, so an interrupted run leaves them behind. Run only when the task is about live
   behavior.
+- **`prune` destroys, and `dangling => 0` destroys MORE, not less.** `POST
+  /images/prune` with `filters => { dangling => ['false'] }` removes every
+  unused *tagged* image on the engine, locally built ones included, and they
+  are not recoverable. It reads like a narrowing filter and is the opposite.
+  This has already cost a hand-built image on this machine (2026-08-27),
+  during what its caller believed was a read-only probe. **No `prune` of any
+  kind -- images, containers, networks, volumes, build cache -- and no
+  `rm -a` or `system reset`, on either engine, ever, unless the user names
+  the command.** Probing what an endpoint answers is not a reason: measure
+  it against something you created yourself.
 - **`images->push` publishes.** With credentials it writes to a real registry under the
   maintainer's account. Never run it — nor any test that does — without explicit
   instruction.

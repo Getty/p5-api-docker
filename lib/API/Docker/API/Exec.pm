@@ -182,21 +182,47 @@ sub resize {
   my %params;
   $params{h} = $opts{h} if defined $opts{h};
   $params{w} = $opts{w} if defined $opts{w};
-  return $self->client->post("/exec/$exec_id/resize", undef, params => \%params);
+  return $self->client->post("/exec/$exec_id/resize", undef,
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method resize
 
     $exec->resize($exec_id, h => 40, w => 120);
 
-Resize the TTY for an exec instance. Options: C<h> (height), C<w> (width).
+Resize the TTY for an exec instance.
+
+Options:
+
+=over
+
+=item * C<h> - New height in character rows
+
+=item * C<w> - New width in character columns
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
 
 =cut
 
 sub inspect {
-  my ($self, $exec_id) = @_;
+  my ($self, $exec_id, %opts) = @_;
   croak "Exec ID required" unless $exec_id;
-  return $self->client->get("/exec/$exec_id/json");
+  return $self->client->get("/exec/$exec_id/json",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method inspect
@@ -204,6 +230,21 @@ sub inspect {
     my $info = $exec->inspect($exec_id);
 
 Get information about an exec instance.
+
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
 
 =cut
 

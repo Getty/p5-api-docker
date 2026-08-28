@@ -199,7 +199,11 @@ sub list {
   my %params;
   $params{filters} = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
-  return $self->_wrap_list($self->client->get('/configs', params => \%params) // []);
+  return $self->_wrap_list($self->client->get('/configs',
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  ) // []);
 }
 
 =method list
@@ -219,6 +223,15 @@ Options:
 Engine API accepts C<id>, C<label>, C<name> and C<names>; values are always
 ArrayRefs of strings, shape-checked and normalised by
 L<API::Docker::Role::Filters>.
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -266,10 +279,13 @@ C<< { Name => ..., Options => {...} } >>.
 =cut
 
 sub inspect {
-  my ($self, $id) = @_;
+  my ($self, $id, %opts) = @_;
   croak __PACKAGE__ . '->inspect config ID or name required'
     unless defined $id && length $id;
-  return $self->_wrap($self->client->get("/configs/$id"));
+  return $self->_wrap($self->client->get("/configs/$id",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  ));
 }
 
 =method inspect
@@ -282,6 +298,21 @@ Get a config by ID or name. Returns an L<API::Docker::Config>, with C<ID>,
 C<Spec>, C<CreatedAt>, C<UpdatedAt> and C<Version> as the daemon sent them.
 C<< Spec->{Data} >> is base64 and is B<not> rewritten;
 L<API::Docker::Config/decoded_data> derives the bytes from it on demand.
+
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
 
 =cut
 
@@ -329,10 +360,13 @@ that spec back -- otherwise it gets encoded twice.
 =cut
 
 sub remove {
-  my ($self, $id) = @_;
+  my ($self, $id, %opts) = @_;
   croak __PACKAGE__ . '->remove config ID or name required'
     unless defined $id && length $id;
-  return $self->client->delete_request("/configs/$id");
+  return $self->client->delete_request("/configs/$id",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method remove
@@ -341,6 +375,21 @@ sub remove {
 
 Remove a config by ID or name. The daemon answers 204 with no body, so this
 returns nothing; a config that is not there is a 404 and croaks.
+
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
 
 =cut
 

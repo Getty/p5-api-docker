@@ -20,6 +20,7 @@ use Log::Any qw( $log );
 use API::Docker::Error::HTTP;
 use API::Docker::Error::Stream;
 use API::Docker::Error::Timeout;
+use API::Docker::Error::Truncated;
 use namespace::clean;
 
 =head1 SYNOPSIS
@@ -216,11 +217,14 @@ explicitly, so a client carrying a default can be opted out of per request.
     $docker->system->events(read_timeout => 0);       # this one may wait
 
 Per request it is an option of L</get>, L</post>, L</put>, L</delete_request>
-and L</head>, which overrides the attribute either way -- up for a slow
-endpoint, down for a stream that should not stall, off with C<0>.
+and L</head>, and of nearly every resource method that reaches the daemon,
+which overrides the attribute either way -- up for a slow endpoint, down for
+a stream that should not stall, off with C<0>.
 
 See L</"Bounding a request that never ends"> for what it does and does not
-cover.
+cover, L<API::Docker/"What a timeout covers"> for the same question asked of
+both bounds at once, and L<API::Docker/"Where a bound applies"> for which
+calls carry it and the handful that do not.
 
 =cut
 
@@ -244,8 +248,10 @@ bound different things and want different numbers: a connect is either
 immediate or broken, while a read is waiting on work the daemon has to do.
 
 Per request it is an option of L</get>, L</post>, L</put>, L</delete_request>
-and L</head>. See L</"Bounding the connection itself"> for what it does on
-each transport, which is not the same thing on all three.
+and L</head>, and of nearly every resource method that reaches the daemon.
+See L</"Bounding the connection itself"> for what it does on each transport,
+which is not the same thing on all three, and
+L<API::Docker/"Where a bound applies"> for which calls carry it.
 
 =cut
 
@@ -629,6 +635,69 @@ sub _croak_timeout {
   croak $error;
 }
 
+# The other way a response ends before it is finished, and the one that needs
+# no option to be armed: the daemon closed mid-sentence (karr #64).
+#
+# It is deliberately not folded into _croak_timeout. A timeout is the absence
+# of an answer inside a bound the caller asked for, and it can fire on a
+# response that would have completed; this is a statement about the response
+# itself, made by comparing the body against what the response announced, and
+# it fires whether or not anything was bounded. The two carry the same
+# "here is what did arrive" contract and nothing else.
+#
+# $ctx->{partial} and $ctx->{summary} are read exactly as _croak_timeout reads
+# them, so a buffered read reports bytes and a streamed one reports units,
+# with no site having to know which it is.
+sub _croak_truncated {
+  my ($self, $ctx, %what) = @_;
+
+  my $summary = $ctx->{summary} ? $ctx->{summary}->() : undef;
+  my $partial = $ctx->{partial} ? ${ $ctx->{partial} } : '';
+
+  my $arrived = $summary
+    ? $summary->{delivered} . ' unit'
+      . ($summary->{delivered} == 1 ? '' : 's') . ' delivered'
+    : length($partial)
+      ? length($partial) . ' byte'
+        . (length($partial) == 1 ? '' : 's') . ' arrived'
+      : 'nothing arrived at all';
+
+  # Empty when a reader is driven directly rather than through _request, which
+  # is how t/role_http.t drives them: an endpoint nobody named is left out of
+  # the message rather than interpolated as the empty string.
+  my $endpoint = defined $ctx->{endpoint} ? $ctx->{endpoint} : '';
+
+  # The two phases with an announced length say the same sentence about it, so
+  # they name the piece and let this write it; the two without pass the whole
+  # detail, there being no count to put in one.
+  my $detail = $what{detail};
+  unless (defined $detail) {
+    my $short = $what{expected} - $what{received};
+    $detail = $what{piece} . ' stopped ' . $short . ' byte'
+      . ($short == 1 ? '' : 's') . ' short of the ' . $what{expected}
+      . ' it announced';
+  }
+
+  # Carp hands a reference straight back rather than decorating it, so this
+  # croak is a die with an object -- hence the location captured by hand,
+  # which names the same frame a croak of a plain string would have named.
+  # The object goes into a variable first: `croak CLASS->new(...)` is indirect
+  # object syntax and parses as CLASS->croak(new(...)).
+  my $error = API::Docker::Error::Truncated->new(
+    message => 'Docker API response truncated'
+      . (length $endpoint ? ' (' . $endpoint . ')' : '') . ': '
+      . $detail . '; ' . $arrived,
+    location => shortmess(''),
+    endpoint => $endpoint,
+    phase    => $what{phase},
+    expected => $what{expected},
+    received => $what{received},
+    partial  => $partial,
+    summary  => $summary,
+  );
+  croak $error;
+}
+
 # ---------------------------------------------------------------------------
 # Reading, in one buffer regime
 #
@@ -791,6 +860,35 @@ sub _read_bytes {
 
   my $take = $want < length($$buf) ? $want : length($$buf);
   return ($take, substr($$buf, 0, $take, ''));
+}
+
+# _read_bytes for a length the response announced, which is the whole of the
+# difference: it appends onto the accumulator until it has all of $want, and
+# an end of stream before then is truncation rather than the end of the body.
+#
+# Every `last unless $n` in a buffered reader used to be both -- the loop
+# ended and what had been collected was returned as the response. Nothing
+# compared the two, so a daemon that closed mid-body handed back a short body
+# that every return shape this role promises accepts (karr #64).
+#
+# $into is the same scalar the reader is accumulating into, so the bytes of
+# the incomplete piece are in $ctx->{partial} by the time this croaks and go
+# out on the exception rather than being dropped.
+sub _read_exact {
+  my ($self, $sock, $want, $into, $ctx, $phase, $piece) = @_;
+
+  my $read = 0;
+  while ($read < $want) {
+    my ($n, $buf) = $self->_read_bytes($sock, $want - $read, $ctx);
+    last unless $n;
+    $$into .= $buf;
+    $read += $n;
+  }
+
+  $self->_croak_truncated($ctx, phase => $phase, piece => $piece,
+    expected => $want, received => $read) if $read < $want;
+
+  return $read;
 }
 
 sub _request {
@@ -1164,13 +1262,10 @@ sub _read_body {
     # API::Docker::Error::Timeout/partial. localised so the context goes back
     # to carrying nothing once this body is done with.
     local $ctx->{partial} = \$body;
-    my $read = 0;
-    while ($read < $len) {
-      my ($n, $buf) = $self->_read_bytes($sock, $len - $read, $ctx);
-      last unless $n;
-      $body .= $buf;
-      $read += $n;
-    }
+    # An announced length is a promise, and a stream that ends before it is
+    # kept is truncation rather than the end of the body; see _read_exact.
+    $self->_read_exact($sock, $len, \$body, $ctx, 'content-length',
+      'the body');
     return $body;
   }
 
@@ -1181,6 +1276,11 @@ sub _read_body {
   # result could never say which it was. This is the path karr #52's hang is
   # on, an attach whose buffered frames arrive and whose socket then never
   # closes.
+  #
+  # And the one shape with no completeness check to make: the response
+  # announced no end, so the close IS the end (karr #64). Treating an EOF here
+  # as truncation would make every attach, every logs(follow) and every
+  # exec/start fail on the daemon hanging up, which is how all three finish.
   my $body = '';
   # What a timeout hands over instead of dropping; see the content-length
   # branch above.
@@ -1234,7 +1334,7 @@ sub _read_streaming_response {
   if ($headers->{'transfer-encoding'} && $headers->{'transfer-encoding'} eq 'chunked') {
     while ($more) {
       my $chunk_header = $self->_read_line($sock, $ctx);
-      last unless defined $chunk_header;
+      $self->_assert_chunk_header($ctx, $chunk_header);
       $chunk_header =~ s/\r?\n$//;
       my $chunk_size = hex($chunk_header);
       last if $chunk_size == 0;
@@ -1251,12 +1351,20 @@ sub _read_streaming_response {
         $more = $feed->($buf);
         last unless $more;
       }
+
+      # Every truncation check on this path is guarded by $more, and that is
+      # the whole of what distinguishes the two ways a streamed chunk ends
+      # early: the daemon ran out, or the callback said stop. A caller that
+      # stopped left the rest of the chunk unread on purpose (karr #64).
+      $self->_croak_truncated($ctx, phase => 'chunk-data', piece => 'a chunk',
+        expected => $chunk_size, received => $read)
+        if $more && $read < $chunk_size;
       last unless $more;
 
       # The CRLF that terminates the chunk data. Skipped when the caller
       # stopped mid-chunk: the socket is closed straight after, and the
       # remaining bytes of that chunk are still unread in front of it.
-      $self->_read_line($sock, $ctx);
+      $self->_assert_chunk_terminator($ctx, $self->_read_line($sock, $ctx));
     }
   }
   elsif (defined $headers->{'content-length'}) {
@@ -1270,6 +1378,9 @@ sub _read_streaming_response {
       $read += $n;
       $more = $feed->($buf);
     }
+    $self->_croak_truncated($ctx, phase => 'content-length',
+      piece => 'the body', expected => $len, received => $read)
+      if $more && $read < $len;
   }
   else {
     while ($more) {
@@ -1424,24 +1535,60 @@ sub _read_chunked {
 
   while (1) {
     my $chunk_header = $self->_read_line($sock, $ctx);
-    last unless defined $chunk_header;
+    $self->_assert_chunk_header($ctx, $chunk_header);
     $chunk_header =~ s/\r?\n$//;
     my $chunk_size = hex($chunk_header);
     last if $chunk_size == 0;
 
-    my $read = 0;
-    while ($read < $chunk_size) {
-      my ($n, $buf) = $self->_read_bytes($sock, $chunk_size - $read, $ctx);
-      last unless $n;
-      $body .= $buf;
-      $read += $n;
-    }
+    $self->_read_exact($sock, $chunk_size, \$body, $ctx, 'chunk-data',
+      'a chunk');
 
     # Read trailing \r\n after chunk data
-    $self->_read_line($sock, $ctx);
+    $self->_assert_chunk_terminator($ctx, $self->_read_line($sock, $ctx));
   }
 
   return $body;
+}
+
+# The two places a chunked body ends without saying so, and neither of them
+# has a byte count to compare (karr #64).
+#
+# A chunked body is terminated by a chunk of size zero and by nothing else, so
+# an end of stream where the next chunk header belongs is the daemon hanging
+# up mid-body -- not the end of it. The reader used to `last unless defined`
+# there and hand back the chunks that had completed as the whole response.
+#
+# _read_line answers an end of stream with what is left in the buffer and no
+# terminator, exactly as the readline it replaces did (see there), so an
+# unterminated line is the other half of the same question: a header cut in
+# half is `hex('1')` and reads as a perfectly good chunk of one byte.
+sub _assert_chunk_header {
+  my ($self, $ctx, $line) = @_;
+
+  $self->_croak_truncated($ctx, phase => 'chunk-header',
+    detail => 'the stream ended where a chunk header belongs, with no '
+      . 'terminating zero chunk')
+    unless defined $line;
+
+  $self->_croak_truncated($ctx, phase => 'chunk-header',
+    detail => 'the stream ended inside a chunk header, after '
+      . length($line) . ' byte' . (length($line) == 1 ? '' : 's') . ' of one')
+    unless $line =~ /\n\z/;
+
+  return;
+}
+
+# Completeness only, never content: a terminator that arrived but is not CRLF
+# is a daemon speaking chunked wrongly, which is a different complaint and one
+# this reader has never made.
+sub _assert_chunk_terminator {
+  my ($self, $ctx, $line) = @_;
+
+  $self->_croak_truncated($ctx, phase => 'chunk-terminator',
+    detail => 'the stream ended before the CRLF that terminates a chunk')
+    unless defined $line && $line =~ /\n\z/;
+
+  return;
 }
 
 sub _uri_encode {
@@ -1830,6 +1977,59 @@ endpoint, because the set of operation-shaped streaming endpoints is
 open-ended while the feed-shaped ones are C</events> and nothing else: a new
 endpoint added without a thought about this gets the loud behaviour, not the
 silent one.
+
+=head2 Failure in the middle of a response
+
+The daemon can also stop saying anything, having already said how much it was
+going to say. A body shorter than its C<Content-Length>, a chunk shorter than
+its own header, a chunk header cut in half, a chunked body with no terminating
+zero chunk: each of those is a response that ended before it was finished, and
+each croaks with an L<API::Docker::Error::Truncated>.
+
+    my $tar = eval { $docker->images->get_tar('busybox') };
+    die $@ if $@ && !(ref $@
+        && $@->isa('API::Docker::Error::Truncated'));
+
+It is a structural check and the only thing it compares is the body against
+what the response itself announced -- so it needs no option, applies to every
+request, and cannot fire on a response that is complete. The exception carries
+what did arrive: C<< ->partial >> for a buffered request, C<< ->summary >> for
+a streamed one, and C<< ->phase >> for which piece of the framing ran out.
+
+This B<is> a behaviour change and not a bug fix in passing. Until it existed
+all four shapes above were returned rather than raised, and none of them was
+distinguishable from a complete response: C<ndjson> gave a shorter ArrayRef,
+C<raw> gave fewer bytes, the default gave whatever the truncated bytes
+happened to parse as. Code that was silently receiving half a response now
+gets an exception where it used to get a value.
+
+=head3 Where an end of stream is still the end
+
+A body delimited by nothing but the close. C<attach>,
+C<< logs(follow => 1) >>, C</exec/{id}/start> -- the whole
+C<application/vnd.docker.raw-stream> family -- carry neither a
+C<Content-Length> nor chunked encoding, so the response announces no end and
+there is nothing for a short one to be short of. That is how every one of them
+finishes, and treating it as truncation would break all of them.
+
+The same goes for a stream a callback ended with C<< $stop->() >>: the rest of
+the response is unread because the caller said so, and every check on the
+streaming path is skipped once it has.
+
+=head3 Against a timeout, and against a status
+
+L<API::Docker::Error::Timeout> is the daemon going B<quiet> for longer than a
+bound the caller asked for; this is the daemon B<closing> mid-response, and
+needs no bound to be noticed. The two share a contract -- neither ever returns
+a short body, and both hand over what arrived -- and are separate classes
+because only one of them is about an option, and only one of them can fire on
+a response that would have completed.
+
+A response whose status is 400 or above raises this rather than an
+L<API::Docker::Error::HTTP> when it is B<its> body that was cut short, which
+is the rule the timeout already follows in the same place: the transport
+cannot tell a caller what the engine said when it did not finish saying it.
+C<< ->partial >> holds the part of the error body that did arrive.
 
 =head2 Header names are rejected, header values are stripped
 

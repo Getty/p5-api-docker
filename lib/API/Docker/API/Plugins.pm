@@ -157,7 +157,11 @@ sub list {
   my %params;
   $params{filters} = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
-  my $result = $self->client->get('/plugins', params => \%params);
+  my $result = $self->client->get('/plugins',
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
   return $self->_wrap_list($result // []);
 }
 
@@ -179,6 +183,15 @@ are ArrayRefs of strings even for booleans -- L<API::Docker::Role::Filters>
 shape-checks and normalises that, but not the names, which the daemon
 validates itself
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 The accepted filter names are C<enabled> and C<capability>. B<It is C<enabled>,
@@ -197,6 +210,8 @@ sub privileges {
   my $result = $self->client->get('/plugins/privileges',
     params => { remote => $remote },
     $self->_auth_headers(\%opts),
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
   );
 
   # A plugin that demands nothing answers a bare `null`: computePrivileges
@@ -239,6 +254,15 @@ HashRef of C<username> / C<password> / C<serveraddress> / C<identitytoken>,
 or a pre-encoded base64 string. Sent as C<X-Registry-Auth>. The Engine API
 reference does not document this header on this endpoint, but the daemon
 reads it here exactly as it does on the pull
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -356,9 +380,12 @@ rather than testing for the exception class.
 =cut
 
 sub inspect {
-  my ($self, $name) = @_;
+  my ($self, $name, %opts) = @_;
   croak __PACKAGE__ . '->inspect plugin name required' unless $name;
-  return $self->_wrap($self->client->get("/plugins/$name/json"));
+  return $self->_wrap($self->client->get("/plugins/$name/json",
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  ));
 }
 
 =method inspect
@@ -375,6 +402,21 @@ The name may carry a registry host, a repository path and a tag
 as given: the daemon routes this endpoint as C<< /plugins/{name:.*}/json >>,
 so the slashes and the colon must survive unescaped, and they do.
 
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
+
 =cut
 
 sub remove {
@@ -382,7 +424,11 @@ sub remove {
   croak __PACKAGE__ . '->remove plugin name required' unless $name;
   my %params;
   $params{force} = $opts{force} ? 1 : 0 if defined $opts{force};
-  return $self->client->delete_request("/plugins/$name", params => \%params);
+  return $self->client->delete_request("/plugins/$name",
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method remove
@@ -400,6 +446,15 @@ Options:
 =item * C<force> - Disable the plugin before removing it. Removing a plugin
 that containers are still using will break them
 
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
 =back
 
 Returns C<undef>. The Engine API reference documents a C<Plugin> object as
@@ -414,7 +469,11 @@ sub enable {
   # parses this parameter with strconv.Atoi and has no default, so an absent
   # timeout is parsed as the empty string and answers 400. See the POD.
   my %params = ( timeout => $opts{timeout} // 0 );
-  return $self->client->post("/plugins/$name/enable", undef, params => \%params);
+  return $self->client->post("/plugins/$name/enable", undef,
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method enable
@@ -430,6 +489,15 @@ Options:
 
 =item * C<timeout> - Seconds to wait for the plugin to come up, C<0> for no
 timeout (the default)
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -448,7 +516,11 @@ sub disable {
   croak __PACKAGE__ . '->disable plugin name required' unless $name;
   my %params;
   $params{force} = $opts{force} ? 1 : 0 if defined $opts{force};
-  return $self->client->post("/plugins/$name/disable", undef, params => \%params);
+  return $self->client->post("/plugins/$name/disable", undef,
+    params => \%params,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method disable
@@ -464,6 +536,15 @@ Options:
 
 =item * C<force> - Disable even while the plugin is in use. Mounts held by
 the plugin stay behind, which is what makes a later L</remove> fail
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -600,7 +681,19 @@ sub configure {
   my ($self, $name, @settings) = @_;
   croak __PACKAGE__ . '->configure plugin name required' unless $name;
 
-  @settings = @{ $settings[0] } if @settings == 1 && ref $settings[0] eq 'ARRAY';
+  # The list form has nowhere to put an option: configure($name, 'A=1', 'B=2')
+  # is settings all the way down, and a trailing `read_timeout => 2` in it
+  # would be two more settings as far as this method can tell. So options ride
+  # behind the ArrayRef form, which already exists for exactly one list --
+  # the same split API::Docker::API::Images->get_all makes.
+  my %opts;
+  if (ref $settings[0] eq 'ARRAY') {
+    my $list = shift @settings;
+    croak __PACKAGE__ . '->configure takes options as pairs after the '
+      . 'ArrayRef of settings; got an odd number of them' if @settings % 2;
+    %opts     = @settings;
+    @settings = @$list;
+  }
 
   croak __PACKAGE__ . '->configure requires at least one setting, as an '
     . 'ArrayRef or a list of "KEY=value" strings' unless @settings;
@@ -608,7 +701,10 @@ sub configure {
   croak __PACKAGE__ . '->configure settings must be plain strings'
     if grep { ref $_ } @settings;
 
-  return $self->client->post("/plugins/$name/set", \@settings);
+  return $self->client->post("/plugins/$name/set", \@settings,
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
 }
 
 =method configure
@@ -626,6 +722,30 @@ reports; L</inspect> is how you find out which ones a given plugin has.
 
 The engine replaces nothing it is not told about, and rejects a key the
 plugin's config does not declare as mutable.
+
+C<read_timeout> and C<connect_timeout> are accepted only with the ArrayRef
+form, exactly as they are for L<API::Docker::API::Images/get_all>:
+
+    $plugins->configure('vieux/sshfs:latest', ['DEBUG=1'], read_timeout => 5);
+
+The plain list takes settings and nothing else -- a trailing option pair in it
+would be indistinguishable from two more settings. Options after the ArrayRef
+must come in pairs; an odd number croaks.
+
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
 
 =cut
 

@@ -37,6 +37,18 @@ use API::Docker::Error::Timeout;
 # holding bytes it has not passed on when the clock runs out, so the entries
 # that said otherwise had to be split rather than kept.
 #
+# What karr #64 changed here. The non-timeout half of each pair used to assert
+# that a short read at a real end of response was returned as the body, and
+# named that as silent loss the errno check does not address -- correctly, it
+# being a close rather than a stall. Eight of those sites now croak with an
+# API::Docker::Error::Truncated instead, so eight of the pairs are now
+# timeout-vs-truncation rather than timeout-vs-value. The claim that carried
+# over is the one this file exists for: the two meanings of an empty read
+# still come out differently, and only one of them is a timeout. What went
+# with it is the assumption that "not a timeout" means "returned"; site_ok now
+# has each site declare which, because four of them could not otherwise fail.
+# The close-delimited sites are untouched -- there an EOF is the end.
+#
 # Nothing here reaches a Docker daemon, so there is no is_live()/can_write()
 # gating: it is unconditionally safe with no engine installed.
 
@@ -153,12 +165,27 @@ sub attr {
   return ref $err && $err->can($name) ? $err->$name : undef;
 }
 
-# The pair of assertions every read site gets: with EAGAIN it croaks, without
-# it the site behaves as it always has. A test that only made the first half
-# would pass just as well against a transport that croaked on every end of
-# response.
+# The pair of assertions every read site gets: with EAGAIN it croaks with a
+# timeout, without it it does whatever a real end of the response means at
+# that site. A test that only made the first half would pass just as well
+# against a transport that croaked on every end of response.
+#
+# The second half is declared, not merely inspected. Each site says which of
+# the two shapes it has -- `returns => sub {...}` for a site where the close
+# really is the end of the response, `raises => sub {...}` for one where it is
+# not -- and site_ok asserts that it is that shape and not the other one. The
+# earlier version took a single check sub and ran it either way, so a site
+# that started croaking where it used to return still passed as long as the
+# check itself did not look at the return value. Four of the streaming sites
+# below were in exactly that position when karr #64 landed: the check asserted
+# what had reached the callback, which a croak does not change, so the change
+# in outcome went unseen. Declaring the shape is what makes those four able to
+# fail.
 sub site_ok {
-  my ($name, $make_handle, $drive, $eof_check) = @_;
+  my ($name, $make_handle, $drive, %eof) = @_;
+
+  die "site_ok $name: declare exactly one of returns/raises\n"
+    unless 1 == grep { $eof{$_} } qw( returns raises );
 
   subtest $name => sub {
     my ($out, $err, $other) = timed_out(
@@ -173,14 +200,45 @@ sub site_ok {
 
     my ($eof_out, $eof_err, $eof_other) = timed_out(
       sub { $drive->($make_handle->(0), ctx()) });
-    ok !$eof_err, 'the same short read at the end of the response does not';
-    $eof_check->($eof_out, $eof_other) if $eof_check;
+    ok !$eof_err, 'the same short read at the end of the response is not a '
+      . 'timeout';
+    if ($eof{raises}) {
+      ok $eof_other, 'it raises something else instead'
+        or diag 'returned instead of raising';
+      $eof{raises}->($eof_other) if $eof_other;
+    }
+    else {
+      ok !$eof_other, 'and raises nothing at all'
+        or diag "raised: $eof_other";
+      $eof{returns}->($eof_out) unless $eof_other;
+    }
 
     # And with no timeout armed, the EAGAIN case is not a timeout either --
     # the option is what turns the check on, not the errno.
     my ($off_out, $off_err, $off_other) = timed_out(
       sub { $drive->($make_handle->(1), ctx_off()) });
     ok !$off_err, 'with no read_timeout set, EAGAIN is not consulted at all';
+  };
+}
+
+# What a site that is cut short has to raise. The phase says which piece of
+# the framing ended early, so a check that only asked for the class would pass
+# against a transport that noticed the wrong one.
+sub truncated_ok {
+  my (%want) = @_;
+
+  return sub {
+    my ($err) = @_;
+    isa_ok $err, 'API::Docker::Error::Truncated';
+    is attr($err, 'phase'), $want{phase},
+      'and says where the response was cut: ' . $want{phase};
+    is attr($err, 'endpoint'), $ENDPOINT, 'and the request it belongs to';
+    is attr($err, 'partial'), $want{partial},
+      'carrying the bytes that did arrive'
+      if exists $want{partial};
+    is_deeply attr($err, 'summary'), $want{summary},
+      'and the units the callback was handed'
+      if exists $want{summary};
   };
 }
 
@@ -193,17 +251,20 @@ my $BLANK   = { line => "\r\n" };
 site_ok '_read_head: the status line never arrives',
   sub { scripted({ timeout => $_[0] }) },
   sub { $client->_read_head($_[0], $_[1]) },
-  sub {
-    my ($out, $other) = @_;
-    like $other, qr/No response from Docker daemon/,
+  raises => sub {
+    like $_[0], qr/No response from Docker daemon/,
       'a daemon that closed without answering still says so, and says '
       . 'something else than a timeout';
   };
 
+# The head is not covered by karr #64's completeness check: nothing in a
+# status line or a header block announces its own length, so there is no
+# announcement to compare a short one against. What a truncated head should do
+# is its own question -- karr #73.
 site_ok '_read_head: half a status line',
   sub { scripted({ line => 'HTTP/1.1 20' }, { timeout => $_[0] }) },
   sub { $client->_read_head($_[0], $_[1]) },
-  sub {
+  returns => sub {
     my ($out) = @_;
     is $out->[0][0], '20',
       'an unterminated final line is still parsed when it is the end of the '
@@ -216,7 +277,7 @@ site_ok '_read_head: the header block stops halfway',
       { line => 'X-Half' }, { timeout => $_[0] });
   },
   sub { $client->_read_head($_[0], $_[1]) },
-  sub {
+  returns => sub {
     my ($out) = @_;
     is $out->[0][2]{'content-type'}, 'application/json',
       'the headers that did arrive are kept';
@@ -225,6 +286,14 @@ site_ok '_read_head: the header block stops halfway',
 # ---------------------------------------------------------------------------
 # _read_body -- the three shapes a buffered body comes in
 # ---------------------------------------------------------------------------
+# The four sites karr #64 changed. Each of them used to assert that the short
+# read at a real end of response was RETURNED -- 'hello wor', 'hello' -- and
+# named that as the silent loss the errno check could not prevent, the errno
+# check being about a timeout and this being about a close. The claim that
+# survives is the one those assertions were making about the timeout: the two
+# meanings of an empty read still come out differently, and only one of them
+# is a timeout. What is replaced is the other half of each pair, which is now
+# an API::Docker::Error::Truncated instead of a value.
 site_ok '_read_body: a content-length body stops short',
   sub {
     scripted({ bytes => 'hello ' }, { bytes => 'wor' },
@@ -233,17 +302,14 @@ site_ok '_read_body: a content-length body stops short',
   sub {
     $client->_read_body($_[0], { 'content-length' => 11 }, 'GET', $_[1]);
   },
-  sub {
-    my ($out) = @_;
-    is $out->[0], 'hello wor',
-      'a truncated body is returned as though whole when the response really '
-      . 'ended -- the exact silent loss the errno check prevents';
-  };
+  raises => truncated_ok(phase => 'content-length', partial => 'hello wor');
 
+# The one body shape where an EOF is the end and must stay one: nothing was
+# announced, so there is nothing to be short of.
 site_ok '_read_body: a close-delimited body stops short',
   sub { scripted({ bytes => 'partial frames' }, { timeout => $_[0] }) },
   sub { $client->_read_body($_[0], {}, 'GET', $_[1]) },
-  sub {
+  returns => sub {
     my ($out) = @_;
     is $out->[0], 'partial frames', 'the bytes are the body at a real close';
   };
@@ -254,10 +320,7 @@ site_ok '_read_chunked: the chunk header stops halfway',
       { line => '1a' }, { timeout => $_[0] });
   },
   sub { $client->_read_chunked($_[0], $_[1]) },
-  sub {
-    my ($out) = @_;
-    is $out->[0], 'hello', 'the chunks that completed are kept';
-  };
+  raises => truncated_ok(phase => 'chunk-header', partial => 'hello');
 
 site_ok '_read_chunked: the chunk data stops short',
   sub {
@@ -265,10 +328,7 @@ site_ok '_read_chunked: the chunk data stops short',
       { line => "6\r\n" }, { bytes => ' wor' }, { timeout => $_[0] });
   },
   sub { $client->_read_chunked($_[0], $_[1]) },
-  sub {
-    my ($out) = @_;
-    is $out->[0], 'hello wor', 'a chunk cut off by a real close is kept';
-  };
+  raises => truncated_ok(phase => 'chunk-data', partial => 'hello wor');
 
 site_ok '_read_chunked: the CRLF after the chunk data never arrives',
   sub {
@@ -276,10 +336,7 @@ site_ok '_read_chunked: the CRLF after the chunk data never arrives',
       { timeout => $_[0] });
   },
   sub { $client->_read_chunked($_[0], $_[1]) },
-  sub {
-    my ($out) = @_;
-    is $out->[0], 'hello', 'the chunk itself is kept';
-  };
+  raises => truncated_ok(phase => 'chunk-terminator', partial => 'hello');
 
 # ---------------------------------------------------------------------------
 # _read_streaming_response -- the same three shapes, one callback at a time
@@ -298,6 +355,13 @@ sub drive_stream {
   };
 }
 
+# The claim these four make about the callback is unchanged and is the reason
+# they are still driven twice: every byte that arrived reaches it before
+# either exception is raised, so both runs deliver the same units. What karr
+# #64 changed is only which exception the second run raises. Until then their
+# checks looked at @got alone -- which a croak does not disturb -- so all four
+# went on passing when the transport started croaking, which is the hole
+# site_ok's declared shape closes.
 {
   my @got;
   site_ok 'streaming, chunked: the chunk header stops halfway',
@@ -307,8 +371,12 @@ sub drive_stream {
         { line => '1a' }, { timeout => $_[0] });
     },
     drive_stream(\@got),
-    sub { is_deeply \@got, ['hello', 'hello'],
-      'both runs delivered the completed chunk' };
+    raises => sub {
+      truncated_ok(phase => 'chunk-header', partial => '',
+        summary => { delivered => 1, stopped => 0 })->(@_);
+      is_deeply \@got, ['hello', 'hello'],
+        'both runs delivered the completed chunk';
+    };
 }
 
 {
@@ -319,11 +387,13 @@ sub drive_stream {
         { line => "6\r\n" }, { bytes => ' wor' }, { timeout => $_[0] });
     },
     drive_stream(\@got),
-    sub {
+    raises => sub {
+      truncated_ok(phase => 'chunk-data', partial => '',
+        summary => { delivered => 1, stopped => 0 })->(@_);
       is_deeply \@got, [' wor', ' wor'],
         'every byte that arrived reached the callback before the exception '
-        . 'was raised, so both runs deliver the same units and only one of '
-        . 'them also croaks';
+        . 'was raised, so both runs deliver the same units and only the '
+        . 'reason for stopping differs';
     };
 }
 
@@ -335,7 +405,11 @@ sub drive_stream {
         { line => "5\r\n" }, { bytes => 'hello' }, { timeout => $_[0] });
     },
     drive_stream(\@got),
-    sub { is_deeply \@got, ['hello', 'hello'], 'the chunk was delivered' };
+    raises => sub {
+      truncated_ok(phase => 'chunk-terminator', partial => '',
+        summary => { delivered => 1, stopped => 0 })->(@_);
+      is_deeply \@got, ['hello', 'hello'], 'the chunk was delivered';
+    };
 }
 
 {
@@ -346,13 +420,18 @@ sub drive_stream {
         { bytes => 'hello ' }, { bytes => 'wor' }, { timeout => $_[0] });
     },
     drive_stream(\@got),
-    sub {
+    raises => sub {
+      truncated_ok(phase => 'content-length', partial => '',
+        summary => { delivered => 2, stopped => 0 })->(@_);
       is_deeply \@got, ['hello ', 'wor', 'hello ', 'wor'],
         'same on the content-length path: nothing that arrived is dropped '
         . 'because the rest of it did not';
     };
 }
 
+# And the streamed half of the one shape with no announcement to fall short
+# of. This is the raw-stream path -- attach, logs(follow), exec/start -- where
+# a close is how every one of them finishes.
 {
   my @got;
   site_ok 'streaming, close-delimited: the body stops short',
@@ -361,7 +440,7 @@ sub drive_stream {
         { bytes => 'frame one' }, { bytes => 'fra' }, { timeout => $_[0] });
     },
     drive_stream(\@got),
-    sub {
+    returns => sub {
       is_deeply \@got, ['frame one', 'fra', 'frame one', 'fra'],
         'and on the raw-stream path, which is the one karr #52 hangs on and '
         . 'where it matters most -- and where the two bursts are two calls '

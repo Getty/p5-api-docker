@@ -478,12 +478,15 @@ C<disable>, C<upgrade>, C<push> and C<configure>.
 =cut
 
 sub negotiate_version {
-  my ($self) = @_;
+  my ($self, %opts) = @_;
   return if $self->_version_negotiated;
   return if defined $self->api_version;
 
   $log->debug("Auto-negotiating API version");
-  my $version_info = $self->_request('GET', '/version');
+  my $version_info = $self->_request('GET', '/version',
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+  );
   if ($version_info && $version_info->{ApiVersion}) {
     $self->_set_api_version($version_info->{ApiVersion});
     $log->debugf("Negotiated API version: %s", $version_info->{ApiVersion});
@@ -494,6 +497,7 @@ sub negotiate_version {
 =method negotiate_version
 
     $docker->negotiate_version;
+    $docker->negotiate_version(read_timeout => 5, connect_timeout => 2);
 
 Automatically negotiate the highest API version supported by the Docker daemon.
 This is called automatically before the first API request if L</api_version>
@@ -502,18 +506,137 @@ is not set.
 After negotiation, L</api_version> will contain the negotiated version
 (e.g., C<1.41>).
 
+Options:
+
+=over
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
+
+=back
+
+Called on its own, with no options, the negotiation is bounded by the
+L<API::Docker::Role::HTTP/read_timeout> and
+L<API::Docker::Role::HTTP/connect_timeout> attributes of the client, like any
+other request. Reached the way it normally is -- automatically, from the first
+request -- it inherits that request's own bounds instead; see
+L</"What a timeout covers">.
+
 =cut
 
 around _request => sub {
   my ($orig, $self, $method, $path, %opts) = @_;
 
-  # Auto-negotiate before any versioned request, but not for /version itself
+  # Auto-negotiate before any versioned request, but not for /version itself.
+  # The triggering request's own bounds are handed to it: the negotiation is a
+  # pre-flight the caller never wrote, and a caller who asked for a bound and
+  # then hung in GET /version has been told something untrue (karr #72).
   if ($path ne '/version' && !defined $self->api_version && !$self->_version_negotiated) {
-    $self->negotiate_version;
+    $self->negotiate_version(
+      exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+      exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    );
   }
 
   return $self->$orig($method, $path, %opts);
 };
+
+=head1 TIMEOUTS
+
+=head2 What a timeout covers
+
+Two bounds, covering different halves of a request.
+L<API::Docker::Role::HTTP/connect_timeout> bounds opening the connection;
+L<API::Docker::Role::HTTP/read_timeout> bounds reading the answer. Both are
+attributes of the client and options of every method that reaches the daemon,
+where they override the attribute for that one call:
+
+    my $docker = API::Docker->new(connect_timeout => 2, read_timeout => 30);
+
+    $docker->containers->list(read_timeout => 5);    # tighter, for this call
+    $docker->system->events(read_timeout => 0);      # off, for this call
+
+Both are off by default, which is the behaviour this distribution has always
+had. C<0> means the same as unset -- no bound -- and is how a client-wide
+default is turned off for one call: the options are read with C<exists>
+rather than for truth, so a C<0> reaches the transport instead of vanishing
+into "no opinion".
+
+Three things they do not do:
+
+=over
+
+=item * B<C<read_timeout> is an idle timeout, not a deadline.> The clock
+measures the time since the last byte arrived, not the time since the request
+started. A stream that keeps producing runs as long as it likes; one that
+stops producing is cut off. So it bounds a daemon that goes quiet -- it does
+not bound a long transfer, and it does not bound a stream that keeps sending
+without saying anything, which is what C<< containers->stats >> degrades into
+on Docker after the container exits.
+
+=item * B<Neither of them bounds writing the request.> Sending the bytes out
+is unbounded on every transport. In practice that matters for one thing: a
+large C</build> context or C<< images->load >> archive being written to a
+daemon that has stopped reading.
+
+=item * B<Under TLS, C<read_timeout> is not quite an idle timer on the
+plaintext.> It is C<SO_RCVTIMEO> on the socket, which bounds each blocking
+receive on the underlying connection, and one plaintext read can consume
+several of those while a TLS record arrives in pieces -- so a record dribbling
+in slowly enough resets the clock without a byte reaching the caller. It still
+bounds the hang, which is what it is for. C<connect_timeout> over TLS bounds
+the TCP connect and not the handshake that follows it.
+
+=back
+
+An expiry croaks with an L<API::Docker::Error::Timeout> carrying what did
+arrive; it never returns a truncated response.
+L<API::Docker::Role::HTTP/"Bounding a request that never ends"> and
+L<API::Docker::Role::HTTP/"Bounding the connection itself"> have the
+per-transport measurements behind all of this.
+
+=head2 Where a bound applies
+
+Every public method of every resource class that reaches the daemon takes both
+options and forwards them -- and so do the requests a method makes on the
+caller's behalf without being asked:
+
+=over
+
+=item * L<API::Docker::API::Containers/attach> asks whether the container is
+running before attaching. That check carries the bounds the attach was given.
+
+=item * L<API::Docker::API::Plugins/install> and
+L<API::Docker::API::Plugins/upgrade> with C<< accept_privileges => 1 >> fetch
+the plugin's privileges first. That fetch carries them too.
+
+=item * L</negotiate_version> runs before the first request of a client with
+no L</api_version>, and inherits the bounds of the request that triggered it:
+C<< $docker->containers->list(read_timeout => 5) >> on a fresh client bounds
+the C<GET /version> as well as the list. Called directly it has only the
+client's attributes to go on.
+
+=back
+
+Two methods take the options only in their ArrayRef form --
+L<API::Docker::API::Images/get_all> and
+L<API::Docker::API::Plugins/configure> -- because in their list form a
+trailing C<< read_timeout => 5 >> would be two more names, or two more
+settings, with nothing to tell the difference.
+
+Eleven methods take neither, and their bound is whatever the client attribute
+says: C<create> and C<update> on C<< containers >>, C<< secrets >> and
+C<< configs >>, C<create> on C<< networks >>, C<< volumes >> and
+C<< exec >>, and C<< networks->connect >> and C<< networks->disconnect >>.
+Each of those takes its arguments as the request body itself, so a
+C<read_timeout> key in one of them would be a field the daemon is sent rather
+than an option this client reads.
 
 =head1 CONTAINER ENGINES
 
@@ -650,6 +773,12 @@ carries the status code
 
 =item * L<API::Docker::Error::Stream> - Raised for a failure reported inside a
 200 event stream
+
+=item * L<API::Docker::Error::Timeout> - Raised when a request given a
+C<read_timeout> or C<connect_timeout> runs out of it
+
+=item * L<API::Docker::Error::Truncated> - Raised when the daemon closed
+before the response it announced was complete
 
 =back
 

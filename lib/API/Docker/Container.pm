@@ -37,6 +37,13 @@ L<API::Docker::API::Containers> methods like C<list> and C<inspect>.
 Each attribute corresponds to fields in the Docker API container representation.
 Methods delegate to L<API::Docker::API::Containers> for operations.
 
+Every field below carries an C<=attr> block, and that list is also the
+object's whole field surface: Moo's default constructor silently drops any
+key in the daemon's response that has no matching C<has>, so there is no
+additional, undocumented attribute waiting on the instance -- only daemon
+fields this class does not keep at all. C<list> and C<inspect> return
+different, overlapping subsets of it, noted per attribute below.
+
 =cut
 
 has client => (
@@ -75,12 +82,37 @@ Image name used to create the container.
 =cut
 
 has ImageID       => (is => 'ro');
+
+=attr ImageID
+
+The image's ID (C<sha256:...> digest) the container was created from.
+Present in the C<list> shape (F<t/fixtures/containers_list.json>) alongside
+L</Image>, which there holds the human-readable name (C<nginx:latest>).
+C<inspect> reports the digest directly as L</Image> instead and carries no
+separate C<ImageID> -- see F<t/fixtures/container_inspect.json>.
+
+=cut
+
 has Command       => (is => 'ro');
+
+=attr Command
+
+The command the container runs, as one string (C<list> only, e.g.
+C<"nginx -g 'daemon off;'">). C<inspect> gives the same information split
+into L</Path> and L</Args> instead, plus the original C<Cmd> ArrayRef under
+L</Config>.
+
+=cut
+
 has Created       => (is => 'ro');
 
 =attr Created
 
-Container creation timestamp (Unix epoch).
+Container creation timestamp. An integer Unix epoch from C<list> (e.g.
+C<1705300000> in F<t/fixtures/containers_list.json>), but an RFC3339 string
+from C<inspect> (e.g. C<"2025-01-15T08:00:00.000000000Z"> in
+F<t/fixtures/container_inspect.json>) -- same field name, two shapes,
+depending on which call produced the object.
 
 =cut
 
@@ -102,12 +134,76 @@ Human-readable status string (e.g., "Up 2 hours").
 =cut
 
 has Ports         => (is => 'ro');
+
+=attr Ports
+
+ArrayRef of HashRefs describing published ports (C<list> only), each with
+C<IP>, C<PrivatePort>, C<PublicPort> and C<Type> -- see
+F<t/fixtures/containers_list.json>. C<inspect> reports port bindings
+differently, nested under L</NetworkSettings>.
+
+=cut
+
 has Labels        => (is => 'ro');
+
+=attr Labels
+
+HashRef of the container's labels (C<list> only; C<{}> when there are none).
+C<inspect> carries the same information under C<< Config->{Labels} >>
+instead -- see L</Config>.
+
+=cut
+
 has SizeRw        => (is => 'ro');
+
+=attr SizeRw
+
+Size in bytes of files created or changed by the container, relative to its
+image (C<list> only).
+
+=cut
+
 has SizeRootFs    => (is => 'ro');
+
+=attr SizeRootFs
+
+Total size in bytes of all files in the container's filesystem (C<list>
+only).
+
+=cut
+
 has HostConfig    => (is => 'ro');
+
+=attr HostConfig
+
+HashRef of the container's host configuration. C<list>
+(F<t/fixtures/containers_list.json>) reports just C<NetworkMode>; C<inspect>
+(F<t/fixtures/container_inspect.json>) additionally carries
+C<RestartPolicy>. The real daemon response for either call is considerably
+larger than either fixture captured here shows.
+
+=cut
+
 has NetworkSettings => (is => 'ro');
+
+=attr NetworkSettings
+
+HashRef of the container's network state, keyed under C<Networks> by network
+name (C<IPAddress>, C<Gateway>, ...). C<inspect> additionally carries
+C<Bridge> and a C<Ports> mapping of container port to host bindings, which is
+not the same structure as the top-level L</Ports> that C<list> returns.
+
+=cut
+
 has Mounts        => (is => 'ro');
+
+=attr Mounts
+
+ArrayRef of the container's mounts. Empty in every fixture captured here, so
+the per-mount shape (source, destination, mode, ...) is not verified against
+a real, non-empty response.
+
+=cut
 
 has Name          => (is => 'ro');
 
@@ -118,11 +214,58 @@ Container name (from C<inspect>, includes leading C</>).
 =cut
 
 has RestartCount  => (is => 'ro');
+
+=attr RestartCount
+
+Number of times the daemon has restarted the container (C<inspect> only;
+C<0> in F<t/fixtures/container_inspect.json>).
+
+=cut
+
 has Driver        => (is => 'ro');
+
+=attr Driver
+
+The storage driver backing the container's filesystem (C<inspect> only, e.g.
+C<overlay2>).
+
+=cut
+
 has Platform      => (is => 'ro');
+
+=attr Platform
+
+The OS platform the container runs under (C<inspect> only, e.g. C<linux>).
+
+=cut
+
 has Path          => (is => 'ro');
+
+=attr Path
+
+The executable that was run as the container's entrypoint (C<inspect> only,
+e.g. C<nginx>). Paired with L</Args>.
+
+=cut
+
 has Args          => (is => 'ro');
+
+=attr Args
+
+ArrayRef of the arguments passed to L</Path> (C<inspect> only).
+
+=cut
+
 has Config        => (is => 'ro');
+
+=attr Config
+
+HashRef of the container's static configuration as it was created --
+C<Hostname>, C<Env>, C<Cmd>, C<Image>, C<Labels> in
+F<t/fixtures/container_inspect.json>, though the real daemon response
+carries more. C<inspect> only.
+
+=cut
 
 sub start {
   my ($self) = @_;

@@ -111,6 +111,8 @@ sub inspect {
 
   return $self->client->get("/distribution/$name/json",
     $self->_auth_headers(\%opts),
+    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
     (exists $opts{response} ? (response => $opts{response}) : ()));
 }
 
@@ -149,6 +151,15 @@ anonymous, which is what a public image needs
 
 =item * C<response> - HashRef the status line and the response headers are
 written into, as for L<API::Docker::Role::HTTP/get>
+
+=item * C<read_timeout> - Seconds of silence after which the request gives up
+and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding a request that never ends">
+
+=item * C<connect_timeout> - Seconds after which opening the connection gives
+up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
+C<'connect'>. Off by default; see
+L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 

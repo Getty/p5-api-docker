@@ -4,6 +4,7 @@ use Test::More;
 use lib 't/lib';
 use Test::API::Docker::Mock;
 use JSON::MaybeXS qw( decode_json );
+use API::Docker::Image;
 
 # The engine's build stream, as captured from a real daemon. build/pull/push
 # hand the caller one event per line, always as an ArrayRef.
@@ -12,7 +13,47 @@ sub build_events {
   return [ map { decode_json($_) } grep { /\S/ } split /\n/, $body ];
 }
 
+# Live picks a name out of whatever `list` handed back. RepoTags on an
+# untagged image is `[]` -- true in Perl -- so testing the ref for truth
+# (as this used to) takes the tag branch for an untagged image and hands
+# inspect()/history() an undef name. Walk the list for the first image that
+# actually HAS a tag; fall back to an Id only when none do -- both engines
+# accept either as a name, so either is correct, but the ref-as-boolean
+# check was right for neither. See karr #75.
+sub _live_image_name {
+  my ($images) = @_;
+  for my $image (@$images) {
+    my $tags = $image->RepoTags;
+    return $tags->[0] if ref $tags eq 'ARRAY' && @$tags;
+  }
+  return $images->[0]->Id;
+}
+
 check_live_access();
+
+subtest '_live_image_name picks a tag, falling back to Id' => sub {
+  my $untagged_1 = API::Docker::Image->new(Id => 'sha256:untagged1', RepoTags => []);
+  my $untagged_2 = API::Docker::Image->new(Id => 'sha256:untagged2', RepoTags => []);
+  my $tagged     = API::Docker::Image->new(Id => 'sha256:tagged', RepoTags => ['alpine:3', 'alpine:latest']);
+
+  is(
+    _live_image_name([ $untagged_1, $untagged_2, $tagged ]),
+    'alpine:3',
+    'untagged images sorted first are skipped in favour of the first tag',
+  );
+
+  is(
+    _live_image_name([ $tagged, $untagged_1 ]),
+    'alpine:3',
+    'a tagged image still wins when it is already first',
+  );
+
+  is(
+    _live_image_name([ $untagged_1, $untagged_2 ]),
+    'sha256:untagged1',
+    q{falls back to the first image's Id when nothing in the store is tagged},
+  );
+};
 
 # --- Read Tests (always run) ---
 
@@ -58,7 +99,7 @@ subtest 'inspect image' => sub {
   if (is_live()) {
     my $images = $docker->images->list;
     if (@$images) {
-      my $name = $images->[0]->RepoTags ? $images->[0]->RepoTags->[0] : $images->[0]->Id;
+      my $name = _live_image_name($images);
       $image = $docker->images->inspect($name);
     } else {
       plan skip_all => 'No images available for inspect test';
@@ -100,7 +141,7 @@ subtest 'image history' => sub {
   if (is_live()) {
     my $images = $docker->images->list;
     if (@$images) {
-      my $name = $images->[0]->RepoTags ? $images->[0]->RepoTags->[0] : $images->[0]->Id;
+      my $name = _live_image_name($images);
       $history = $docker->images->history($name);
     } else {
       plan skip_all => 'No images available for history test';
