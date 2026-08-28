@@ -18,8 +18,8 @@ use API::Docker;
 # says.
 #
 # That shape also makes the test self-guarding against the very substitution
-# k91 found. /home/getty/perl5/lib/perl5/API/Docker/ still holds the working
-# 0.004 copies of all seven; if @INC ever resolved one of these names there
+# k91 found. An installed copy (a local::lib under ~/perl5, a site dir) may
+# hold the working pre-stub versions of all seven; if @INC ever resolved one of these names there
 # instead of to this checkout's lib/, the require would SUCCEED and every
 # subtest below would go red rather than quietly passing.
 #

@@ -412,8 +412,9 @@ subtest 'from_data keeps a value it cannot use instead of croaking' => sub {
   # The swagger declares ContainerInspectResponse.State as an object. An
   # engine that answers with the bare status string of the list shape used to
   # take the whole inspect down with an Error::TypeTiny; now it costs that
-  # one field. We are not the authority on what an engine answers -- Podman
-  # announces 1.44 and Docker 1.55 on this machine, the model is v1.51.
+  # one field. We are not the authority on what an engine answers -- the
+  # model is v1.51, and an engine announces whatever version it has (Podman
+  # 5.8 says 1.44, Docker 29.7 says 1.55).
   my $c = API::Docker::Type::ContainerInspectResponse->from_data({
     Id => 'x', Name => '/keep', State => 'exited' });
 

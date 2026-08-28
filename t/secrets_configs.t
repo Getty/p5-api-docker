@@ -23,9 +23,10 @@ my $REQUEST_SHAPE = 'asserts the outgoing request; only the mock can see it';
 # measured on 5.4.2 / API 1.41 -- but every item-scoped route under it
 # (create, inspect, update, remove) answers 503 JSON instead, not the same
 # 404 (re-measured live, Podman 5.8.4 / API 1.44, karr k62; see the
-# $CONFIGS_UNSERVED comment below for the detail). There is no Docker on this
-# machine, so a configs_list.json would be a hand-rolled file dressed up as a
-# capture.
+# $CONFIGS_UNSERVED comment below for the detail). No engine serving
+# /configs was at hand when this was written, so there is no
+# configs_list.json: a hand-rolled file dressed up as a capture would be
+# worse than none.
 my $CONFIG = {
   ID        => 'ktnbjxoalbkvbvedmg1urrz8h',
   Version   => { Index => 11 },

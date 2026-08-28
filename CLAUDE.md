@@ -139,16 +139,23 @@ that way. For the read-only live paths set `API_DOCKER_TEST_HOST`; add
 `API_DOCKER_TEST_WRITE=1` for the mutating ones (they create and remove
 real containers, images and volumes).
 
-**On this machine that host is Podman, not Docker.**
-`/var/run/docker.sock` does not exist here, and a missing socket makes the
-suite `skip_all` — a live run pointed at the default reports success while
-testing nothing:
+Which engine is available is a fact about the machine, not about this
+file — establish it before every live run rather than assuming it:
 
 ```bash
-API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock prove -lr t/
+# which sockets exist
+ls -l /var/run/docker.sock "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock" 2>/dev/null
+# what each one announces: Platform.Name, ApiVersion, MinAPIVersion
+curl -s --unix-socket <socket> http://localhost/version
+# then
+API_DOCKER_TEST_HOST=unix://<socket> prove -lr t/
 ```
 
-Run it and read the result. No file or test count belongs here: one was
+A missing socket makes the suite `skip_all`, so a live run pointed at a
+socket that is not there reports success while testing nothing — read the
+skip line, not just the exit code. Ask the engine what it announces rather
+than reading a version off a path or off the `/v1.XX/` in a hand-written
+URL. Run it and read the result. No file or test count belongs here: one was
 written down twice and was wrong both times, because the suite grows with
 every fixture and every generated type.
 

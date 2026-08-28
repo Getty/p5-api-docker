@@ -117,7 +117,7 @@ subtest 'exists answers the question without an eval' => sub {
     'the registry saying 404 is no, not an exception';
 
   # The property the whole predicate exists for. Podman has no route, so a
-  # naive "404 means no" would answer no for every image on this machine --
+  # naive "404 means no" would answer no for every image there is --
   # which is the constant "no" the consumer's remote_tag_exists stub already
   # had, reintroduced one layer down where it looks like an answer.
   my $unsupported = fake_client($PODMAN_404, 404);

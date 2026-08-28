@@ -10,7 +10,7 @@ use Module::Runtime qw( require_module );
 # checkout's own lib/. That is how a module k84 deleted from
 # lib/API/Docker/Image.pm kept "loading": t/basic.t's use_ok stayed green
 # because API::Docker::Image resolved from
-# /home/getty/perl5/lib/perl5/API/Docker/Image.pm instead. The installed
+# a local::lib copy (~/perl5/lib/perl5/API/Docker/Image.pm) instead. The installed
 # copy reported the same $VERSION as the checkout, too -- a released 0.003
 # and an unreleased 0.004 carry the identical literal under this repo's
 # version discipline -- so a version check would not have caught the

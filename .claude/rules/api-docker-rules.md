@@ -92,14 +92,14 @@ names a specific item to handle.
 
 ## API-Docker-specific hazards
 
-- **There is no Docker on this machine — only rootless Podman.**
-  `unix:///var/run/docker.sock` does not exist here, and `check_live_access` answers a
-  missing socket with `skip_all`. A live run pointed at the default therefore reports
-  success while testing nothing. The real endpoint is
-  `API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock`. Ask the engine
-  what it announces rather than reading it off a path prefix -- `GET /version`
-  on that socket says 1.44, and the `/v1.41/` in a hand-written curl is only
-  what the request asked for.
+- **Which engine is there is a fact about the machine, not about this file.** Before
+  any live run, check which sockets exist (`/var/run/docker.sock`,
+  `$XDG_RUNTIME_DIR/podman/podman.sock`) and what each announces on `GET /version` --
+  `Platform.Name`, `ApiVersion`, `MinAPIVersion`. `check_live_access` answers a missing
+  socket with `skip_all`, so a live run pointed at a socket that is not there reports
+  success while testing nothing: read the skip line. The `/v1.XX/` in a hand-written
+  curl is what the request asked for, not what the engine is. A measurement names the
+  engine and the version it was taken on, or it is not a measurement.
 - **Live write tests mutate the real engine.** `API_DOCKER_TEST_WRITE=1` creates and
   removes actual containers, images, networks and volumes; cleanup runs in an `END`
   block, so an interrupted run leaves them behind. Run only when the task is about live
@@ -108,8 +108,8 @@ names a specific item to handle.
   /images/prune` with `filters => { dangling => ['false'] }` removes every
   unused *tagged* image on the engine, locally built ones included, and they
   are not recoverable. It reads like a narrowing filter and is the opposite.
-  This has already cost a hand-built image on this machine (2026-08-27),
-  during what its caller believed was a read-only probe. **No `prune` of any
+  This has already cost a locally built image, during what its caller
+  believed was a read-only probe. **No `prune` of any
   kind -- images, containers, networks, volumes, build cache -- and no
   `rm -a` or `system reset`, on either engine, ever, unless the user names
   the command.** Probing what an endpoint answers is not a reason: measure

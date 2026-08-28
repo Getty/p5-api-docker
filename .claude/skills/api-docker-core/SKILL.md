@@ -77,7 +77,7 @@ itself, which `Test::API::Docker::Mock` does.
 - **Extra headers go through `headers =>`**, which strips CR/LF. Never
   concatenate a header into the request string.
 - `_uri_encode` deliberately leaves `/` and `:` raw so image names survive in
-  the path (`/images/raudssus/karr:user/push`).
+  the path (`/images/library/nginx:1.25/push`).
 - `sub push` and `sub kill` shadow Perl builtins inside their packages — that
   is why `namespace::clean` is loaded; always call them as methods.
 

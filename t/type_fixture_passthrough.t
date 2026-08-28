@@ -33,7 +33,7 @@ use API::Docker::Type::VolumeListResponse;
 # it calls test_docker(), so it never reaches the route table load_fixture()
 # reads the JSON straight off disk either way -- but the point under test is
 # the shape of these specific captured files, not of whatever a live daemon
-# on this machine happens to hold right now.
+# happens to hold right now.
 #
 # Inflated through from_data, which is the entry point a daemon response goes
 # through: it reads the swagger's wire names and nothing else, so a fixture
