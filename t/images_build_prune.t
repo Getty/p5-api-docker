@@ -7,7 +7,7 @@ use lib "$FindBin::Bin/lib";
 use Test::API::Docker::Mock;
 use API::Docker;
 
-# karr #25 -- images->build_prune, POST /build/prune. Clears the BuildKit
+# karr k25 -- images->build_prune, POST /build/prune. Clears the BuildKit
 # build cache, which is a different store from the dangling images
 # images->prune deletes.
 #

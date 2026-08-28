@@ -12,7 +12,7 @@ use API::Docker::Type::SystemInfo;
 use API::Docker::Type::SystemVersion;
 use API::Docker::Type::VolumeListResponse;
 
-# karr #81: every fixture under t/fixtures/*.json is captured output from a
+# karr k81: every fixture under t/fixtures/*.json is captured output from a
 # real daemon (skill api-docker-core), not hand-rolled -- so feeding each one
 # through the generated class its endpoint returns measures the type model's
 # passthrough invariant against reality rather than against a test its own
@@ -76,7 +76,7 @@ for my $case (@CASES) {
 }
 
 subtest 'the VirtualSize regression this ticket exists to pin down' => sub {
-  # Measured 2026-08-28 (karr #81): VirtualSize is in spec/v1.41.yaml, gone
+  # Measured 2026-08-28 (karr k81): VirtualSize is in spec/v1.41.yaml, gone
   # from spec/v1.44.yaml onward -- Docker removed it from the swagger -- and
   # the engine that produced this fixture still sends it. The model forwards
   # it verbatim instead of dropping it; this is the specific case the loop

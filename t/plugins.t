@@ -19,7 +19,7 @@ use Test::API::Docker::FakeTransport;
 # {"cause":"","message":"Path /v1.41/plugins is not supported","response":0}
 # (that version number just echoes the requested path prefix, not a fixed
 # daemon constant -- re-measured live on 5.8.4 / API 1.44 the same message
-# reads "/v1.44/plugins", karr #62) and every other path in the family
+# reads "/v1.44/plugins", karr k62) and every other path in the family
 # answers a bare text/plain 404, i.e. the compat layer has no route for them
 # at all. A live run of this file would therefore be red, and a skip_all
 # would leave the whole class untested on the machine that actually runs the
@@ -308,12 +308,12 @@ subtest 'privileges: a plugin that demands nothing answers null' => sub {
   # a nil Go slice, which marshals to a bare `null`.
   my $c = fake_client('null');
 
-  # karr #30 (fixed): the transport used to decode a body only when it
+  # karr k30 (fixed): the transport used to decode a body only when it
   # started with { or [, so a bare JSON scalar came back as its own bytes --
   # the four-character string 'null'. It now decodes any JSON body, scalars
   # included, so this comes back as undef, same as decode_json('null') would.
   is $c->get('/plugins/privileges', params => { remote => 'x' }), undef,
-    'the transport decodes the bare null to undef (karr #30)';
+    'the transport decodes the bare null to undef (karr k30)';
 
   # Unguarded, that undef would be POSTed to /plugins/pull as a JSON null
   # where the engine expects an array.

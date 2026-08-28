@@ -7,7 +7,7 @@ use lib "$FindBin::Bin/lib";
 use Test::API::Docker::Mock;
 use API::Docker;
 
-# karr #20 -- the image tar roundtrip: GET /images/{name}/get,
+# karr k20 -- the image tar roundtrip: GET /images/{name}/get,
 # GET /images/get?names= and POST /images/load. The air-gapped path: export
 # here, carry the tar over, load there.
 #
@@ -225,7 +225,7 @@ subtest 'load: a failure reported in the status line croaks before the stream' =
   like $err, qr/Docker API error \(500\)/, 'the status handling croaks first';
   like $err, qr/failed to load image/, 'with the message key, not the whole body';
   # The claim here is which of the two croak paths won, not what type the
-  # winner is. Since karr #50 a >= 400 status raises Error::HTTP rather than
+  # winner is. Since karr k50 a >= 400 status raises Error::HTTP rather than
   # a bare string -- stringifying to the very text the two matches above
   # still find -- so the type is what tells the paths apart now.
   isa_ok $err, 'API::Docker::Error::HTTP';

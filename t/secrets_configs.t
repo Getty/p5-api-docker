@@ -22,7 +22,7 @@ my $REQUEST_SHAPE = 'asserts the outgoing request; only the mock can see it';
 # (/configs) with a plain-text "Not Found" 404, unchanged since it was first
 # measured on 5.4.2 / API 1.41 -- but every item-scoped route under it
 # (create, inspect, update, remove) answers 503 JSON instead, not the same
-# 404 (re-measured live, Podman 5.8.4 / API 1.44, karr #62; see the
+# 404 (re-measured live, Podman 5.8.4 / API 1.44, karr k62; see the
 # $CONFIGS_UNSERVED comment below for the detail). There is no Docker on this
 # machine, so a configs_list.json would be a hand-rolled file dressed up as a
 # capture.
@@ -339,10 +339,10 @@ subtest 'secrets remove' => sub {
 # Podman has no /configs route: GET /configs (the collection) answers the
 # same blanket 404 Not Found, plain text body "Not Found", that any
 # unimplemented path gets (measured live, Podman 5.4.2 / API 1.41, and
-# unchanged on 5.8.4 / API 1.44 -- karr #62). Every item-scoped route under
+# unchanged on 5.8.4 / API 1.44 -- karr k62). Every item-scoped route under
 # it -- create, inspect, update, remove -- instead answers 503 with a JSON
 # body, {"cause":"Podman does not support service: <path>","message":"...",
-# "response":503} (re-measured live on 5.8.4 / API 1.44, karr #62; not
+# "response":503} (re-measured live on 5.8.4 / API 1.44, karr k62; not
 # checked against 5.4.2). Docker does serve /configs, but only inside an
 # initialised swarm manager; outside one it answers 503 with a JSON body,
 # "This node is not a swarm manager. Use \"docker swarm init\" or \"docker

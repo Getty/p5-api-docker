@@ -542,7 +542,7 @@ sub _connect_timeout_value {
 # select-based bound would have to be asked only when that buffer is empty,
 # which is one more invariant to keep for no gain: SO_RCVTIMEO bounds the one
 # syscall in _pull for one setsockopt, and gets idle-since-the-last-byte
-# semantics for free, which is the semantics these endpoints need (karr #52:
+# semantics for free, which is the semantics these endpoints need (karr k52:
 # the buffered frames arrive, and *then* the socket stalls -- a
 # time-to-first-byte bound would never fire).
 sub _apply_read_timeout {
@@ -592,7 +592,7 @@ sub _apply_read_timeout {
 # meaningful after a failure, and any operation in between would overwrite it.
 #
 # Without this the readers would take a timeout for the end of the response and
-# return a truncated body as a whole one. That is the reason karr #59 is not
+# return a truncated body as a whole one. That is the reason karr k59 is not
 # just the setsockopt: switching the option on alone would turn a hang into
 # silent data loss, which is the worse of the two.
 sub _timed_out {
@@ -636,7 +636,7 @@ sub _croak_timeout {
 }
 
 # The other way a response ends before it is finished, and the one that needs
-# no option to be armed: the daemon closed mid-sentence (karr #64).
+# no option to be armed: the daemon closed mid-sentence (karr k64).
 #
 # It is deliberately not folded into _croak_timeout. A timeout is the absence
 # of an answer inside a bound the caller asked for, and it can fire on a
@@ -703,7 +703,7 @@ sub _croak_truncated {
 #
 # Every byte of a response is taken off the handle by _pull and by nothing
 # else, and every reader below is served out of the buffer _pull fills. That
-# is not an optimisation, it is the only shape that works (karr #60).
+# is not an optimisation, it is the only shape that works (karr k60).
 #
 # What forced it: perl's read() is fread-shaped. It loops until it has the
 # LENGTH it was asked for or the stream ends -- it does not return what has
@@ -869,7 +869,7 @@ sub _read_bytes {
 # Every `last unless $n` in a buffered reader used to be both -- the loop
 # ended and what had been collected was returned as the response. Nothing
 # compared the two, so a daemon that closed mid-body handed back a short body
-# that every return shape this role promises accepts (karr #64).
+# that every return shape this role promises accepts (karr k64).
 #
 # $into is the same scalar the reader is accumulating into, so the bytes of
 # the incomplete piece are in $ctx->{partial} by the time this croaks and go
@@ -1052,7 +1052,7 @@ sub _request {
         # Docker answers with {"message":...}. Podman answers a failed push
         # with the stream shape instead -- {"errorDetail":{"message":...},
         # "error":...} and no message key at all -- so without these two
-        # fallbacks the whole JSON object became the croak text (karr #13).
+        # fallbacks the whole JSON object became the croak text (karr k13).
         my $detail = ref $data->{errorDetail} eq 'HASH'
           ? $data->{errorDetail}{message} : undef;
         $error_msg = $data->{message} // $detail // $data->{error} // $body;
@@ -1064,7 +1064,7 @@ sub _request {
     # which names the same frame a croak of a plain string would have named.
     # message . location is byte for byte what the string croak produced,
     # newline-terminated engine messages included: Carp appends the suffix
-    # after the newline rather than skipping it (karr #50).
+    # after the newline rather than skipping it (karr k50).
     my $error = API::Docker::Error::HTTP->new(
       message  => "Docker API error ($status_code): $error_msg",
       location => shortmess(''),
@@ -1250,9 +1250,9 @@ sub _read_head {
 }
 
 # The two ways the head ends early, and neither of them has a byte count to
-# compare either (karr #73).
+# compare either (karr k73).
 #
-# karr #64 left the head out on the grounds that nothing in a status line or a
+# karr k64 left the head out on the grounds that nothing in a status line or a
 # header block announces its own length, so there was no announcement to hold
 # a short one against. True, and beside the point: an announcement is not what
 # is being checked here, any more than it is in _assert_chunk_header one level
@@ -1342,14 +1342,14 @@ sub _read_body {
 
   # Read until the daemon closes. This used to be a `local $/; <$sock>` slurp;
   # it is a loop over the same primitive as the other two branches now, which
-  # is what karr #60 needed and what the timeout wanted anyway -- with $/ undef
+  # is what karr k60 needed and what the timeout wanted anyway -- with $/ undef
   # a whole body and a truncated one are both just bytes, so the slurp's own
-  # result could never say which it was. This is the path karr #52's hang is
+  # result could never say which it was. This is the path karr k52's hang is
   # on, an attach whose buffered frames arrive and whose socket then never
   # closes.
   #
   # And the one shape with no completeness check to make: the response
-  # announced no end, so the close IS the end (karr #64). Treating an EOF here
+  # announced no end, so the close IS the end (karr k64). Treating an EOF here
   # as truncation would make every attach, every logs(follow) and every
   # exec/start fail on the daemon hanging up, which is how all three finish.
   my $body = '';
@@ -1395,11 +1395,11 @@ sub _read_streaming_response {
   my $more = 1;
 
   # There is deliberately nothing here to hand the callback the bytes of the
-  # read that expires. karr #59 needed that hook because PerlIO's read() could
+  # read that expires. karr k59 needed that hook because PerlIO's read() could
   # come back with data *and* EAGAIN at once, so a stall could land with the
-  # whole response read and none of it fed; sysread cannot (karr #60). Every
+  # whole response read and none of it fed; sysread cannot (karr k60). Every
   # byte reaches the callback in the pull that delivered it, and the pull that
-  # expires delivers none -- so the property #59 established now holds by
+  # expires delivers none -- so the property k59 established now holds by
   # construction instead of by rescue.
 
   if ($headers->{'transfer-encoding'} && $headers->{'transfer-encoding'} eq 'chunked') {
@@ -1426,7 +1426,7 @@ sub _read_streaming_response {
       # Every truncation check on this path is guarded by $more, and that is
       # the whole of what distinguishes the two ways a streamed chunk ends
       # early: the daemon ran out, or the callback said stop. A caller that
-      # stopped left the rest of the chunk unread on purpose (karr #64).
+      # stopped left the rest of the chunk unread on purpose (karr k64).
       $self->_croak_truncated($ctx, phase => 'chunk-data', piece => 'a chunk',
         expected => $chunk_size, received => $read)
         if $more && $read < $chunk_size;
@@ -1622,7 +1622,7 @@ sub _read_chunked {
 }
 
 # The two places a chunked body ends without saying so, and neither of them
-# has a byte count to compare (karr #64).
+# has a byte count to compare (karr k64).
 #
 # A chunked body is terminated by a chunk of size zero and by nothing else, so
 # an end of stream where the next chunk header belongs is the daemon hanging
@@ -1731,10 +1731,10 @@ daemon to hang up when it is done, and the readers wait for that -- so a
 daemon that has nothing more to send and does not hang up leaves the client
 blocked with no way out. That is not hypothetical: attaching to a container
 that has B<already exited> answers, delivers the buffered frames and then
-holds the connection open indefinitely on rootless Podman (karr #52), and
+holds the connection open indefinitely on rootless Podman (karr k52), and
 C</containers/{id}/stats> opened on a running container does not end when that
 container exits on Docker -- it degrades into zero-filled readings and keeps
-going (karr #59).
+going (karr k59).
 
 L</read_timeout> bounds that:
 
@@ -1931,7 +1931,7 @@ Once per unit the daemon has finished sending, as soon as the bytes that
 complete it have arrived -- not once per read of a fixed size, and not once
 at the end.
 
-That is worth stating because it was not true before karr #60. The reads were
+That is worth stating because it was not true before karr k60. The reads were
 C<read()>, which is C<fread>-shaped: it loops until it has the length it was
 asked for or the stream ends, rather than returning what has arrived. On the
 raw-stream endpoints -- C<attach>, C<< logs(follow => 1) >>, C<exec/start>,

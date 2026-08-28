@@ -7,10 +7,10 @@ use Time::HiRes qw( time sleep );
 use API::Docker;
 use API::Docker::Error::Timeout;
 
-# karr #65. t/tls.t covers option assembly, certificate selection and the
+# karr k65. t/tls.t covers option assembly, certificate selection and the
 # handshake; nothing in the suite ever reads a byte over TLS. This file is
 # that read path, pinned against the three measurements taken by hand
-# during the transport rebuild (karr #60), before and after, identical both
+# during the transport rebuild (karr k60), before and after, identical both
 # times:
 #
 #   three writes 0.15s apart      -> 3 on_chunk calls, spaced apart
@@ -25,7 +25,7 @@ use API::Docker::Error::Timeout;
 # API::Docker::Role::HTTP) has no margin to be wrong in. And
 # IO::Socket::SSL's own read/sysread split -- ssl_read_all on a blocking
 # socket for read(), a single Net::SSLeay::read for sysread() -- is exactly
-# the distinction karr #60 is built on: get the wrong one and either every
+# the distinction karr k60 is built on: get the wrong one and either every
 # read blocks until the daemon closes, or a stall never times out.
 #
 # Certificate: generated fresh per run rather than checked in under t/, the

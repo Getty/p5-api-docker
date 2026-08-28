@@ -44,7 +44,7 @@ Revision history for API-Docker
     asserting `containers_list.json`'s captured id and size against whatever
     a live daemon actually holds, which is nothing on a container-less
     machine. `API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock
-    prove -lr t/` is green again (karr #86).
+    prove -lr t/` is green again (karr k86).
   - `containers->list` and `containers->inspect` return generated type
     objects -- an `API::Docker::Type::ContainerSummary` per list entry, an
     `API::Docker::Type::ContainerInspectResponse` for an inspect -- in place
@@ -260,7 +260,7 @@ Revision history for API-Docker
     answers 200 and streams the same multiplexed frames `logs` does, so it
     returns the same ArrayRef of `{ stream => ..., data => ... }` frames,
     or the summary HashRef with `on_frame` -- tested here against the
-    captured `logs` fixture, not against a real attach stream (karr #36
+    captured `logs` fixture, not against a real attach stream (karr k36
     tracks capturing one). Nothing can be written to stdin through it, and
     without a callback it blocks until the stream ends; the upgraded 101
     variant that lets a caller type into the container and
@@ -387,7 +387,7 @@ Revision history for API-Docker
     -- it still builds its query string by hand through a private
     `_names_query`, which duplicates `_uri_encode`'s rule that `/` and
     `:` stay raw so an image reference survives, and is left as a
-    follow-up (karr #43) rather than touched here.
+    follow-up (karr k43) rather than touched here.
   - A response body that is a bare JSON scalar -- `null`, `true`,
     `false`, a number, or a quoted string -- is now decoded instead of
     being handed back as its raw bytes. The guard used to be "starts with
@@ -501,7 +501,7 @@ Revision history for API-Docker
     `disable`, `upgrade`, `push` and `configure` for the managed-plugin
     endpoints under `/plugins`. `list` and `inspect` return the
     daemon's raw Plugin objects rather than entity objects -- there is no
-    `API::Docker::Plugin` (karr #31, deferred; no consumer depends on the
+    `API::Docker::Plugin` (karr k31, deferred; no consumer depends on the
     shape yet). `install` and `upgrade` require the privilege list the
     plugin demands and croak without it, since the daemon compares what is
     sent against what it computes from the plugin's own config and refuses
@@ -569,7 +569,7 @@ Revision history for API-Docker
   - New `API::Docker::API::Secrets` and `API::Docker::API::Configs`:
     `list`, `create`, `inspect`, `update` and `remove` on `/secrets` and
     `/configs` -- both were scaffolding-only classes before, and neither
-    wraps its results in an entity object yet (karr #35, deferred, for
+    wraps its results in an entity object yet (karr k35, deferred, for
     the same reason as plugins above). Secrets and configs take `Data`
     as raw bytes and base64-encode it for the caller. Measured against
     Podman 5.4.2: the daemon does not validate what it decodes, and a

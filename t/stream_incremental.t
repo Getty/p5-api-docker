@@ -5,7 +5,7 @@ use Socket;
 use Time::HiRes qw( time sleep );
 use API::Docker;
 
-# karr #60: on a raw stream the callback has to be called as the bytes arrive,
+# karr k60: on a raw stream the callback has to be called as the bytes arrive,
 # not when the daemon closes.
 #
 # The endpoints this is about -- attach, logs(follow), exec/start, all
@@ -111,7 +111,7 @@ subtest 'the header block and the first bytes of the body in one arrival'
 };
 
 subtest 'a frame split across two arrivals is delivered once, whole' => sub {
-  # The carry buffer's job, asserted here because karr #60 changes how often
+  # The carry buffer's job, asserted here because karr k60 changes how often
   # it is asked to do it: it now sees the split the daemon actually made
   # rather than 64K blocks.
   my @got;
@@ -231,7 +231,7 @@ subtest 'the real socket: a writer that pauses is delivered as it writes'
   my ($got, $at) = paced_writer('on_chunk', sub { $_[0] });
   plan skip_all => 'socketpair or fork unavailable here' unless $got;
 
-  # This is the whole of karr #60 in one measurement, and it was taken both
+  # This is the whole of karr k60 in one measurement, and it was taken both
   # ways round against this same scenario:
   #
   #   before (read):    1 callback call  at 0.45s

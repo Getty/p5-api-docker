@@ -69,7 +69,7 @@ The synchronous `_request` core lives in
 `API::Docker::Role::HTTP`; resource-specific API methods live in
 `API::Docker::API::*`. Entities hang off the resource APIs: containers are
 generated `API::Docker::Type::*` classes with `API::Docker::Role::Entity::*`
-composed onto them (karr #79 step 6), the remaining six are still the
+composed onto them (karr k79 step 6), the remaining six are still the
 hand-written wrappers (`API::Docker::Image`, ...).
 
 Architecture, transport invariants, the streaming and `X-Registry-Auth`
@@ -96,7 +96,7 @@ lib/API/Docker/API/Configs.pm           # /configs
 lib/API/Docker/API/Plugins.pm           # /plugins
 lib/API/Docker/Type.pm                  # the DSL and attribute registry behind the generated types
 lib/API/Docker/Role/Type.pm             # a generated type's own behaviour: serialisation, unknown_fields
-lib/API/Docker/Type/                    # generated from spec/, one class per swagger definition -- karr #79
+lib/API/Docker/Type/                    # generated from spec/, one class per swagger definition -- karr k79
 lib/API/Docker/Role/Entity.pm           # the client an entity delegates through
 lib/API/Docker/Role/Entity/Container.pm # container operations, composed onto the generated types
 lib/API/Docker/{Image,Network,Volume}.pm            # entity classes (not yet converted onto Type::*, karr k84)
@@ -173,7 +173,7 @@ The two workers split by question, not by file. Only `api-docker-engine-worker`
 is briefed with `docker-engine-api`, the shared Engine API reference.
 
 `api-docker-type-writer` is briefed with `api-docker-type-model`, which carries the
-pattern for the generated classes; see karr #79.
+pattern for the generated classes; see karr k79.
 
 The agents carry their skills via `briefing.skills` (see `.claude/agents/`);
 the main agent delegates rather than loading them. Skill sources live under

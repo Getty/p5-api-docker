@@ -8,7 +8,7 @@ use API::Docker;
 use Test::API::Docker::FakeTransport;
 
 # POST /auth -- checking a set of registry credentials without pulling or
-# pushing anything (karr #17).
+# pushing anything (karr k17).
 #
 # Nothing here performs a login, in either mode. No credential in this file
 # is real and no request leaves the process: the daemon is faked below the

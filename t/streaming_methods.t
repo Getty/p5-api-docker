@@ -9,7 +9,7 @@ use lib 't/lib';
 use Test::API::Docker::Mock;
 
 # The resource methods that hand a callback to the transport: the follow modes
-# named in karr #21, and what each method returns once it is not collecting a
+# named in karr k21, and what each method returns once it is not collecting a
 # body any more.
 #
 # t/streaming_callback.t proves the transport's half -- on_event, on_frame,

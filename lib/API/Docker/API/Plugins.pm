@@ -592,7 +592,7 @@ sub configure {
   # no options at all. The ArrayRef form used to be where the transport bounds
   # went, because a trailing `read_timeout => 2` in the plain list would be two
   # more settings as far as this method can tell -- they now go on the resource
-  # class instead (karr #74), and what is left is a form, not a split.
+  # class instead (karr k74), and what is left is a form, not a split.
   if (ref $settings[0] eq 'ARRAY') {
     my $list = shift @settings;
     croak __PACKAGE__ . '->configure takes nothing after the ArrayRef of '

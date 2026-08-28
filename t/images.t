@@ -19,7 +19,7 @@ sub build_events {
 # inspect()/history() an undef name. Walk the list for the first image that
 # actually HAS a tag; fall back to an Id only when none do -- both engines
 # accept either as a name, so either is correct, but the ref-as-boolean
-# check was right for neither. See karr #75.
+# check was right for neither. See karr k75.
 sub _live_image_name {
   my ($images) = @_;
   for my $image (@$images) {

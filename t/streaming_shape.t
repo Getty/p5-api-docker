@@ -8,7 +8,7 @@ use Test::API::Docker::Mock;
 use JSON::MaybeXS;
 use API::Docker;
 
-# Regression coverage for karr #3: _request tried decode_json on the whole
+# Regression coverage for karr k3: _request tried decode_json on the whole
 # body first and only fell back to line-by-line parsing, so a stream carrying
 # exactly one JSON object came back as a HashRef while a multi-event stream
 # came back as an ArrayRef. Every .ndjson fixture below is a stream captured
@@ -66,7 +66,7 @@ subtest 'a multi-object stream is an ArrayRef of every event' => sub {
 
 subtest 'the /events stream decodes to an ArrayRef' => sub {
   # Captured from Podman 5.4.2 (API 1.41) for one container
-  # create/init/start/died/remove cycle. karr #62 re-measured the identical
+  # create/init/start/died/remove cycle. karr k62 re-measured the identical
   # flow live on 5.8.4 (API 1.44) and found a sixth action, "cleanup",
   # between die and remove -- this fixture predates that and is not
   # recaptured for it: the point of this subtest is that a multi-line body

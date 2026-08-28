@@ -9,7 +9,7 @@ use Test::API::Docker::FakeTransport;
 use Test::API::Docker::Mock;
 
 # GET /distribution/{name}/json -- asking a registry for an image manifest
-# without pulling it (karr #15).
+# without pulling it (karr k15).
 #
 # Nothing here opens a socket or reaches a daemon, and nothing is gated on
 # is_live() except the one subtest that says so. Test::API::Docker::Mock is
@@ -25,13 +25,13 @@ use Test::API::Docker::Mock;
 # and the same for a bare name and for a percent-escaped reference. That
 # version number just echoes the requested path prefix, not a fixed daemon
 # constant -- re-measured live on 5.8.4 / API 1.44 the same request gets
-# "/v1.44/distribution/..." back instead (karr #62). $PODMAN_404 below reads
+# "/v1.44/distribution/..." back instead (karr k62). $PODMAN_404 below reads
 # "/v1.41/..." because fake_client() always negotiates api_version 1.41; no
 # assertion matches the number either way, only qr/is not supported/. So the
 # daemon is faked below the socket instead, and the real _request runs. The
 # success payload is the Engine API reference's own example descriptor.
 #
-# The one exception is the karr #38 subtest near the end, which drives the
+# The one exception is the karr k38 subtest near the end, which drives the
 # same ->exists 404-handling through Mock's route table instead of the real
 # transport, now that Mock honours a >= 400 mock_response the way _request
 # does. It is skipped live for the same reason as the rest of this file would
@@ -147,13 +147,13 @@ subtest 'exists fills a response HashRef the caller passed through' => sub {
 };
 
 # ---------------------------------------------------------------------------
-# karr #38: before Mock honoured a >= 400 mock_response, a route table could
+# karr k38: before Mock honoured a >= 400 mock_response, a route table could
 # not exercise ->exists's status-driven branching at all -- mock_response
 # set the status but the mock returned $response->{data} unconditionally, so
 # every mocked call looked like success. This is the same three outcomes as
 # the FakeTransport subtests above, driven through the route table instead of
 # the real transport.
-subtest 'exists through a mocked route table (karr #38)' => sub {
+subtest 'exists through a mocked route table (karr k38)' => sub {
   plan skip_all => 'fixture-only: no engine reachable from this repo serves '
     . '/distribution at all (see the file header)'
     if is_live();
@@ -191,7 +191,7 @@ subtest 'exists through a mocked route table (karr #38)' => sub {
   my $err = $@;
   like $err, qr/server error/,
     'and carries the message the mock croak now extracts from the body';
-  # karr #50: the mock raises the exception class as well, not only the text.
+  # karr k50: the mock raises the exception class as well, not only the text.
   # If it went back to croaking a plain string, every ->status assertion in
   # the suite would have to be gated on is_live() to keep passing.
   isa_ok $err, 'API::Docker::Error::HTTP';

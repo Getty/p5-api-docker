@@ -26,7 +26,7 @@ use Test::API::Docker::FakeTransport;
 # happens to satisfy the whole request.
 #
 # This used to be an in-memory scalar filehandle (open $fh, '<', \$str) for
-# everything but the multi-read case. It cannot be one any more: since karr #60
+# everything but the multi-read case. It cannot be one any more: since karr k60
 # the transport reads with sysread, and sysread on a scalar filehandle fails
 # outright -- measured, it returns undef with EBADF, because such a handle has
 # no file descriptor (fileno is -1). A tied handle is the shape that works for
@@ -73,7 +73,7 @@ sub string_handle {
   return $fh;
 }
 
-# What the transport has read off a handle but not yet consumed. Since karr #60
+# What the transport has read off a handle but not yet consumed. Since karr k60
 # the read-ahead past a header block lands here instead of in PerlIO's own
 # buffer, which is what makes "these bytes were not swallowed" answerable.
 sub unconsumed {
@@ -280,7 +280,7 @@ subtest '_request: a CR/LF in a header value cannot inject a second header' => s
 };
 
 # ---------------------------------------------------------------------------
-# karr #11: the value above is sanitised, but the *name* used to go on the
+# karr k11: the value above is sanitised, but the *name* used to go on the
 # wire untouched, so a caller-supplied key could open a header line of its
 # own. Names are rejected rather than stripped -- see the reasoning in
 # API::Docker::Role::HTTP under "Header names are rejected, header values are
@@ -385,7 +385,7 @@ subtest '_request: >= 400 croaks' => sub {
       'array-shaped error body is used verbatim, not blamed for a deref error';
   };
 
-  # karr #13: Podman answers a failed push with 500 and the stream-shaped
+  # karr k13: Podman answers a failed push with 500 and the stream-shaped
   # body {"errorDetail":{"message":...},"error":...} -- no `message` key at
   # all -- so the whole JSON object became the croak text.
   subtest 'a JSON error body with errorDetail but no message uses errorDetail.message' => sub {
@@ -415,7 +415,7 @@ subtest '_request: >= 400 croaks' => sub {
       'message is consulted first, errorDetail only fills its absence';
   };
 
-  # karr #50: the croak text is engine-specific prose -- Podman and Docker
+  # karr k50: the croak text is engine-specific prose -- Podman and Docker
   # word the same 409 differently -- so a caller telling 404 from 409 apart
   # had to match on it. The status code goes on the exception instead, and
   # the exception has to stay indistinguishable from the string it replaces.
@@ -462,7 +462,7 @@ subtest '_request: >= 400 croaks' => sub {
 };
 
 # ---------------------------------------------------------------------------
-# karr #16: a HEAD response repeats the header fields the equivalent GET would
+# karr k16: a HEAD response repeats the header fields the equivalent GET would
 # send -- Content-Length among them -- and then sends no body at all. Reading
 # one waits for bytes that never arrive. The bytes after the blank line below
 # stand in for whatever comes next on the connection: consuming them as a body
@@ -470,7 +470,7 @@ subtest '_request: >= 400 croaks' => sub {
 # old code returned '' there too, from a read that failed rather than from one
 # it never made).
 #
-# Where "not consumed" is now read: since karr #60 the read-ahead past the
+# Where "not consumed" is now read: since karr k60 the read-ahead past the
 # header block sits in the transport's own buffer rather than in PerlIO's, so
 # the question is asked of that buffer. The claim is unchanged -- these bytes
 # were not taken as a body -- and it is now asked somewhere this code owns
@@ -520,7 +520,7 @@ subtest '_read_response: a HEAD response has no body, whatever it announces' => 
 };
 
 # ---------------------------------------------------------------------------
-# karr #16: _request used to drop the status line and the response headers, so
+# karr k16: _request used to drop the status line and the response headers, so
 # 304 ("it was already in that state") and 204 ("changed it") were both undef,
 # and a header carrying the whole payload was unreachable.
 subtest '_request: the response out-parameter' => sub {
@@ -618,7 +618,7 @@ subtest 'head: sends HEAD, returns undef, payload comes out of the headers' => s
 };
 
 # ---------------------------------------------------------------------------
-# karr #16, end to end: t/containers.t drives these through the mock, which
+# karr k16, end to end: t/containers.t drives these through the mock, which
 # replaces _request wholesale. This drives the real transport, so a _request
 # that stopped passing the status on would fail here while the mocked test
 # still passed.

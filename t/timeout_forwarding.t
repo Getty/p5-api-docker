@@ -4,8 +4,8 @@ use Test::More;
 use API::Docker;
 
 # Every public resource method that reaches the daemon carries the bounds its
-# resource class was cloned with (karr #74). The two options used to be
-# arguments of each method (karr #70, karr #72); they are now carried by the
+# resource class was cloned with (karr k74). The two options used to be
+# arguments of each method (karr k70, karr k72); they are now carried by the
 # clone API::Docker::Role::Using/using returns, and a method either splices
 # that clone's options into the list it hands the transport or drops them on
 # the floor.
@@ -343,7 +343,7 @@ subtest 'neither is invented on a resource class nobody bounded' => sub {
 # Version negotiation is the pre-flight nobody writes: it happens once, before
 # the first request of a client with no api_version, and a bound that does not
 # reach it leaves that first request unbounded in the one place the caller
-# cannot see (karr #72). Two halves, because the `around` and the method are
+# cannot see (karr k72). Two halves, because the `around` and the method are
 # separately capable of dropping it.
 subtest 'the negotiation inherits the triggering request bounds' => sub {
   for my $args ([ read_timeout => 3, connect_timeout => 7 ],

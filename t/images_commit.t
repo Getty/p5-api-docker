@@ -8,7 +8,7 @@ use Test::API::Docker::Mock;
 use JSON::MaybeXS qw( decode_json );
 use API::Docker;
 
-# karr #22 -- images->commit, POST /commit. Turns a container into an image:
+# karr k22 -- images->commit, POST /commit. Turns a container into an image:
 # the one image-producing path that does not go through a build context.
 #
 # Everything asserted about the engine here was measured against the rootless

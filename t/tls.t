@@ -5,7 +5,7 @@ use Config;
 use Path::Tiny;
 use API::Docker;
 
-# karr #26. This file used to pin the opposite of what it now pins: tls and
+# karr k26. This file used to pin the opposite of what it now pins: tls and
 # cert_path were attributes nothing read, so a tcp:// daemon was addressed in
 # cleartext whatever tls said, and tls => 1 croaked at construction rather
 # than pretending otherwise. TLS is wired now -- IO::Socket::SSL in the
@@ -55,7 +55,7 @@ subtest 'every falsy form of tls is still accepted' => sub {
   }
 
   # Pinned against the developer's own shell: the default now reads
-  # DOCKER_TLS_VERIFY (karr #42), and the claim being made here is the one
+  # DOCKER_TLS_VERIFY (karr k42), and the claim being made here is the one
   # that has always been made -- with nothing set, a tcp:// host is plaintext.
   delete local $ENV{DOCKER_TLS_VERIFY};
   is client()->tls, 0, 'the default is still 0: a tcp:// host is plaintext '
@@ -63,7 +63,7 @@ subtest 'every falsy form of tls is still accepted' => sub {
 };
 
 # ===========================================================================
-# DOCKER_TLS_VERIFY (karr #42)
+# DOCKER_TLS_VERIFY (karr k42)
 # ===========================================================================
 
 subtest 'the default is DOCKER_TLS_VERIFY, on the docker CLI rule' => sub {

@@ -683,7 +683,7 @@ sub attach {
   # The pre-flight is a request the caller never wrote, and one that hangs is
   # exactly what a bound was set to prevent -- so it carries the same one. It
   # does that by itself here: the check runs on $self, which is the clone
-  # ->using returned when there was one (karr #74).
+  # ->using returned when there was one (karr k74).
   $self->_assert_container_running($id) if $require_running;
 
   my %params;

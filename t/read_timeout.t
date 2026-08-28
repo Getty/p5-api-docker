@@ -7,7 +7,7 @@ use Time::HiRes qw( time );
 use API::Docker;
 use API::Docker::Error::Timeout;
 
-# The read timeout of API::Docker::Role::HTTP (karr #59), in two tiers.
+# The read timeout of API::Docker::Role::HTTP (karr k59), in two tiers.
 #
 # Tier one -- everything down to "the real socket" below -- is the loop logic,
 # which is where the risk is. SO_RCVTIMEO does not poison the handle and does
@@ -25,7 +25,7 @@ use API::Docker::Error::Timeout;
 # is really in force on a real socket. That one costs about a fifth of a
 # second and needs a socketpair, no daemon and no network.
 #
-# What karr #60 changed here. The transport used to read with PerlIO's read()
+# What karr k60 changed here. The transport used to read with PerlIO's read()
 # and readline, which fill: a read could come back with *part* of what it was
 # asked for and EAGAIN at the same time, and an interrupted readline handed
 # back the part of the line it had. Both of those were scripted below as one
@@ -37,7 +37,7 @@ use API::Docker::Error::Timeout;
 # holding bytes it has not passed on when the clock runs out, so the entries
 # that said otherwise had to be split rather than kept.
 #
-# What karr #64 changed here. The non-timeout half of each pair used to assert
+# What karr k64 changed here. The non-timeout half of each pair used to assert
 # that a short read at a real end of response was returned as the body, and
 # named that as silent loss the errno check does not address -- correctly, it
 # being a close rather than a stall. Eight of those sites now croak with an
@@ -49,7 +49,7 @@ use API::Docker::Error::Timeout;
 # has each site declare which, because four of them could not otherwise fail.
 # The close-delimited sites are untouched -- there an EOF is the end.
 #
-# What karr #73 changed here. The same again, one level up: the three
+# What karr k73 changed here. The same again, one level up: the three
 # _read_head sites below. Two of them were `returns` and are now `raises`, on
 # the reasoning written out where they stand, and a third was added for the
 # header block that ends on a line boundary -- the shape the old loop could
@@ -103,7 +103,7 @@ sub READ {
 
   # sysread cannot deliver and expire in the same call, unlike the PerlIO
   # read() this harness was first written against. An entry that tries to be
-  # both is a script that was not translated when karr #60 landed, and saying
+  # both is a script that was not translated when karr k60 landed, and saying
   # so here is cheaper than the silent near-miss it would otherwise be.
   die "a scripted read cannot both deliver and expire\n"
     if ($act->{timeout} || $act->{eintr} || $act->{fail})
@@ -184,7 +184,7 @@ sub attr {
 # earlier version took a single check sub and ran it either way, so a site
 # that started croaking where it used to return still passed as long as the
 # check itself did not look at the return value. Four of the streaming sites
-# below were in exactly that position when karr #64 landed: the check asserted
+# below were in exactly that position when karr k64 landed: the check asserted
 # what had reached the callback, which a croak does not change, so the change
 # in outcome went unseen. Declaring the shape is what makes those four able to
 # fail.
@@ -270,7 +270,7 @@ site_ok '_read_head: the status line never arrives',
       . 'something else than a timeout';
   };
 
-# The head, which karr #73 brought under the same check. These two sites used
+# The head, which karr k73 brought under the same check. These two sites used
 # to be `returns` -- the first asserting that 'HTTP/1.1 20' came back as the
 # status '20', the second that the headers arriving before the cut were kept
 # -- on the reading that nothing in a head announces its own length, so there
@@ -317,7 +317,7 @@ site_ok '_read_head: the header block is never closed',
 # ---------------------------------------------------------------------------
 # _read_body -- the three shapes a buffered body comes in
 # ---------------------------------------------------------------------------
-# The four sites karr #64 changed. Each of them used to assert that the short
+# The four sites karr k64 changed. Each of them used to assert that the short
 # read at a real end of response was RETURNED -- 'hello wor', 'hello' -- and
 # named that as the silent loss the errno check could not prevent, the errno
 # check being about a timeout and this being about a close. The claim that
@@ -389,7 +389,7 @@ sub drive_stream {
 # The claim these four make about the callback is unchanged and is the reason
 # they are still driven twice: every byte that arrived reaches it before
 # either exception is raised, so both runs deliver the same units. What karr
-# #64 changed is only which exception the second run raises. Until then their
+# k64 changed is only which exception the second run raises. Until then their
 # checks looked at @got alone -- which a croak does not disturb -- so all four
 # went on passing when the transport started croaking, which is the hole
 # site_ok's declared shape closes.
@@ -473,9 +473,9 @@ sub drive_stream {
     drive_stream(\@got),
     returns => sub {
       is_deeply \@got, ['frame one', 'fra', 'frame one', 'fra'],
-        'and on the raw-stream path, which is the one karr #52 hangs on and '
+        'and on the raw-stream path, which is the one karr k52 hangs on and '
         . 'where it matters most -- and where the two bursts are two calls '
-        . 'rather than one 64K read, which is karr #60';
+        . 'rather than one 64K read, which is karr k60';
     };
 }
 
@@ -532,12 +532,12 @@ subtest 'the bytes that did arrive come out with the exception' => sub {
   };
 
   subtest 'everything that arrived is delivered before the expiry' => sub {
-    # This is the shape karr #52 actually has: everything the daemon had to
+    # This is the shape karr k52 actually has: everything the daemon had to
     # say arrives, and the socket then stays open and silent. Measured against
     # Podman 5.8.4 on an attach to an exited container: two frames, 42 bytes,
-    # delivered 0 before karr #59 and 2 after.
+    # delivered 0 before karr k59 and 2 after.
     #
-    # Under read() those 42 bytes and the expiry were one call, and #59 had to
+    # Under read() those 42 bytes and the expiry were one call, and k59 had to
     # rescue them out of it. Under sysread they are two -- the delivery, then
     # the silence -- and the property holds without a rescue, which is why the
     # script below has two entries where it used to have one. What is asserted
@@ -832,7 +832,7 @@ subtest '_request: the per-call option and the client attribute' => sub {
 subtest '_request: end to end on a real socket, with the response cut short'
   => sub {
   # Content-Length promises 40 bytes and 14 arrive; the peer stays open and
-  # silent, which is karr #52's hang exactly.
+  # silent, which is karr k52's hang exactly.
   my $c = recorder(
     canned       => "HTTP/1.1 200 OK\r\nContent-Length: 40\r\n\r\nhalf a body!!!",
     read_timeout => 0.2,

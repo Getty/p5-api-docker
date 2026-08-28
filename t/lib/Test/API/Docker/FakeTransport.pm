@@ -7,10 +7,10 @@ extends 'API::Docker';
 # chunked reading, status handling, the >= 400 croak path -- with nothing on
 # the other end. This is the tool for request-shape assertions;
 # Test::API::Docker::Mock replaces _request wholesale and cannot see any of
-# that (see t/lib/Test/API/Docker/Mock.pm and karr #38).
+# that (see t/lib/Test/API/Docker/Mock.pm and karr k38).
 #
 # Lifted out of five near-identical copies (t/role_http.t, t/plugins.t,
-# t/registry_auth.t, t/system_auth.t, t/distribution.t -- karr #38, which
+# t/registry_auth.t, t/system_auth.t, t/distribution.t -- karr k38, which
 # found them "the same ~12 lines, with slightly different helper subs
 # around it"). The helper subs (fake_client, request_line, query_param, ...)
 # stayed behind in each file: they differ on real per-file needs (different

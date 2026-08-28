@@ -6,7 +6,7 @@ use Test::API::Docker::Mock;
 use API::Docker;
 use API::Docker::Error::HTTP;
 
-# Regression coverage for karr #45: GET /containers/{id}/stats for a container
+# Regression coverage for karr k45: GET /containers/{id}/stats for a container
 # that is not running is answered by Podman with an error object inside a
 # response already committed to 200 --
 #

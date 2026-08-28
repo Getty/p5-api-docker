@@ -7,11 +7,11 @@ use API::Docker;
 # What _request hands back, and what it puts on the wire, for the three cases
 # the buffered path used to get wrong:
 #
-#   karr #30  a body that is a bare JSON scalar came back as its own bytes,
+#   karr k30  a body that is a bare JSON scalar came back as its own bytes,
 #             so `null` was the four-character string 'null'
-#   karr #33  a params value could only ever be one k=v pair, so an ArrayRef
+#   karr k33  a params value could only ever be one k=v pair, so an ArrayRef
 #             stringified to ARRAY(0x...) and `names=a&names=b` was unsayable
-#   karr #34  an empty body returned undef above the raw and ndjson branches,
+#   karr k34  an empty body returned undef above the raw and ndjson branches,
 #             breaking both of their documented shapes -- and raw_body was
 #             tested for truth, so an empty archive and the string '0' were
 #             dropped from the request entirely
@@ -61,7 +61,7 @@ sub fake_client {
 }
 
 # ===========================================================================
-# karr #30 -- a bare JSON scalar is a JSON value like any other
+# karr k30 -- a bare JSON scalar is a JSON value like any other
 # ===========================================================================
 
 subtest 'a body that is a JSON scalar is decoded, not returned as bytes' => sub {
@@ -118,7 +118,7 @@ subtest 'raw is still bytes, whatever they spell' => sub {
 };
 
 # ===========================================================================
-# karr #33 -- an ArrayRef param is the same parameter given more than once
+# karr k33 -- an ArrayRef param is the same parameter given more than once
 # ===========================================================================
 
 subtest 'an ArrayRef param expands to repeated pairs' => sub {
@@ -177,7 +177,7 @@ subtest 'a scalar and a HashRef param are unchanged' => sub {
 };
 
 # ===========================================================================
-# karr #34 -- zero bytes is a different answer in each shape
+# karr k34 -- zero bytes is a different answer in each shape
 # ===========================================================================
 
 subtest 'an empty body keeps the shape the caller asked for' => sub {

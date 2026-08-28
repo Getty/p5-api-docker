@@ -4,7 +4,7 @@ use Test::More;
 use API::Docker;
 
 # API::Docker::Role::Using -- ->using clones a resource class so that a run of
-# calls can carry its own transport bounds (karr #74). What the clone does
+# calls can carry its own transport bounds (karr k74). What the clone does
 # with them is t/timeout_forwarding.t's subject, for every method there is;
 # this is the clone itself: what it shares with the original, what it must not
 # share, and what it refuses.

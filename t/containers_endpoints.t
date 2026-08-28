@@ -11,16 +11,16 @@ use API::Docker;
 
 # The container endpoints this client did not expose:
 #
-#   karr #18  GET/PUT/HEAD /containers/{id}/archive  -- what docker cp is
-#   karr #19  POST /containers/{id}/attach           -- the one-way variant
-#   karr #23  changes, export, resize
+#   karr k18  GET/PUT/HEAD /containers/{id}/archive  -- what docker cp is
+#   karr k19  POST /containers/{id}/attach           -- the one-way variant
+#   karr k23  changes, export, resize
 #
 # Measured against the rootless Podman socket (5.4.2, API 1.41): all five
 # routes are served there. A nonexistent container answers 404 on archive,
 # export, resize and attach -- and 500 with "layer not known" on changes,
 # which is why changes documents that difference.
 #
-# karr #36 closed the remaining gap: the bytes of a real archive, a real
+# karr k36 closed the remaining gap: the bytes of a real archive, a real
 # attach stream, and the X-Docker-Container-Path-Stat header are now captured
 # from apidocker-fixture-* containers on that same socket rather than assumed.
 # See the fixture-loading comments below for what each measurement found.
@@ -28,7 +28,7 @@ use API::Docker;
 check_live_access();
 
 # GET /containers/{id}/archive?path=/etc/hostname, captured from a running
-# apidocker-fixture-archive container on Podman 5.4.2 (API 1.41) -- karr #36
+# apidocker-fixture-archive container on Podman 5.4.2 (API 1.41) -- karr k36
 # replaced the hand-built ustar that stood in here before. Measured
 # differences from the hand-built version: uname/gname were populated
 # ('root'/'root', not empty) on that 5.4.2 socket, devmajor/devminor are the
@@ -38,7 +38,7 @@ check_live_access();
 # magic/version, and the empty prefix field were already right in the
 # hand-built one.
 #
-# karr #62 re-measured the same archive live on Podman 5.8.4 (API 1.44):
+# karr k62 re-measured the same archive live on Podman 5.8.4 (API 1.44):
 # uname/gname now come back NUL rather than 'root', byte-identical to a
 # Docker 29.7.2 capture of the same file -- Podman changed to match Docker
 # here, so this is no longer a difference between the two engines. The
@@ -49,7 +49,7 @@ check_live_access();
 my $TAR = load_fixture_raw('containers_archive.tar');
 
 # The one-way attach stream is byte-identical to the logs stream, which is the
-# whole claim of karr #19 -- and now measured, not just documented: karr #36
+# whole claim of karr k19 -- and now measured, not just documented: karr k36
 # attached live to an apidocker-fixture-attach-live container across its run
 # (POST .../attach?stream=1&stdout=1&stderr=1, connected before the container
 # started so the daemon had output to send) and diffed the bytes against
@@ -65,7 +65,7 @@ my $TAR = load_fixture_raw('containers_archive.tar');
 # itself, which _request always does. Reading blocks until EOF, so that call
 # hangs forever.
 #
-# karr #52 narrowed that down: it is stream=1 that hangs, not attach as such.
+# karr k52 narrowed that down: it is stream=1 that hangs, not attach as such.
 # Re-measured on Podman 5.4.2 (API 1.41) against one exited container:
 # ?logs=1&stdout=1&stderr=1&stream=0 answers 200, sends the 24 bytes and
 # closes after 13ms; the same request with stream=1 sends the identical bytes
@@ -84,7 +84,7 @@ my $TAR = load_fixture_raw('containers_archive.tar');
 my $FRAMES = load_fixture_raw('containers_logs_multiplexed.bin');
 
 # X-Docker-Container-Path-Stat for /etc/hostname, decoded from a real header
-# captured alongside the archive above (karr #36) -- against the Podman
+# captured alongside the archive above (karr k36) -- against the Podman
 # socket, so this models Podman's shape specifically, not "the" shape. A
 # later side-by-side against a real Docker daemon (29.7.2, API 1.55) on the
 # same file confirmed what had only been a guess here: Podman's key names
@@ -163,7 +163,7 @@ subtest 'the tar fixture really is a tar, so byte-exactness means something' => 
 };
 
 # ===========================================================================
-# karr #18 -- the archive endpoints
+# karr k18 -- the archive endpoints
 # ===========================================================================
 
 subtest 'get_archive: asks for raw bytes and hands them back untouched' => sub {
@@ -374,7 +374,7 @@ subtest 'stat_archive: a missing path is a croak, not an undef' => sub {
 };
 
 # ===========================================================================
-# karr #19 -- the one-way attach
+# karr k19 -- the one-way attach
 # ===========================================================================
 
 subtest 'attach: demultiplexes exactly as logs does' => sub {
@@ -486,7 +486,7 @@ subtest 'attach: tty skips demultiplexing' => sub {
 };
 
 # ===========================================================================
-# karr #53 -- attach refuses a container that is not running
+# karr k53 -- attach refuses a container that is not running
 #
 # Measured on Podman 5.4.2 (API 1.41) and Docker 29.7.2 (API 1.55), one
 # container per row, each exiting with status 4:
@@ -498,7 +498,7 @@ subtest 'attach: tty skips demultiplexing' => sub {
 # On Podman the exited container drops back to Status: created with ExitCode
 # 0, and a later wait answers {"StatusCode":-1} inside a 200. Nothing reports
 # it and the engine keeps no copy, so the caller cannot recover the value --
-# which is why this one is guarded and stats (karr #54) is not: there the
+# which is why this one is guarded and stats (karr k54) is not: there the
 # caller can always ask again afterwards.
 # ===========================================================================
 
@@ -611,7 +611,7 @@ subtest 'attach: an empty stream is an empty ArrayRef' => sub {
 };
 
 # ===========================================================================
-# karr #23 -- changes, export, resize
+# karr k23 -- changes, export, resize
 # ===========================================================================
 
 subtest 'changes: the diff, and what the Kind numbers are' => sub {
@@ -636,7 +636,7 @@ subtest 'changes: the diff, and what the Kind numbers are' => sub {
 
 subtest 'changes: a container with nothing changed is an empty ArrayRef' => sub {
   # The engine answers that case with a JSON null. The transport decodes any
-  # JSON body, scalars included (karr #30), so a null body reaches this
+  # JSON body, scalars included (karr k30), so a null body reaches this
   # method as undef -- which a caller iterating the result would dereference
   # and die on just the same.
   my $t = fake_client();
@@ -777,7 +777,7 @@ subtest 'live: changes and the archive endpoints against a real container' => su
   is $stat->{mode} & 0777, 0644, 'the permission bits are the low nine of mode';
 
   # The key set and isDir/linkTarget do not: side-by-side measurement against
-  # both engines (karr #36, later re-verified against a real Docker daemon --
+  # both engines (karr k36, later re-verified against a real Docker daemon --
   # 29.7.2, API 1.55 -- next to Podman 5.4.2, API 1.41, same container, same
   # file) found isDir is Podman's own addition, confirmed rather than
   # guessed: Docker never sends it, not even for a directory. linkTarget
@@ -824,7 +824,7 @@ subtest 'live: changes and the archive endpoints against a real container' => su
   is unpack('Z100', $tar), 'hostname', 'the member is the basename';
 };
 
-subtest 'live write: stat_archive on a symlink diverges by engine (karr #36)' => sub {
+subtest 'live write: stat_archive on a symlink diverges by engine (karr k36)' => sub {
   plan skip_all => 'live only'       unless is_live();
   plan skip_all => 'write tests off' unless can_write();
 

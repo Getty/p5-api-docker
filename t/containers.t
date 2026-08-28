@@ -114,7 +114,7 @@ subtest 'container lifecycle' => sub {
 
 # --- 304 Not Modified (fixture-only, no daemon) ---
 
-# karr #16: the engine answers a state change with 204 and a no-op state
+# karr k16: the engine answers a state change with 204 and a no-op state
 # change with 304 Not Modified. Both carry an empty body, so both used to come
 # back as undef and "started it" could not be told from "it was
 # already running".

@@ -559,7 +559,7 @@ around _request => sub {
   # Auto-negotiate before any versioned request, but not for /version itself.
   # The triggering request's own bounds are handed to it: the negotiation is a
   # pre-flight the caller never wrote, and a caller who asked for a bound and
-  # then hung in GET /version has been told something untrue (karr #72).
+  # then hung in GET /version has been told something untrue (karr k72).
   if ($path ne '/version' && !defined $self->api_version && !$self->_version_negotiated) {
     $self->negotiate_version(
       exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),

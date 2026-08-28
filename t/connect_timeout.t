@@ -8,9 +8,9 @@ use Time::HiRes qw( time );
 use API::Docker;
 use API::Docker::Error::Timeout;
 
-# The connect timeout of API::Docker::Role::HTTP (karr #61).
+# The connect timeout of API::Docker::Role::HTTP (karr k61).
 #
-# read_timeout (karr #59) bounds reading and nothing else, so a daemon that
+# read_timeout (karr k59) bounds reading and nothing else, so a daemon that
 # accepts and then says nothing is caught while a socket that never accepts is
 # not. connect_timeout is the other half.
 #

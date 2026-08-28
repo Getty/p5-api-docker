@@ -5,7 +5,7 @@ use lib 't/lib';
 use Test::API::Docker::Mock;
 use API::Docker::Role::Entity::Container;
 
-# karr #79 step 6, for containers: the convenience methods live in
+# karr k79 step 6, for containers: the convenience methods live in
 # API::Docker::Role::Entity::Container and are composed into the two generated
 # classes the daemon answers container requests with. Nothing may be written
 # into those classes by hand -- maint/spec-to-type.pl --verify compares them

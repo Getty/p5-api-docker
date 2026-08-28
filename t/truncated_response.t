@@ -5,7 +5,7 @@ use Socket;
 use API::Docker;
 use API::Docker::Error::Truncated;
 
-# A daemon that hangs up in the middle of a response (karr #64).
+# A daemon that hangs up in the middle of a response (karr k64).
 #
 # The readers used to end their loops on "the stream is over" and hand back
 # what they had as though the response were complete. Nothing compared the
@@ -21,7 +21,7 @@ use API::Docker::Error::Truncated;
 # structural check rather than of the read timeout next door in
 # t/read_timeout.t. Nothing waits, so the whole file runs in milliseconds.
 #
-# karr #73 added the head to it. The reasoning that had kept it out -- a head
+# karr k73 added the head to it. The reasoning that had kept it out -- a head
 # announces no length, so there is nothing to compare -- turned out to be an
 # answer to the wrong question: the head is framed by terminators rather than
 # by a length, and "the terminator never came" needs no comparison. Those
@@ -111,7 +111,7 @@ sub truncated_ok {
 }
 
 # ---------------------------------------------------------------------------
-# The four shapes, measured exactly as karr #64 measured them
+# The four shapes, measured exactly as karr k64 measured them
 # ---------------------------------------------------------------------------
 subtest 'Content-Length announces 11, 9 bytes arrive' => sub {
   my ($err) = over_pair(
@@ -179,9 +179,9 @@ subtest 'a chunk whose data arrived but whose CRLF did not' => sub {
 };
 
 # ---------------------------------------------------------------------------
-# The head, which announces nothing and is framed all the same (karr #73)
+# The head, which announces nothing and is framed all the same (karr k73)
 # ---------------------------------------------------------------------------
-# karr #64 stopped at the body because the check it built was a comparison,
+# karr k64 stopped at the body because the check it built was a comparison,
 # and a status line and a header block announce no length to compare against.
 # The head is framed by its terminators instead -- every line ends with CRLF,
 # and the field section ends with an empty line that RFC 9112 section 2.1
@@ -274,7 +274,7 @@ subtest 'the header block is never closed, with no headers at all' => sub {
 subtest 'a daemon that answered nothing at all still says so' => sub {
   # Not folded into the phases above. This one was never silent -- it has
   # croaked since the transport was written -- and it is a plain string a
-  # caller may well be matching on, so karr #73 left it exactly as it was
+  # caller may well be matching on, so karr k73 left it exactly as it was
   # rather than restating it as an object for symmetry.
   my ($err) = over_pair('',
     sub { $client->_read_response($_[0], 'GET', {}) });

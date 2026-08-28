@@ -9,7 +9,7 @@ use JSON::MaybeXS qw( encode_json );
 use API::Docker;
 use API::Docker::Error::Stream;
 
-# Regression coverage for karr #4: build, pull and push returned the event
+# Regression coverage for karr k4: build, pull and push returned the event
 # list and left failure detection to the caller, while the daemon had already
 # answered HTTP 200 -- so a broken build was indistinguishable from a good one
 # unless the caller knew to scan for errorDetail. They now croak with an
@@ -221,7 +221,7 @@ SKIP: {
     # build -- a failing RUN step leaves it behind, under an engine-chosen
     # name (Docker: priceless_driscoll, ...) or, on Podman, as a buildah
     # "working container" that GET /containers/json never lists at all
-    # (measured against 5.8.4). karr #63: a day of live runs stranded 14 such
+    # (measured against 5.8.4). karr k63: a day of live runs stranded 14 such
     # containers, on both engines, invisible to register_cleanup because none
     # of them are named by the test -- the daemon creates them, not us.
     #
@@ -232,7 +232,7 @@ SKIP: {
     # buildah backend never mentions an id anywhere in the stream or the
     # response headers, so scraping the stream cannot be the general fix.
     # forcerm=1 was then measured directly (raw curl probes against both
-    # sockets, karr #63) to close the leak on both: Docker's stream gains a
+    # sockets, karr k63) to close the leak on both: Docker's stream gains a
     # "Removed intermediate container" line and containers->list stays
     # unchanged; Podman leaves no new buildah storage container (checked via
     # `buildah containers`, since the compat API cannot see them either way).
@@ -284,7 +284,7 @@ SKIP: {
     ok $error_event, 'one of the carried events is the one that triggered the croak';
 
     # The claim is that the RUN step's exit code reaches the caller -- not
-    # any particular sentence about it, which karr #50 already ruled out as
+    # any particular sentence about it, which karr k50 already ruled out as
     # a stable interface. Measured 2026-08-27: Docker 29.7.2/API 1.55 puts it
     # in errorDetail structurally --
     # {"code":7,"message":"...returned a non-zero code: 7"} -- while Podman
@@ -309,7 +309,7 @@ SKIP: {
       my @leaked = grep { !$seen_before{$_} }
         map { $_->id } @{ $docker->containers->list(all => 1) };
       is_deeply [ sort @leaked ], [],
-        'forcerm=1 left no intermediate container behind (karr #63)';
+        'forcerm=1 left no intermediate container behind (karr k63)';
     }
   };
 }
