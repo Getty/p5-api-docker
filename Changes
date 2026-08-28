@@ -232,9 +232,9 @@ Revision history for API-Docker
   - `t/entity_container.t`'s subtest on the generated container classes now
     opts out of live mode like its two siblings already did; it was
     asserting `containers_list.json`'s captured id and size against whatever
-    a live daemon actually holds, which is nothing on a container-less
-    machine. `API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock
-    prove -lr t/` is green again (karr k86).
+    a live daemon actually holds, which is nothing on an engine with no
+    containers. A live `API_DOCKER_TEST_HOST=... prove -lr t/` against
+    rootless Podman 5.8 (API 1.44) is green again (karr k86).
   - `containers->start`, `->stop`, `->restart`, `->pause` and `->unpause`
     now return 1 when the call changed the container's state and 0 when it
     was already in the state asked for, instead of always returning undef.
@@ -407,8 +407,8 @@ Revision history for API-Docker
     any of it -- loaded when the first TLS connection opens; without it
     installed, `tls => 1` croaks naming the module. Tested end to end
     against a local `IO::Socket::SSL` server with generated self-signed
-    certificates (t/tls.t), not against a live daemon: there is no `tcp://`
-    engine, TLS or otherwise, on this machine to measure against.
+    certificates (t/tls.t), not against a live daemon: no `tcp://` engine,
+    TLS or otherwise, was available to measure against.
     `DOCKER_TLS_VERIFY` was deliberately left out of scope while this
     landed, and is read as of a later entry in this same release: `tls`
     defaults from it now rather than always being 0.
