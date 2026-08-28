@@ -1,0 +1,70 @@
+---
+claimed_at: 2026-08-28T00:26:18Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T00:26:18Z
+created: 2026-08-27T23:30:27Z
+id: 72
+priority: high
+started: 2026-08-27T23:41:41Z
+status: done
+tags:
+- transport
+- api
+title: Both timeouts belong on every method and on the preflight requests
+updated: 2026-08-28T00:26:18Z
+---
+
+DECIDED by the maintainer 2026-08-27: both timeouts everywhere. A bound that
+holds on fourteen methods out of eighty-three is not a bound.
+
+What is wrong today, measured by grep over lib/API/Docker/API/:
+
+  read_timeout appears in 5 of 10 resource classes, 33 sites total.
+  Networks, Volumes, Secrets, Configs and Distribution forward NEITHER
+  timeout from any method. connect_timeout was on the same fourteen
+  methods as read_timeout as of #70, and on no others.
+
+So `$docker->networks->list(read_timeout => 5)` returns having ignored the
+bound, silently: %opts is a plain hash and a key nothing reads raises
+nothing.
+
+The old reasoning was that read_timeout belongs only on the streaming and
+long-running methods, because list and inspect return promptly. That is
+wrong twice over:
+
+  - "returns promptly" describes a healthy daemon. The whole point of a
+    timeout is the unhealthy one. A daemon that accepts the connection and
+    then says nothing hangs `list` exactly as it hangs `attach`.
+  - connecting is endpoint-independent. Every method opens a socket.
+
+THREE THINGS TO DO
+
+1. Forward both read_timeout and connect_timeout from every public method
+   that reaches the transport, in all ten resource classes, and document
+   them in each option list. Follow the existing pattern verbatim:
+
+     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
+
+   `exists` and not truth: an explicit 0 turns a client-wide default off
+   for one call, and #70's test proves a truth test breaks exactly that.
+
+2. Forward them to the preflight requests too. Three are known:
+
+     containers->attach            the running check via inspect (#53)
+     plugins->install / ->upgrade  the /plugins/privileges fetch under
+                                   accept_privileges => 1
+     API::Docker                   version negotiation, GET /version
+
+   A caller who sets a bound and then hangs in a request they never wrote
+   has been told something untrue. Version negotiation is the interesting
+   one: it happens before any per-request option exists, so it can only
+   take the client attribute -- say so in the POD rather than pretending.
+
+3. Say in the POD what a bound does and does not cover, once, somewhere a
+   reader will find it. read_timeout is idle time on reads; connect_timeout
+   bounds connecting; neither bounds writing, and SO_RCVTIMEO under TLS
+   measures the underlying receives rather than plaintext arrival.
+
+Related: #70 (which forwarded connect_timeout to the fourteen), #61 (which
+added it), #59 (read_timeout).
