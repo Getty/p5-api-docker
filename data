@@ -1,0 +1,62 @@
+---
+claimed_at: 2026-08-28T14:28:31Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:28:31Z
+created: 2026-08-28T04:25:13Z
+id: 84
+priority: medium
+started: 2026-08-28T11:14:26Z
+status: done
+tags:
+- types
+- model
+title: 'k79 step 6/7 for the remaining six entities: Image, Network, Volume, Plugin,
+  Secret, Config'
+updated: 2026-08-28T14:28:31Z
+---
+
+Containers landed 2026-08-28 (commit 3d92fbc) as the vertical slice. The
+mechanism is settled; the other six are the same shape, one at a time.
+
+The pattern, in three parts:
+
+  1. API::Docker::Role::Entity  -- already there. Provides `client`
+     (ro, weak_ref) and the _entity_attributes hook that
+     API::Docker::Role::Type's BUILDARGS reads.
+  2. API::Docker::Role::Entity::<Resource> -- `with
+     'API::Docker::Role::Entity'; requires 'id';` (or 'name' for volumes),
+     the convenience methods, and at the bottom of the same file the
+     apply_roles_to_package loop over the generated classes it belongs on,
+     with the clash check against ->docker_attributes.
+  3. API::Docker::API::<Resource> -- _wrap/_wrap_list take the class to
+     build, since list and inspect are two definitions.
+
+Per resource, the two classes to compose onto are the list-entry definition
+and the inspect-response definition; check the swagger rather than assuming
+they exist -- volumes answer both with the same `Volume` definition, which
+makes it one class, not two.
+
+What each conversion has to carry over, as containers did:
+
+  - the entity's POD, minus what the generated =attr blocks now say. What
+    does NOT come from the spec is the list-vs-inspect comparison; for
+    containers it became "The two container shapes" in
+    API::Docker::API::Containers.
+  - every internal caller of the old CamelCase accessors. Containers had one
+    that no grep of the entity class would have found:
+    _assert_container_running read ->State on the inspect result inside
+    API/Containers.pm itself.
+  - the tests, whose accessors go snake_case. Say per test whether the claim
+    survived the rename or was replaced.
+
+Note the return shape changes publicly each time (->Id becomes ->id). The
+containers slice raised that for the maintainer; the same answer applies to
+the rest.
+
+Blocked on nothing, but read k83 first -- if the model stops croaking on a
+type mismatch, one workaround in Containers.pm comes back out.
+
+2026-08-28 11:42 Implemented and committed as 70910aea. All six resources converted; prove -lr t/ 40 files 468 tests PASS, live Podman read-only 40/447 PASS, dzil test 42/693 PASS, spec-to-type.pl --verify 201/201 identical against the committed generator inputs, drift-check 0 in all seven categories, ../p5-dist-zilla-plugin-docker-api 16/103 PASS against this working tree. Drift found and filed as k88 (api-docker-core skill still describes the hand-written entity classes).
+
+Done in 70910aea. The swagger was looked up per resource rather than assumed, and it mattered: only images needed two classes; networks, plugins, secrets and configs answer list and inspect with one definition; volumes do too AND wrap POST /volumes/create, the only creating method in the distribution that returns an entity. No internal CamelCase caller existed in code -- every hit in lib/API/Docker/API/*.pm was POD. Three test claims were replaced rather than renamed, each with its reason on the card's commit. Verified: prove 40/468 PASS, live 40/447 PASS read-only, dzil test 42/693 PASS, --verify 201 identical against committed inputs, drift 0, neighbour repo 16/103 PASS with PERL5LIB prepended and resolution confirmed against this working tree.
