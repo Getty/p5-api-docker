@@ -1,0 +1,34 @@
+---
+claimed_at: 2026-08-28T00:26:18Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T00:26:18Z
+created: 2026-08-28T00:04:16Z
+id: 76
+priority: low
+started: 2026-08-28T00:26:18Z
+status: done
+tags:
+- docs
+title: Role::HTTP should point at API::Docker's TIMEOUTS section
+updated: 2026-08-28T00:26:18Z
+---
+
+karr #72 added a =head1 TIMEOUTS to lib/API/Docker.pm saying once what a bound
+covers and what it does not -- idle time on reads, connecting, neither on
+writing, and SO_RCVTIMEO measuring the underlying receives under TLS rather
+than plaintext arrival -- plus where a bound applies, including the pre-flight
+requests and version negotiation.
+
+It went into API::Docker rather than into Role::HTTP next to the read_timeout
+attribute, only because Role::HTTP was locked for karr #64 at the time.
+
+Role::HTTP is where a reader of read_timeout/connect_timeout lands. Two lines
+would close the loop, one under each attribute:
+
+  See L<API::Docker/"What a timeout covers"> for what the bound covers, and
+  L<API::Docker/"Where a bound applies"> for which calls carry it.
+
+Nothing in the new section duplicates Role::HTTP's own "Bounding a request
+that never ends" / "Bounding the connection itself" measurements; it
+summarises them and links to them.
