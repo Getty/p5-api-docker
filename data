@@ -1,0 +1,52 @@
+---
+claimed_at: 2026-08-28T14:29:08Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:29:08Z
+created: 2026-08-28T11:44:02Z
+id: 91
+priority: high
+started: 2026-08-28T11:44:41Z
+status: done
+tags:
+- tests
+- environment
+title: A module deleted from lib/ still loads, from the installed 0.004 in ~/perl5
+updated: 2026-08-28T14:29:08Z
+---
+
+Found 2026-08-28 by the k84 agent and measured further by the orchestrator.
+It is worse than the way it was first reported.
+
+t/basic.t's use_ok('API::Docker::Image') kept passing after k84 deleted
+lib/API/Docker/Image.pm, because prove -l PREPENDS lib to @INC and does not
+replace it. The installed distribution is still behind it:
+
+  lib/API/Docker/Image.pm                     deleted in the working tree
+  perl -Ilib -e 'require API::Docker::Image'  loads
+  $INC{'API/Docker/Image.pm'}                 /home/getty/perl5/lib/perl5/...
+
+And the part that makes it dangerous rather than merely annoying: the
+installed copy reports $VERSION 0.004 -- THE SAME literal as the working
+tree, since a released 0.003 and an unreleased 0.004 both carry it through
+this repo's version discipline. So a version assertion would not catch the
+substitution either.
+
+The consequence is general, not about one test: for any module missing from
+lib/, the suite can pass while testing installed code. This repo already
+guards the analogous failure on the live socket, where a missing daemon makes
+the run skip_all and report success while testing nothing. Same shape, no
+guard.
+
+SUGGESTED FIX, and it is cheap: an author test that loads the distribution
+and asserts every API::Docker::* entry in %INC resolves inside this checkout.
+Anything under a site or vendor path fails it, by name. That catches a stale
+installed copy, a leftover blib, and a module deleted from lib/ but still
+referenced -- all three with one assertion.
+
+Do NOT fix it by uninstalling the distribution from ~/perl5: the next
+`dzil install` puts it back, and the guard is what has to survive that.
+
+Lane: api-docker-test-writer.
+
+Done in 82ccac0, t/dist_source.t. Verified independently by removing a different module than the agent used: with lib/API/Docker/Role/Filters.pm gone the guard names it and fails, and the file restores byte-identical. Placed in t/ rather than xt/ on purpose -- it needs no daemon, no network and no author dependency, and the point is to protect the everyday prove -lr t/ loop, which is exactly where k84's bug hid. Two traps the agent found by testing rather than assuming: a require that dies mid-load leaves its %INC key SET with an undef value, and Cwd::abs_path(undef) silently returns the current directory, which would have read as a valid pass for a dying k92 stub. Guarded with a defined check, and none of the seven stubs appears in the output -- no false alarm and no false pass.
