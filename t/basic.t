@@ -16,9 +16,12 @@ use_ok('API::Docker::API::Configs');
 use_ok('API::Docker::API::Plugins');
 use_ok('API::Docker::Role::Entity');
 use_ok('API::Docker::Role::Entity::Container');
-use_ok('API::Docker::Image');
-use_ok('API::Docker::Network');
-use_ok('API::Docker::Volume');
+use_ok('API::Docker::Role::Entity::Image');
+use_ok('API::Docker::Role::Entity::Network');
+use_ok('API::Docker::Role::Entity::Volume');
+use_ok('API::Docker::Role::Entity::Plugin');
+use_ok('API::Docker::Role::Entity::Secret');
+use_ok('API::Docker::Role::Entity::Config');
 
 # Test default construction. host resolves DOCKER_HOST before the socket path,
 # so the socket default is only observable with that variable gone -- any

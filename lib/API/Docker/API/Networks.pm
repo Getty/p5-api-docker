@@ -3,7 +3,8 @@ package API::Docker::API::Networks;
 our $VERSION = '0.004';
 use Moo;
 with 'API::Docker::Role::Filters', 'API::Docker::Role::Using';
-use API::Docker::Network;
+use API::Docker::Role::Entity::Network;
+use API::Docker::Type::Network;
 use Carp qw( croak );
 use namespace::clean;
 
@@ -19,6 +20,7 @@ use namespace::clean;
 
     # List networks
     my $networks = $docker->networks->list;
+    say $_->name, ' ', $_->driver for @$networks;
 
     # Connect/disconnect containers
     $docker->networks->connect($network_id, Container => $container_id);
@@ -31,6 +33,19 @@ use namespace::clean;
 
 This module provides methods for managing Docker networks including creation,
 listing, connecting containers, and removal.
+
+L</list> and L</inspect> both return L<API::Docker::Type::Network> objects
+carrying the convenience methods of L<API::Docker::Role::Entity::Network>, so
+C<< $network->connect >> and C<< $network->remove >> work on either. The
+field names are the swagger's own spelling in snake_case: C<Id> is
+C<< ->id >>, C<EnableIPv6> is C<< ->enable_ipv6 >>, and C<IPAM> is
+C<< ->ipam >>, an L<API::Docker::Type::IPAM> whose C<< ->config >> is an
+ArrayRef of L<API::Docker::Type::IPAMConfig>.
+
+Unlike containers and images this is B<one> class for both calls: the
+swagger answers C<GET /networks> and C<GET /networks/{id}> with the same
+C<Network> definition, so there is no list-versus-inspect shape to keep
+apart -- see L<API::Docker::Role::Entity::Network/"One class, not two">.
 
 Accessed via C<< $docker->networks >>, or through
 L<API::Docker::Role::Using/using> for a run of calls that needs its own
@@ -50,17 +65,25 @@ Reference to L<API::Docker> client. Weak reference to avoid circular dependencie
 
 =cut
 
+# The class is the caller's argument, as it is on the resource classes whose
+# list and inspect really are two definitions -- here both are the swagger's
+# one `Network`, and passing it keeps the seam in the same place.
+#
+# from_data, not new: this is a daemon response, and the two entry points of
+# API::Docker::Role::Type read it differently. from_data takes the swagger's
+# wire names and nothing else, so a key it has not heard of keeps its own
+# spelling instead of being read as the Perl name of one it has, and a value
+# that disagrees with the swagger costs its own field rather than the whole
+# response. `client` is ours rather than the engine's, so it goes beside the
+# data instead of into it.
 sub _wrap {
-  my ($self, $data) = @_;
-  return API::Docker::Network->new(
-    client => $self->client,
-    %$data,
-  );
+  my ($self, $class, $data) = @_;
+  return $class->from_data($data, client => $self->client);
 }
 
 sub _wrap_list {
-  my ($self, $list) = @_;
-  return [ map { $self->_wrap($_) } @$list ];
+  my ($self, $class, $list) = @_;
+  return [ map { $self->_wrap($class, $_) } @$list ];
 }
 
 sub list {
@@ -72,7 +95,7 @@ sub list {
     params => \%params,
     %{ $self->_request_options },
   );
-  return $self->_wrap_list($result // []);
+  return $self->_wrap_list('API::Docker::Type::Network', $result // []);
 }
 
 =method list
@@ -80,7 +103,8 @@ sub list {
     my $networks = $networks->list;
     my $bridges  = $networks->list(filters => { driver => ['bridge'] });
 
-List networks. Returns ArrayRef of L<API::Docker::Network> objects.
+List networks. Returns an ArrayRef of L<API::Docker::Type::Network> objects,
+each carrying the methods of L<API::Docker::Role::Entity::Network>.
 
 Options:
 
@@ -100,14 +124,16 @@ sub inspect {
   my $result = $self->client->get("/networks/$id",
     %{ $self->_request_options },
   );
-  return $self->_wrap($result);
+  return $self->_wrap('API::Docker::Type::Network', $result);
 }
 
 =method inspect
 
     my $network = $networks->inspect($id);
 
-Get detailed information about a network. Returns L<API::Docker::Network> object.
+Get detailed information about a network. Returns an
+L<API::Docker::Type::Network> -- the same class L</list> returns, since the
+swagger describes a network one way.
 
 =cut
 
@@ -211,7 +237,11 @@ L<API::Docker::Role::Filters>
 
 =item * L<API::Docker> - Main Docker client
 
-=item * L<API::Docker::Network> - Network entity class
+=item * L<API::Docker::Role::Entity::Network> - the convenience methods the
+returned objects carry
+
+=item * L<API::Docker::Type::Network> - the fields C<list> and C<inspect>
+return
 
 =back
 

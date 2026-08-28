@@ -238,11 +238,11 @@ subtest 'live: exporting a real image gives a real tar' => sub {
   plan skip_all => 'live only' unless is_live();
 
   my $docker = test_docker();
-  my ($smallest) = sort { ($a->Size // 0) <=> ($b->Size // 0) }
-    grep { $_->RepoTags && @{ $_->RepoTags } } @{ $docker->images->list };
+  my ($smallest) = sort { ($a->size // 0) <=> ($b->size // 0) }
+    grep { $_->repo_tags && @{ $_->repo_tags } } @{ $docker->images->list };
   plan skip_all => 'no tagged image on the daemon' unless $smallest;
 
-  my $name = $smallest->RepoTags->[0];
+  my $name = $smallest->repo_tags->[0];
   my $tar  = $docker->images->get($name);
 
   ok defined $tar && length $tar, "exported $name";

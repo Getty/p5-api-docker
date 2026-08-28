@@ -4,7 +4,9 @@ our $VERSION = '0.004';
 use Moo;
 with 'API::Docker::Role::Filters', 'API::Docker::Role::RegistryAuth',
   'API::Docker::Role::Using';
-use API::Docker::Image;
+use API::Docker::Role::Entity::Image;
+use API::Docker::Type::ImageInspect;
+use API::Docker::Type::ImageSummary;
 use Carp qw( croak );
 use JSON::MaybeXS qw( encode_json );
 use namespace::clean;
@@ -24,8 +26,8 @@ use namespace::clean;
     # List images
     my $images = $docker->images->list;
     for my $image (@$images) {
-        say $image->Id;
-        say join ', ', @{$image->RepoTags};
+        say $image->id;
+        say join ', ', @{$image->repo_tags};
     }
 
     # Inspect image details
@@ -53,11 +55,77 @@ use namespace::clean;
 This module provides methods for managing Docker images including pulling,
 listing, tagging, pushing to registries, and removal.
 
-All C<list> and C<inspect> methods return L<API::Docker::Image> objects.
+C<list> and C<inspect> return generated L<API::Docker::Type> objects carrying
+the convenience methods of L<API::Docker::Role::Entity::Image>, so
+C<< $image->tag >> and C<< $image->remove >> work on either. Which class each
+returns, and where the two disagree, is below.
 
 Accessed via C<< $docker->images >>, or through
 L<API::Docker::Role::Using/using> for a run of calls that needs its own
 transport bound: C<< $docker->images->using(read_timeout => 5) >>.
+
+=head2 The two image shapes
+
+The daemon describes an image two ways and the swagger has two definitions
+for it, so this class returns two classes:
+
+=over
+
+=item * L</list> returns L<API::Docker::Type::ImageSummary> objects -- one
+per entry of C<GET /images/json>.
+
+=item * L</inspect> returns an L<API::Docker::Type::ImageInspect> -- the body
+of C<GET /images/{name}/json>.
+
+=back
+
+They overlap but do not line up, and the field names are the swagger's own
+spelling in snake_case (C<Id> is C<< ->id >>, C<RepoTags> is
+C<< ->repo_tags >>, C<SharedSize> is C<< ->shared_size >>). The differences
+worth knowing before reading a value off the wrong one:
+
+=over
+
+=item * C<< ->created >> is an integer Unix epoch on a summary and an
+RFC 3339 string on an inspect. Same field name, two types -- C<Int> and
+C<Str> in the model, which is the swagger's own answer, not a normalisation
+this client applies. The same split a container has, see
+L<API::Docker::API::Containers/"The two container shapes">.
+
+=item * The parent layer is C<< ->parent_id >> on a summary and
+C<< ->parent >> on an inspect. Both are empty for an image pulled from a
+registry rather than built locally, and the swagger marks the inspect one
+deprecated.
+
+=item * C<< ->labels >> is top-level on a summary only. An inspect carries
+the labels under C<< ->config->labels >>, where C<< ->config >> is the
+L<API::Docker::Type::ImageConfig> the image runs containers with --
+C<< ->cmd >>, C<< ->env >>, C<< ->entrypoint >>, C<< ->exposed_ports >> and
+the rest.
+
+=item * C<< ->containers >> (how many containers use the image) and
+C<< ->shared_size >> come from a summary only. The swagger says of both that
+C<-1> means the value was not calculated, and of C<SharedSize> that it is not
+calculated by default -- so treat C<-1> as "unknown", not as a count.
+
+=item * C<< ->architecture >>, C<< ->os >>, C<< ->os_version >>,
+C<< ->variant >>, C<< ->author >>, C<< ->comment >>, C<< ->docker_version >>,
+C<< ->config >>, C<< ->root_fs >>, C<< ->graph_driver >> and
+C<< ->metadata >> come from an inspect only.
+
+=item * C<< ->id >>, C<< ->repo_tags >>, C<< ->repo_digests >>, C<< ->size >>,
+C<< ->descriptor >> and C<< ->manifests >> are on both and mean the same
+thing. The swagger declares every field of a summary required and no field of
+an inspect, which the model records but does not enforce -- see
+L<API::Docker::Type/"C<since> is documentation">.
+
+=back
+
+There is no C<< ->virtual_size >>: the swagger dropped C<VirtualSize> from
+both definitions after v1.44, and engines that still send it -- the Podman on
+this machine does -- have it kept verbatim in
+C<< ->unknown_fields->{VirtualSize} >>, where C<TO_JSON> writes it back
+unchanged. F<t/type_fixture_passthrough.t> pins that.
 
 =cut
 
@@ -73,17 +141,26 @@ Reference to L<API::Docker> client. Weak reference to avoid circular dependencie
 
 =cut
 
+# The class is the caller's argument rather than a constant of this module:
+# `list` and `inspect` are two definitions in the swagger and therefore two
+# generated classes. Both carry the same convenience methods, composed by
+# API::Docker::Role::Entity::Image -- see "The two image shapes".
+#
+# from_data, not new: this is a daemon response, and the two entry points of
+# API::Docker::Role::Type read it differently. from_data takes the swagger's
+# wire names and nothing else, so a key it has not heard of keeps its own
+# spelling instead of being read as the Perl name of one it has, and a value
+# that disagrees with the swagger costs its own field rather than the whole
+# response. `client` is ours rather than the engine's, so it goes beside the
+# data instead of into it.
 sub _wrap {
-  my ($self, $data) = @_;
-  return API::Docker::Image->new(
-    client => $self->client,
-    %$data,
-  );
+  my ($self, $class, $data) = @_;
+  return $class->from_data($data, client => $self->client);
 }
 
 sub _wrap_list {
-  my ($self, $list) = @_;
-  return [ map { $self->_wrap($_) } @$list ];
+  my ($self, $class, $list) = @_;
+  return [ map { $self->_wrap($class, $_) } @$list ];
 }
 
 sub list {
@@ -97,14 +174,15 @@ sub list {
     params => \%params,
     %{ $self->_request_options },
   );
-  return $self->_wrap_list($result // []);
+  return $self->_wrap_list('API::Docker::Type::ImageSummary', $result // []);
 }
 
 =method list
 
     my $images = $images->list(all => 1);
 
-List images. Returns ArrayRef of L<API::Docker::Image> objects.
+List images. Returns an ArrayRef of L<API::Docker::Type::ImageSummary>
+objects, each carrying the methods of L<API::Docker::Role::Entity::Image>.
 
 Options:
 
@@ -394,14 +472,16 @@ sub inspect {
   my $result = $self->client->get("/images/$name/json",
     %{ $self->_request_options },
   );
-  return $self->_wrap($result);
+  return $self->_wrap('API::Docker::Type::ImageInspect', $result);
 }
 
 =method inspect
 
     my $image = $images->inspect('nginx:latest');
 
-Get detailed information about an image. Returns L<API::Docker::Image> object.
+Get detailed information about an image. Returns an
+L<API::Docker::Type::ImageInspect>, which is B<not> the class L</list>
+returns -- see L</"The two image shapes">.
 
 =cut
 
@@ -995,7 +1075,12 @@ it JSON-encodes a HashRef params value itself
 
 =item * L<API::Docker> - Main Docker client
 
-=item * L<API::Docker::Image> - Image entity class
+=item * L<API::Docker::Role::Entity::Image> - the convenience methods the
+returned objects carry
+
+=item * L<API::Docker::Type::ImageSummary> - the fields C<list> returns
+
+=item * L<API::Docker::Type::ImageInspect> - the fields C<inspect> returns
 
 =item * L<API::Docker::Role::RegistryAuth> - the C<X-Registry-Auth>
 encoding C<push> uses, shared with the other registry-facing endpoints

@@ -3,7 +3,8 @@ package API::Docker::API::Volumes;
 our $VERSION = '0.004';
 use Moo;
 with 'API::Docker::Role::Filters', 'API::Docker::Role::Using';
-use API::Docker::Volume;
+use API::Docker::Role::Entity::Volume;
+use API::Docker::Type::Volume;
 use Carp qw( croak );
 use namespace::clean;
 
@@ -22,7 +23,7 @@ use namespace::clean;
 
     # Inspect volume
     my $vol = $docker->volumes->inspect('my-volume');
-    say $vol->Mountpoint;
+    say $vol->mountpoint;
 
     # Remove volume
     $docker->volumes->remove('my-volume');
@@ -31,6 +32,22 @@ use namespace::clean;
 
 This module provides methods for managing Docker volumes including creation,
 listing, inspection, and removal.
+
+L</list>, L</inspect> and L</create> all return
+L<API::Docker::Type::Volume> objects carrying the convenience methods of
+L<API::Docker::Role::Entity::Volume>, so C<< $volume->remove >> works on any
+of them. The field names are the swagger's own spelling in snake_case:
+C<Mountpoint> is C<< ->mountpoint >>, C<CreatedAt> is C<< ->created_at >>,
+C<UsageData> is C<< ->usage_data >> and inflates into an
+L<API::Docker::Type::Volume::UsageData>.
+
+This is B<one> class for all three calls, where containers and images have
+two: the swagger answers the inspect and the create with the C<Volume>
+definition outright and the list with a C<VolumeListResponse> whose
+C<Volumes> is an array of that same definition -- see
+L<API::Docker::Role::Entity::Volume/"One class for all three calls">. A
+volume is also addressed by its C<< ->name >> rather than by an id; it has
+none.
 
 Accessed via C<< $docker->volumes >>, or through
 L<API::Docker::Role::Using/using> for a run of calls that needs its own
@@ -50,17 +67,26 @@ Reference to L<API::Docker> client. Weak reference to avoid circular dependencie
 
 =cut
 
+# The class is the caller's argument, as it is on the resource classes whose
+# list and inspect really are two definitions -- here all three calls answer
+# with the swagger's one `Volume`, and passing it keeps the seam in the same
+# place.
+#
+# from_data, not new: this is a daemon response, and the two entry points of
+# API::Docker::Role::Type read it differently. from_data takes the swagger's
+# wire names and nothing else, so a key it has not heard of keeps its own
+# spelling instead of being read as the Perl name of one it has, and a value
+# that disagrees with the swagger costs its own field rather than the whole
+# response. `client` is ours rather than the engine's, so it goes beside the
+# data instead of into it.
 sub _wrap {
-  my ($self, $data) = @_;
-  return API::Docker::Volume->new(
-    client => $self->client,
-    %$data,
-  );
+  my ($self, $class, $data) = @_;
+  return $class->from_data($data, client => $self->client);
 }
 
 sub _wrap_list {
-  my ($self, $list) = @_;
-  return [ map { $self->_wrap($_) } @$list ];
+  my ($self, $class, $list) = @_;
+  return [ map { $self->_wrap($class, $_) } @$list ];
 }
 
 sub list {
@@ -72,7 +98,8 @@ sub list {
     params => \%params,
     %{ $self->_request_options },
   );
-  return $self->_wrap_list($result->{Volumes} // []);
+  return $self->_wrap_list('API::Docker::Type::Volume',
+    $result->{Volumes} // []);
 }
 
 =method list
@@ -80,7 +107,11 @@ sub list {
     my $volumes = $volumes->list;
     my $unused  = $volumes->list(filters => { dangling => ['true'] });
 
-List volumes. Returns ArrayRef of L<API::Docker::Volume> objects.
+List volumes. Returns an ArrayRef of L<API::Docker::Type::Volume> objects,
+each carrying the methods of L<API::Docker::Role::Entity::Volume>. The
+daemon answers this endpoint with a C<VolumeListResponse> rather than a bare
+array; the C<Volumes> key is what comes back here, and the C<Warnings>
+beside it are dropped.
 
 Options:
 
@@ -97,7 +128,7 @@ Shape-checked and normalised by L<API::Docker::Role::Filters>
 sub create {
   my ($self, %config) = @_;
   my $result = $self->client->post('/volumes/create', \%config);
-  return $self->_wrap($result);
+  return $self->_wrap('API::Docker::Type::Volume', $result);
 }
 
 =method create
@@ -107,7 +138,9 @@ sub create {
         Driver => 'local',
     );
 
-Create a volume. Returns L<API::Docker::Volume> object.
+Create a volume. Returns an L<API::Docker::Type::Volume> -- the only creating
+method in this distribution that wraps its response, because the swagger
+answers C<POST /volumes/create> with the same definition an inspect returns.
 
 =cut
 
@@ -117,14 +150,16 @@ sub inspect {
   my $result = $self->client->get("/volumes/$name",
     %{ $self->_request_options },
   );
-  return $self->_wrap($result);
+  return $self->_wrap('API::Docker::Type::Volume', $result);
 }
 
 =method inspect
 
     my $volume = $volumes->inspect('my-volume');
 
-Get detailed information about a volume. Returns L<API::Docker::Volume> object.
+Get detailed information about a volume. Returns an
+L<API::Docker::Type::Volume> -- the same class L</list> and L</create>
+return, since the swagger describes a volume one way.
 
 =cut
 
@@ -183,7 +218,11 @@ L<API::Docker::Role::Filters>
 
 =item * L<API::Docker> - Main Docker client
 
-=item * L<API::Docker::Volume> - Volume entity class
+=item * L<API::Docker::Role::Entity::Volume> - the convenience methods the
+returned objects carry
+
+=item * L<API::Docker::Type::Volume> - the fields C<list>, C<inspect> and
+C<create> return
 
 =back
 

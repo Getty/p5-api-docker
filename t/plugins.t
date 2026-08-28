@@ -138,29 +138,54 @@ subtest 'list: no filters means no query string' => sub {
 };
 
 # ---------------------------------------------------------------------------
-subtest 'list wraps into API::Docker::Plugin entities' => sub {
+subtest 'list wraps into API::Docker::Type::Plugin entities' => sub {
   my $c = fake_client('[' . $PLUGIN_JSON . ']');
   my $plugins = $c->plugins->list;
 
   is ref $plugins, 'ARRAY', 'an ArrayRef, one entry per plugin';
   my $plugin = $plugins->[0];
-  isa_ok $plugin, 'API::Docker::Plugin';
+  isa_ok $plugin, 'API::Docker::Type::Plugin';
 
-  is $plugin->Id,
+  is $plugin->id,
     '5724e2c8652da337ab2eedd19fc6fc0ec908e4bd907c7421bf6a8dfc70c4c078',
-    'Id';
-  is $plugin->Name, 'vieux/sshfs:latest', 'Name';
-  is $plugin->PluginReference, 'docker.io/vieux/sshfs:latest',
-    'PluginReference -- the remote the plugin came from, which is not the '
-    . 'local Name once a plugin is installed under one';
-  is_deeply $plugin->Settings->{Env}, ['DEBUG=0'],
-    'Settings is handed through as the HashRef the engine sent';
-  is $plugin->Config->{Interface}{Socket}, 'sshfs.sock', 'Config likewise';
+    'id';
+  is $plugin->name, 'vieux/sshfs:latest', 'name';
+  is $plugin->plugin_reference, 'docker.io/vieux/sshfs:latest',
+    'plugin_reference -- the remote the plugin came from, which is not the '
+    . 'local name once a plugin is installed under one';
+  # Settings and Config used to be handed through as the HashRefs the engine
+  # sent; the generated model inflates them into classes of their own, so
+  # what they carry is reached by accessor a level down rather than by key.
+  is_deeply $plugin->settings->env, ['DEBUG=0'],
+    'settings is an API::Docker::Type::Plugin::Settings, and its env is the '
+    . 'list of KEY=value strings configure() takes';
+  is $plugin->config->interface->socket, 'sshfs.sock',
+    'config likewise, two levels of generated class down';
+  # The canned payload above is the Engine API reference's example and carries
+  # no Config.Env, so the two shapes of that one key are asserted on the model
+  # rather than on a payload invented to show them.
+  my $settings_env = 'API::Docker::Type::Plugin::Settings'
+    ->docker_attributes->{env}{isa}->display_name;
+  my $config_env = 'API::Docker::Type::Plugin::Config'
+    ->docker_attributes->{env}{isa}->display_name;
+  like $settings_env, qr/Str/, 'Settings.Env is declared as strings';
+  like $config_env, qr/PluginEnv/,
+    'and Config.Env as PluginEnv objects -- same wire name, two shapes, one '
+    . 'level apart';
 
-  ok $plugin->Enabled, 'Enabled is true for an enabled plugin';
-  ok is_bool($plugin->Enabled),
-    'and it is still the decoded JSON boolean -- entity classes mirror the '
-    . 'daemon verbatim, so nothing normalised it to 1/0';
+  # This claim is the reverse of the one the hand-written entity carried.
+  # API::Docker::Plugin mirrored the daemon verbatim, so Enabled stayed the
+  # decoded JSON boolean and the test asserted is_bool on it. The generated
+  # class declares the field as Bool and normalises it on the way in, so the
+  # accessor is a plain 1/0 -- and TO_JSON turns it back into a JSON boolean,
+  # which is where "nothing is lost" now lives.
+  is $plugin->enabled, 1, 'enabled is 1 for an enabled plugin';
+  ok !is_bool($plugin->enabled),
+    'a plain Perl 1, not the decoded JSON boolean -- the model normalises a '
+    . 'declared Bool rather than passing it through';
+  ok is_bool($plugin->TO_JSON->{Enabled}),
+    'and it goes back to the engine as a JSON boolean, so the round trip '
+    . 'still says what the daemon said';
 
   # Without this the entity is inert: every method below reaches the engine
   # through the client, and a wrapper built without one dies on an
@@ -186,19 +211,19 @@ subtest 'inspect wraps too' => sub {
   my $c = fake_client($PLUGIN_JSON);
   my $plugin = $c->plugins->inspect('vieux/sshfs:latest');
 
-  isa_ok $plugin, 'API::Docker::Plugin';
-  is $plugin->Name, 'vieux/sshfs:latest', 'the single object is wrapped, '
+  isa_ok $plugin, 'API::Docker::Type::Plugin';
+  is $plugin->name, 'vieux/sshfs:latest', 'the single object is wrapped, '
     . 'not returned as the HashRef it arrived as';
-  ok $plugin->Enabled, 'and its fields are reachable as accessors';
+  ok $plugin->enabled, 'and its fields are reachable as accessors';
 
   my $again = $plugin->inspect;
   is request_line($c->written),
     'GET /v1.41/plugins/vieux/sshfs:latest/json HTTP/1.1',
-    'the entity re-inspects itself by Name';
-  isa_ok $again, 'API::Docker::Plugin';
+    'the entity re-inspects itself by name';
+  isa_ok $again, 'API::Docker::Type::Plugin';
 };
 
-subtest 'the entity threads its Name back through the resource class' => sub {
+subtest 'the entity threads its name back through the resource class' => sub {
   my $c = fake_client('[' . $PLUGIN_JSON . ']');
   my $plugin = $c->plugins->list->[0];
 
@@ -223,8 +248,8 @@ subtest 'the entity threads its Name back through the resource class' => sub {
   is request_line($c->written),
     'POST /v1.41/plugins/vieux/sshfs:latest/upgrade?remote=vieux/sshfs:latest'
     . ' HTTP/1.1',
-    'upgrade: remote defaults to the local Name, which is why the entity '
-    . 'carries PluginReference for the renamed case';
+    'upgrade: remote defaults to the local name, which is why the entity '
+    . 'carries plugin_reference for the renamed case';
   is_deeply decode_json(request_body($c->written)), $PRIVILEGES,
     'the privilege body is not swallowed by the delegation';
 

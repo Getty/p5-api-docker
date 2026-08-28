@@ -167,11 +167,11 @@ subtest 'live: commit a real container into a real image' => sub {
   plan skip_all => 'write tests off'    unless can_write();
 
   my $docker = test_docker();
-  my ($base) = grep { $_->RepoTags && @{ $_->RepoTags } } @{ $docker->images->list };
+  my ($base) = grep { $_->repo_tags && @{ $_->repo_tags } } @{ $docker->images->list };
   plan skip_all => 'no tagged image to base a container on' unless $base;
 
   my $created = $docker->containers->create(
-    Image => $base->RepoTags->[0],
+    Image => $base->repo_tags->[0],
     Cmd   => [ '/bin/sh', '-c', 'true' ],
   );
   my $id = $created->{Id};
@@ -189,7 +189,7 @@ subtest 'live: commit a real container into a real image' => sub {
 
   ok $result->{Id}, 'the daemon answered with an image id';
   my $image = $docker->images->inspect('apidocker-test-commit:live');
-  isa_ok $image, 'API::Docker::Image';
+  isa_ok $image, 'API::Docker::Type::ImageInspect';
 };
 
 done_testing;

@@ -829,14 +829,14 @@ subtest 'live write: stat_archive on a symlink diverges by engine (karr k36)' =>
   plan skip_all => 'write tests off' unless can_write();
 
   my $docker = test_docker();
-  my ($base) = grep { $_->RepoTags && @{ $_->RepoTags } } @{ $docker->images->list };
+  my ($base) = grep { $_->repo_tags && @{ $_->repo_tags } } @{ $docker->images->list };
   plan skip_all => 'no tagged image to base a container on' unless $base;
 
   # A container of our own: the read-only subtest above cannot pick a symlink
   # off whatever container happens to already exist, so this one creates it,
   # names it apidocker-stat- as agreed, and removes it again below.
   my $created = $docker->containers->create(
-    Image => $base->RepoTags->[0],
+    Image => $base->repo_tags->[0],
     Cmd   => [ '/bin/sh', '-c', 'ln -s /etc/hostname /tmp/hnlink' ],
     name  => 'apidocker-stat-symlink-' . $$,
   );

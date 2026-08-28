@@ -4,7 +4,8 @@ our $VERSION = '0.004';
 use Moo;
 with 'API::Docker::Role::Filters', 'API::Docker::Role::RegistryAuth',
   'API::Docker::Role::Using';
-use API::Docker::Plugin;
+use API::Docker::Role::Entity::Plugin;
+use API::Docker::Type::Plugin;
 use Carp qw( croak );
 use namespace::clean;
 
@@ -24,7 +25,7 @@ use namespace::clean;
 
     # Inspect
     my $plugin = $docker->plugins->inspect('vieux/sshfs:latest');
-    say $plugin->Name, $plugin->Enabled ? ' (enabled)' : ' (disabled)';
+    say $plugin->name, $plugin->enabled ? ' (enabled)' : ' (disabled)';
 
     # Configure, upgrade, disable, remove
     $docker->plugins->configure('vieux/sshfs:latest', ['DEBUG=1']);
@@ -87,10 +88,20 @@ class therefore needs a real Docker daemon.
 
 =head2 What this class returns
 
-L</list> and L</inspect> return L<API::Docker::Plugin> objects, following the
-C<list>/C<inspect> convention every other resource class here follows. The
-entity mirrors the engine's C<Plugin> fields verbatim and normalises nothing,
-and its methods thread the plugin's name back through this class.
+L</list> and L</inspect> return L<API::Docker::Type::Plugin> objects carrying
+the convenience methods of L<API::Docker::Role::Entity::Plugin>, following
+the C<list>/C<inspect> convention every other resource class here follows.
+It is B<one> class for both, where containers and images have two: the
+swagger answers C<GET /plugins> with an array of the C<Plugin> definition and
+C<GET /plugins/{name}/json> with that same definition.
+
+Field names are the swagger's own spelling in snake_case, and the nested
+ones are generated classes rather than the raw HashRefs the old entity kept:
+C<< $plugin->settings >> is an L<API::Docker::Type::Plugin::Settings> whose
+C<< ->env >> is a list of C<KEY=value> strings, and C<< $plugin->config >> an
+L<API::Docker::Type::Plugin::Config> whose C<< ->env >> is a list of
+L<API::Docker::Type::PluginEnv> objects describing those same variables. The
+entity's methods thread the plugin's name back through this class.
 
 Everything else returns the decoded engine response as it came: L</privileges>
 an ArrayRef of privilege HashRefs, L</install>, L</upgrade> and L</push> an
@@ -111,17 +122,25 @@ Reference to L<API::Docker> client. Weak reference to avoid circular dependencie
 
 =cut
 
+# The class is the caller's argument, as it is on the resource classes whose
+# list and inspect really are two definitions -- here both are the swagger's
+# one `Plugin`, and passing it keeps the seam in the same place.
+#
+# from_data, not new: this is a daemon response, and the two entry points of
+# API::Docker::Role::Type read it differently. from_data takes the swagger's
+# wire names and nothing else, so a key it has not heard of keeps its own
+# spelling instead of being read as the Perl name of one it has, and a value
+# that disagrees with the swagger costs its own field rather than the whole
+# response. `client` is ours rather than the engine's, so it goes beside the
+# data instead of into it.
 sub _wrap {
-  my ($self, $data) = @_;
-  return API::Docker::Plugin->new(
-    client => $self->client,
-    %$data,
-  );
+  my ($self, $class, $data) = @_;
+  return $class->from_data($data, client => $self->client);
 }
 
 sub _wrap_list {
-  my ($self, $list) = @_;
-  return [ map { $self->_wrap($_) } @$list ];
+  my ($self, $class, $list) = @_;
+  return [ map { $self->_wrap($class, $_) } @$list ];
 }
 
 # The plugin router calls registry.DecodeAuthConfig on the header and
@@ -164,7 +183,7 @@ sub list {
     params => \%params,
     %{ $self->_request_options },
   );
-  return $self->_wrap_list($result // []);
+  return $self->_wrap_list('API::Docker::Type::Plugin', $result // []);
 }
 
 =method list
@@ -172,7 +191,8 @@ sub list {
     my $plugins = $plugins->list;
     my $enabled = $plugins->list(filters => { enabled => ['true'] });
 
-List installed plugins. Returns an ArrayRef of L<API::Docker::Plugin> objects.
+List installed plugins. Returns an ArrayRef of L<API::Docker::Type::Plugin>
+objects, each carrying the methods of L<API::Docker::Role::Entity::Plugin>.
 An engine with no plugins installed answers C<[]>, never C<null>, so this is
 an empty ArrayRef rather than C<undef>.
 
@@ -355,19 +375,21 @@ rather than testing for the exception class.
 sub inspect {
   my ($self, $name) = @_;
   croak __PACKAGE__ . '->inspect plugin name required' unless $name;
-  return $self->_wrap($self->client->get("/plugins/$name/json",
-    %{ $self->_request_options },
-  ));
+  return $self->_wrap('API::Docker::Type::Plugin',
+    $self->client->get("/plugins/$name/json",
+      %{ $self->_request_options },
+    ));
 }
 
 =method inspect
 
     my $plugin = $plugins->inspect('vieux/sshfs:latest');
-    say $plugin->Enabled;
-    say join ', ', @{ $plugin->Settings->{Env} };
+    say $plugin->enabled;
+    say join ', ', @{ $plugin->settings->env };
 
 Get detailed information about an installed plugin. Returns an
-L<API::Docker::Plugin> object; see L</"What this class returns">.
+L<API::Docker::Type::Plugin> -- the same class L</list> returns; see
+L</"What this class returns">.
 
 The name may carry a registry host, a repository path and a tag
 (C<docker.io/vieux/sshfs:latest>) and is interpolated into the request path
@@ -623,7 +645,7 @@ The plugin must be disabled. Returns C<undef>.
 
 Settings are C<KEY=value> strings, given either as one ArrayRef or as a plain
 list. They name the mutable fields of the plugin's config -- the environment
-variables, mount sources, devices and args that C<< $plugin->Settings >>
+variables, mount sources, devices and args that C<< $plugin->settings >>
 reports; L</inspect> is how you find out which ones a given plugin has.
 
 The engine replaces nothing it is not told about, and rejects a key the
@@ -644,7 +666,11 @@ L<API::Docker::Role::Using>.
 
 =over
 
-=item * L<API::Docker::Plugin> - the entity L</list> and L</inspect> return
+=item * L<API::Docker::Role::Entity::Plugin> - the convenience methods the
+returned objects carry
+
+=item * L<API::Docker::Type::Plugin> - the fields L</list> and L</inspect>
+return
 
 =item * L<API::Docker> - Main Docker client
 

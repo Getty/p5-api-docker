@@ -67,10 +67,10 @@ Podman needs nothing but `DOCKER_HOST`.
 
 The synchronous `_request` core lives in
 `API::Docker::Role::HTTP`; resource-specific API methods live in
-`API::Docker::API::*`. Entities hang off the resource APIs: containers are
-generated `API::Docker::Type::*` classes with `API::Docker::Role::Entity::*`
-composed onto them (karr k79 step 6), the remaining six are still the
-hand-written wrappers (`API::Docker::Image`, ...).
+`API::Docker::API::*`. Entities hang off the resource APIs: every resource
+returns generated `API::Docker::Type::*` classes with an
+`API::Docker::Role::Entity::*` composed onto them (karr k79 step 6/7,
+finished in k84). There are no hand-written entity wrapper classes left.
 
 Architecture, transport invariants, the streaming and `X-Registry-Auth`
 details, and the mock harness are in skill `api-docker-core` — that is
@@ -98,9 +98,13 @@ lib/API/Docker/Type.pm                  # the DSL and attribute registry behind 
 lib/API/Docker/Role/Type.pm             # a generated type's own behaviour: serialisation, unknown_fields
 lib/API/Docker/Type/                    # generated from spec/, one class per swagger definition -- karr k79
 lib/API/Docker/Role/Entity.pm           # the client an entity delegates through
-lib/API/Docker/Role/Entity/Container.pm # container operations, composed onto the generated types
-lib/API/Docker/{Image,Network,Volume}.pm            # entity classes (not yet converted onto Type::*, karr k84)
-lib/API/Docker/{Plugin,Secret,Config}.pm            # entity classes (not yet converted onto Type::*, karr k84)
+lib/API/Docker/Role/Entity/Container.pm # container operations, composed onto ContainerSummary + ContainerInspectResponse
+lib/API/Docker/Role/Entity/Image.pm     # image operations, composed onto ImageSummary + ImageInspect
+lib/API/Docker/Role/Entity/Network.pm   # network operations, composed onto Type::Network (one class for list and inspect)
+lib/API/Docker/Role/Entity/Volume.pm    # volume operations, composed onto Type::Volume (list, inspect and create)
+lib/API/Docker/Role/Entity/Plugin.pm    # plugin operations, composed onto Type::Plugin
+lib/API/Docker/Role/Entity/Secret.pm    # secret operations, composed onto Type::Secret
+lib/API/Docker/Role/Entity/Config.pm    # config operations, composed onto Type::Config
 lib/API/Docker/Error/HTTP.pm            # croaked on a status of 400 or above
 lib/API/Docker/Error/Stream.pm          # croaked on a failed build/pull/push stream
 lib/API/Docker/Error/Timeout.pm         # croaked when a read_timeout or connect_timeout runs out

@@ -117,15 +117,15 @@ Two things set this apart from a plain generated hashref-to-object mapper:
   does not promise, and omitting ones it does -- this client is
   deliberately not the authority on what a given engine can do.
 
-`containers->list` and `containers->inspect` return these generated
-classes today (`API::Docker::Type::ContainerSummary` and
-`API::Docker::Type::ContainerInspectResponse`), with the same convenience
-methods (`->start`, `->stop`, `->logs`, `->remove`, ...) composed onto
-both, so a list entry and an inspect result behave the same way. The
-other resources -- images, networks, volumes, secrets, configs, plugins
--- still return their earlier hand-written entity classes
-(`API::Docker::Image` and friends) and are being moved onto the same
-generated model one at a time.
+Every `list` and `inspect` returns these generated classes, with the
+resource's convenience methods (`->start`, `->logs`, `->tag`, `->remove`,
+...) composed onto them, so a list entry and an inspect result behave the
+same way. Which class you get is whatever the swagger says the endpoint
+answers with: containers and images have two apiece
+(`ContainerSummary` / `ContainerInspectResponse`, `ImageSummary` /
+`ImageInspect`), while networks, volumes, plugins, secrets and configs
+answer both calls with one class each. There are no hand-written entity
+wrappers any more.
 
 ### Roles
 

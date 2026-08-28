@@ -116,25 +116,35 @@ The distribution is organized into several layers:
 
 =back
 
-=item * B<Entity Classes> - Object wrappers for Docker resources:
+=item * B<Entity Roles> - the convenience methods of a resource, composed at
+load time onto the generated L<API::Docker::Type> classes its endpoints
+answer with. There is no separate wrapper object: C<< $docker->images->list >>
+hands back real L<API::Docker::Type::ImageSummary> objects that also have
+C<< ->remove >>. See L<API::Docker::Role::Entity>.
 
 =over
 
-=item * L<API::Docker::Role::Entity::Container> - Container operations,
-composed into L<API::Docker::Type::ContainerSummary> and
+=item * L<API::Docker::Role::Entity::Container> - composed into
+L<API::Docker::Type::ContainerSummary> and
 L<API::Docker::Type::ContainerInspectResponse>
 
-=item * L<API::Docker::Image> - Image entity
+=item * L<API::Docker::Role::Entity::Image> - composed into
+L<API::Docker::Type::ImageSummary> and L<API::Docker::Type::ImageInspect>
 
-=item * L<API::Docker::Network> - Network entity
+=item * L<API::Docker::Role::Entity::Network> - composed into
+L<API::Docker::Type::Network>, which serves both C<list> and C<inspect>
 
-=item * L<API::Docker::Volume> - Volume entity
+=item * L<API::Docker::Role::Entity::Volume> - composed into
+L<API::Docker::Type::Volume>, which serves C<list>, C<inspect> and C<create>
 
-=item * L<API::Docker::Secret> - Secret entity
+=item * L<API::Docker::Role::Entity::Secret> - composed into
+L<API::Docker::Type::Secret>
 
-=item * L<API::Docker::Config> - Config entity
+=item * L<API::Docker::Role::Entity::Config> - composed into
+L<API::Docker::Type::Config>
 
-=item * L<API::Docker::Plugin> - Plugin entity
+=item * L<API::Docker::Role::Entity::Plugin> - composed into
+L<API::Docker::Type::Plugin>
 
 =back
 

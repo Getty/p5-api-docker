@@ -179,7 +179,8 @@ SKIP: {
       'GET /images/nginx/json' => load_fixture('images_list')->[0],
       'GET /containers/deadbeef/json' => load_fixture('container_inspect'),
     );
-    isa_ok $docker->images->inspect('nginx'), 'API::Docker::Image';
+    isa_ok $docker->images->inspect('nginx'),
+      'API::Docker::Type::ImageInspect';
     isa_ok $docker->containers->inspect('deadbeef'),
       'API::Docker::Type::ContainerInspectResponse';
     is ref $docker->system->version, 'HASH', 'version is a HashRef';

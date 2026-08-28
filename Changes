@@ -2,6 +2,32 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - The remaining six resources return generated type objects too, the way
+    containers already did, and the seven hand-written entity classes are
+    gone. `images->list` hands back an `API::Docker::Type::ImageSummary` per
+    entry and `images->inspect` an `API::Docker::Type::ImageInspect`;
+    networks, volumes, plugins, secrets and configs answer list and inspect
+    with one class each -- `Network`, `Volume`, `Plugin`, `Secret`, `Config`
+    -- because that is what spec/v1.51.yaml says those endpoints return, and
+    a volume wraps its `create` as well. Field names are the swagger's own in
+    snake_case: `$image->Id` is `$image->id`, `$network->EnableIPv6` is
+    `$network->enable_ipv6`, and the nested ones are generated classes rather
+    than raw HashRefs -- `$secret->Spec->{Name}` is `$secret->spec->name`,
+    `$plugin->Settings->{Env}` is `$plugin->settings->env`, and a spec goes
+    back to the daemon as `%{ $config->spec->TO_JSON }`. The convenience
+    methods keep their signatures and their return values and live in
+    `API::Docker::Role::Entity::{Image,Network,Volume,Plugin,Secret,Config}`,
+    composed onto the generated classes at load time; nothing was written
+    into the generated files, and `maint/spec-to-type.pl --verify` still
+    reports 201 compared, 201 identical. All seven resources now wrap through
+    `from_data` rather than `new`, so a key the swagger does not know keeps
+    its own spelling and a value it cannot use costs its own field instead of
+    the whole response (karr k84).
+  - `$plugin->enabled` is a plain Perl 1/0 where `API::Docker::Plugin`'s
+    `Enabled` was the decoded JSON boolean the daemon sent: the generated
+    class declares the field as `Bool` and normalises it on the way in.
+    `TO_JSON` writes a JSON boolean back, so what reaches the engine is
+    unchanged.
   - The generated type classes say what a field is where the swagger says
     nothing at all. 199 attributes rendered as `Undocumented upstream.` and
     stopped there; the curated ones now add what the spec states somewhere

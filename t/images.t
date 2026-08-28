@@ -4,7 +4,13 @@ use Test::More;
 use lib 't/lib';
 use Test::API::Docker::Mock;
 use JSON::MaybeXS qw( decode_json );
-use API::Docker::Image;
+# The role, not the type class: it is what composes the entity methods onto
+# the generated classes, and constructing one before that has happened inlines
+# its constructor and makes the composition impossible ("has been inlined and
+# cannot be updated"). Loading API::Docker gets there too, through
+# API::Docker::API::Images -- but the first subtest below builds an
+# ImageSummary before any client exists.
+use API::Docker::Role::Entity::Image;
 
 # The engine's build stream, as captured from a real daemon. build/pull/push
 # hand the caller one event per line, always as an ArrayRef.
@@ -13,28 +19,29 @@ sub build_events {
   return [ map { decode_json($_) } grep { /\S/ } split /\n/, $body ];
 }
 
-# Live picks a name out of whatever `list` handed back. RepoTags on an
+# Live picks a name out of whatever `list` handed back. repo_tags on an
 # untagged image is `[]` -- true in Perl -- so testing the ref for truth
 # (as this used to) takes the tag branch for an untagged image and hands
 # inspect()/history() an undef name. Walk the list for the first image that
-# actually HAS a tag; fall back to an Id only when none do -- both engines
+# actually HAS a tag; fall back to an id only when none do -- both engines
 # accept either as a name, so either is correct, but the ref-as-boolean
 # check was right for neither. See karr k75.
 sub _live_image_name {
   my ($images) = @_;
   for my $image (@$images) {
-    my $tags = $image->RepoTags;
+    my $tags = $image->repo_tags;
     return $tags->[0] if ref $tags eq 'ARRAY' && @$tags;
   }
-  return $images->[0]->Id;
+  return $images->[0]->id;
 }
 
 check_live_access();
 
-subtest '_live_image_name picks a tag, falling back to Id' => sub {
-  my $untagged_1 = API::Docker::Image->new(Id => 'sha256:untagged1', RepoTags => []);
-  my $untagged_2 = API::Docker::Image->new(Id => 'sha256:untagged2', RepoTags => []);
-  my $tagged     = API::Docker::Image->new(Id => 'sha256:tagged', RepoTags => ['alpine:3', 'alpine:latest']);
+subtest '_live_image_name picks a tag, falling back to id' => sub {
+  my $SUMMARY = 'API::Docker::Type::ImageSummary';
+  my $untagged_1 = $SUMMARY->new(Id => 'sha256:untagged1', RepoTags => []);
+  my $untagged_2 = $SUMMARY->new(Id => 'sha256:untagged2', RepoTags => []);
+  my $tagged     = $SUMMARY->new(Id => 'sha256:tagged', RepoTags => ['alpine:3', 'alpine:latest']);
 
   is(
     _live_image_name([ $untagged_1, $untagged_2, $tagged ]),
@@ -51,7 +58,7 @@ subtest '_live_image_name picks a tag, falling back to Id' => sub {
   is(
     _live_image_name([ $untagged_1, $untagged_2 ]),
     'sha256:untagged1',
-    q{falls back to the first image's Id when nothing in the store is tagged},
+    q{falls back to the first image's id when nothing in the store is tagged},
   );
 };
 
@@ -66,18 +73,18 @@ subtest 'list images' => sub {
 
   is(ref $images, 'ARRAY', 'returns array');
   if (@$images) {
-    isa_ok($images->[0], 'API::Docker::Image');
-    ok($images->[0]->Id, 'has Id');
+    isa_ok($images->[0], 'API::Docker::Type::ImageSummary');
+    ok($images->[0]->id, 'has id');
   }
 
   unless (is_live()) {
     is(scalar @$images, 2, 'two images');
 
     my $first = $images->[0];
-    like($first->Id, qr/^sha256:abc123/, 'image id');
-    is_deeply($first->RepoTags, ['nginx:latest', 'nginx:1.25'], 'repo tags');
-    is($first->Size, 187654321, 'image size');
-    is($first->Containers, 2, 'container count');
+    like($first->id, qr/^sha256:abc123/, 'image id');
+    is_deeply($first->repo_tags, ['nginx:latest', 'nginx:1.25'], 'repo tags');
+    is($first->size, 187654321, 'image size');
+    is($first->containers, 2, 'container count');
   }
 };
 
@@ -109,13 +116,15 @@ subtest 'inspect image' => sub {
     $image = $docker->images->inspect('nginx:latest');
   }
 
-  isa_ok($image, 'API::Docker::Image');
-  ok($image->Id, 'has Id');
+  isa_ok($image, 'API::Docker::Type::ImageInspect');
+  ok($image->id, 'has id');
 
   unless (is_live()) {
-    is($image->Id, 'sha256:abc123', 'image id');
-    is($image->Architecture, 'amd64', 'architecture');
-    is($image->Os, 'linux', 'os');
+    is($image->id, 'sha256:abc123', 'image id');
+    is($image->architecture, 'amd64', 'architecture');
+    is($image->os, 'linux', 'os');
+    is_deeply($image->config->cmd, ['nginx', '-g', 'daemon off;'],
+      'and a nested field is inflated into its own generated class');
   }
 };
 

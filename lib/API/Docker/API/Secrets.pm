@@ -3,7 +3,8 @@ package API::Docker::API::Secrets;
 our $VERSION = '0.004';
 use Moo;
 with 'API::Docker::Role::Filters', 'API::Docker::Role::Using';
-use API::Docker::Secret;
+use API::Docker::Role::Entity::Secret;
+use API::Docker::Type::Secret;
 use Carp qw( croak );
 use MIME::Base64 qw( encode_base64 );
 use namespace::clean;
@@ -22,12 +23,12 @@ use namespace::clean;
         Labels => { env => 'prod' },
     );
 
-    # Inspect a secret -- an API::Docker::Secret
+    # Inspect a secret -- an API::Docker::Type::Secret
     my $secret = $docker->secrets->inspect($created->{ID});
-    say $secret->Spec->{Name};
+    say $secret->spec->name;
 
     # Update: the version comes from the inspect above, and is mandatory
-    my %spec = %{ $secret->Spec };
+    my %spec = %{ $secret->spec->TO_JSON };
     $spec{Labels} = { env => 'staging' };
     $secret->update(%spec);
 
@@ -43,12 +44,24 @@ Accessed via C<< $docker->secrets >>, or through
 L<API::Docker::Role::Using/using> for a run of calls that needs its own
 transport bound: C<< $docker->secrets->using(read_timeout => 5) >>.
 
+L</list> and L</inspect> return L<API::Docker::Type::Secret> objects carrying
+the convenience methods of L<API::Docker::Role::Entity::Secret>. It is B<one>
+class for both, where containers and images have two: the swagger answers
+C<GET /secrets> with an array of the C<Secret> definition and
+C<GET /secrets/{id}> with that same definition. Field names are the
+swagger's own spelling in snake_case -- C<ID> is C<< ->id >>, C<CreatedAt> is
+C<< ->created_at >> -- and the nested ones are generated classes rather than
+the raw HashRefs the old entity kept: C<< $secret->spec >> is an
+L<API::Docker::Type::SecretSpec> and C<< $secret->version >> an
+L<API::Docker::Type::ObjectVersion>, whose C<< ->index >> is what
+C<version_index> reaches.
+
 The value of a secret is write-only. L</list> and L</inspect> return the
-metadata -- C<ID>, C<Spec>, C<CreatedAt>, C<Version> -- and never the payload;
-the engine hands that out to containers, not over this API. If you need to
-read the value back, this is the wrong storage: use
-L<API::Docker::API::Configs>, whose entity offers a C<decoded_data> because
-the daemon actually sends one.
+metadata -- C<< ->id >>, C<< ->spec >>, C<< ->created_at >>,
+C<< ->version >> -- and never the payload; the engine hands that out to
+containers, not over this API. If you need to read the value back, this is
+the wrong storage: use L<API::Docker::API::Configs>, whose entity offers a
+C<decoded_data> because the daemon actually sends one.
 
 =head2 Data is raw bytes; this class does the base64
 
@@ -97,13 +110,16 @@ Read it immediately before the update, and read it again before a retry.
 
 This class makes it the second positional argument and croaks when it is
 missing or not numeric, so the mistake is caught here rather than one round
-trip later. L<API::Docker::Secret/update> supplies it from the entity's own
-C<Version.Index> instead, which is the same value read at the same moment.
+trip later. L<API::Docker::Role::Entity::Secret/update> supplies it from the
+entity's own C<< ->version->index >> instead, which is the same value read at
+the same moment.
 
 The Engine API reference states that only C<Labels> may actually change: every
 other field of the spec must be sent back unchanged from what C<inspect>
-returned. Hence the C<< %spec = %{ $secret->Spec } >> in the SYNOPSIS -- send
-the whole spec back with the one key edited, not just the key you edited.
+returned. Hence the C<< %spec = %{ $secret->spec->TO_JSON } >> in the
+SYNOPSIS -- C<TO_JSON> renders the spec object back into the daemon's own
+spelling, and the whole spec goes back with the one key edited, not just the
+key you edited.
 
 =head2 Swarm, and what Podman serves instead
 
@@ -156,17 +172,25 @@ Reference to L<API::Docker> client. Weak reference to avoid circular dependencie
 
 =cut
 
+# The class is the caller's argument, as it is on the resource classes whose
+# list and inspect really are two definitions -- here both are the swagger's
+# one `Secret`, and passing it keeps the seam in the same place.
+#
+# from_data, not new: this is a daemon response, and the two entry points of
+# API::Docker::Role::Type read it differently. from_data takes the swagger's
+# wire names and nothing else, so a key it has not heard of keeps its own
+# spelling instead of being read as the Perl name of one it has, and a value
+# that disagrees with the swagger costs its own field rather than the whole
+# response. `client` is ours rather than the engine's, so it goes beside the
+# data instead of into it.
 sub _wrap {
-  my ($self, $data) = @_;
-  return API::Docker::Secret->new(
-    client => $self->client,
-    %$data,
-  );
+  my ($self, $class, $data) = @_;
+  return $class->from_data($data, client => $self->client);
 }
 
 sub _wrap_list {
-  my ($self, $list) = @_;
-  return [ map { $self->_wrap($_) } @$list ];
+  my ($self, $class, $list) = @_;
+  return [ map { $self->_wrap($class, $_) } @$list ];
 }
 
 # The wire field is base64; the public contract is raw bytes. Guarding the
@@ -185,10 +209,11 @@ sub list {
   my %params;
   $params{filters} = $self->_normalise_filters($opts{filters})
     if defined $opts{filters};
-  return $self->_wrap_list($self->client->get('/secrets',
-    params => \%params,
-    %{ $self->_request_options },
-  ) // []);
+  return $self->_wrap_list('API::Docker::Type::Secret',
+    $self->client->get('/secrets',
+      params => \%params,
+      %{ $self->_request_options },
+    ) // []);
 }
 
 =method list
@@ -196,7 +221,8 @@ sub list {
     my $secrets = $secrets->list;
     my $secrets = $secrets->list(filters => { label => ['env=prod'] });
 
-List secrets. Returns an ArrayRef of L<API::Docker::Secret> objects.
+List secrets. Returns an ArrayRef of L<API::Docker::Type::Secret> objects,
+each carrying the methods of L<API::Docker::Role::Entity::Secret>.
 
 Options:
 
@@ -230,7 +256,8 @@ sub create {
     );
 
 Create a secret. Returns the daemon's response, a HashRef carrying C<ID> --
-not an L<API::Docker::Secret>, because C<ID> is all the daemon answers with
+not an L<API::Docker::Type::Secret>, because C<ID> is all the daemon answers
+with
 and an entity built from it would carry no C<Spec> and no C<Version>. Call
 L</inspect> on that C<ID> for the object.
 
@@ -258,9 +285,10 @@ sub inspect {
   my ($self, $id) = @_;
   croak __PACKAGE__ . '->inspect secret ID or name required'
     unless defined $id && length $id;
-  return $self->_wrap($self->client->get("/secrets/$id",
-    %{ $self->_request_options },
-  ));
+  return $self->_wrap('API::Docker::Type::Secret',
+    $self->client->get("/secrets/$id",
+      %{ $self->_request_options },
+    ));
 }
 
 =method inspect
@@ -268,9 +296,11 @@ sub inspect {
     my $secret = $secrets->inspect($id);
     my $index  = $secret->version_index;      # what update needs
 
-Get a secret's metadata by ID or name. Returns an L<API::Docker::Secret>, with
-C<ID>, C<Spec>, C<CreatedAt>, C<UpdatedAt> and C<Version>. Never the value --
-see L<API::Docker::Secret/"There is no accessor for the value">.
+Get a secret's metadata by ID or name. Returns an
+L<API::Docker::Type::Secret> -- the same class L</list> returns -- with
+C<< ->id >>, C<< ->spec >>, C<< ->created_at >>, C<< ->updated_at >> and
+C<< ->version >>. Never the value -- see
+L<API::Docker::Role::Entity::Secret/"There is no accessor for the value">.
 
 =cut
 
@@ -295,7 +325,7 @@ sub update {
 =method update
 
     my $secret = $secrets->inspect($id);
-    my %spec   = %{ $secret->Spec };
+    my %spec   = %{ $secret->spec->TO_JSON };
     $spec{Labels} = { env => 'staging' };
 
     $secrets->update($id, $secret->version_index, %spec);
@@ -306,8 +336,9 @@ empty body.
 
 C<$version> is mandatory and is the C<Version.Index> from L</inspect>; see
 L</"update takes the current version, and it is mandatory"> for why it cannot
-be guessed and why the whole spec goes back. L<API::Docker::Secret/update>
-fills it in from the entity it was called on. Podman does not implement this
+be guessed and why the whole spec goes back.
+L<API::Docker::Role::Entity::Secret/update> fills it in from the entity it
+was called on. Podman does not implement this
 endpoint and answers 501.
 
 =cut
@@ -336,7 +367,11 @@ returns nothing; a secret that is not there is a 404 and croaks.
 
 =item * L<API::Docker> - Main Docker client
 
-=item * L<API::Docker::Secret> - Secret entity class
+=item * L<API::Docker::Role::Entity::Secret> - the convenience methods the
+returned objects carry
+
+=item * L<API::Docker::Type::Secret> - the fields L</list> and L</inspect>
+return
 
 =item * L<API::Docker::API::Configs> - Configs, the same shape without the
 secrecy

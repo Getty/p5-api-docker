@@ -17,18 +17,21 @@ subtest 'list networks' => sub {
 
   is(ref $networks, 'ARRAY', 'returns array');
   if (@$networks) {
-    isa_ok($networks->[0], 'API::Docker::Network');
-    ok($networks->[0]->Name, 'has Name');
+    isa_ok($networks->[0], 'API::Docker::Type::Network');
+    ok($networks->[0]->name, 'has name');
   }
 
   unless (is_live()) {
     is(scalar @$networks, 2, 'two networks');
 
     my $first = $networks->[0];
-    is($first->Name, 'bridge', 'network name');
-    is($first->Driver, 'bridge', 'network driver');
-    is($first->Scope, 'local', 'network scope');
-    ok(!$first->Internal, 'not internal');
+    is($first->name, 'bridge', 'network name');
+    is($first->driver, 'bridge', 'network driver');
+    is($first->scope, 'local', 'network scope');
+    ok(!$first->internal, 'not internal');
+    is($first->ipam->config->[0]->subnet, '172.17.0.0/16',
+      'and IPAM is inflated into its own generated classes rather than '
+      . 'staying the raw HashRef the old entity kept');
   }
 };
 
@@ -66,8 +69,8 @@ subtest 'network lifecycle' => sub {
   register_cleanup(sub { eval { $docker->networks->remove($id) } }) if is_live();
 
   my $network = $docker->networks->inspect($id);
-  isa_ok($network, 'API::Docker::Network');
-  ok($network->Name, 'has Name');
+  isa_ok($network, 'API::Docker::Type::Network');
+  ok($network->name, 'has name');
 
   unless (is_live()) {
     $docker->networks->connect($id, Container => 'abc123');

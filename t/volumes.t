@@ -17,19 +17,19 @@ subtest 'list volumes' => sub {
 
   is(ref $volumes, 'ARRAY', 'returns array');
   if (@$volumes) {
-    isa_ok($volumes->[0], 'API::Docker::Volume');
-    ok($volumes->[0]->Name, 'has Name');
+    isa_ok($volumes->[0], 'API::Docker::Type::Volume');
+    ok($volumes->[0]->name, 'has name');
   }
 
   unless (is_live()) {
     is(scalar @$volumes, 2, 'two volumes');
 
     my $first = $volumes->[0];
-    is($first->Name, 'my-data', 'volume name');
-    is($first->Driver, 'local', 'volume driver');
-    is($first->Scope, 'local', 'volume scope');
-    is_deeply($first->Labels, { project => 'test' }, 'volume labels');
-    like($first->Mountpoint, qr{/var/lib/docker/volumes/my-data}, 'mountpoint');
+    is($first->name, 'my-data', 'volume name');
+    is($first->driver, 'local', 'volume driver');
+    is($first->scope, 'local', 'volume scope');
+    is_deeply($first->labels, { project => 'test' }, 'volume labels');
+    like($first->mountpoint, qr{/var/lib/docker/volumes/my-data}, 'mountpoint');
   }
 };
 
@@ -66,14 +66,14 @@ subtest 'volume lifecycle' => sub {
 
   my $name = is_live() ? 'api-docker-test-vol-' . $$ : 'test-vol';
   my $volume = $docker->volumes->create(Name => $name);
-  isa_ok($volume, 'API::Docker::Volume');
-  ok($volume->Name, 'created volume has Name');
+  isa_ok($volume, 'API::Docker::Type::Volume');
+  ok($volume->name, 'created volume has a name');
 
   register_cleanup(sub { eval { $docker->volumes->remove($name, force => 1) } }) if is_live();
 
   my $inspected = $docker->volumes->inspect($name);
-  isa_ok($inspected, 'API::Docker::Volume');
-  is($inspected->Driver, 'local', 'volume driver is local');
+  isa_ok($inspected, 'API::Docker::Type::Volume');
+  is($inspected->driver, 'local', 'volume driver is local');
 
   $docker->volumes->remove($name);
   pass('volume removed');
