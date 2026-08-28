@@ -351,7 +351,23 @@ site_ok '_read_chunked: the chunk header stops halfway',
       { line => '1a' }, { timeout => $_[0] });
   },
   sub { $client->_read_chunked($_[0], $_[1]) },
-  raises => truncated_ok(phase => 'chunk-header', partial => 'hello');
+  raises => truncated_ok(phase => 'chunk-header', partial => 'hello',
+    message => qr/inside a chunk header, after 2 bytes of one/);
+
+# The other half of the same phase (karr k77), the one _read_head's
+# header-block already pins (karr k73): the stream ends where the next chunk
+# header would start, with no terminating zero chunk ever sent. Undecidable
+# from 'stops halfway' by phase alone -- both raise 'chunk-header' -- so only
+# the message tells them apart, and only a script that never sends a byte of
+# the next header exercises this half rather than the other one.
+site_ok '_read_chunked: the chunk header never arrives',
+  sub {
+    scripted({ line => "5\r\n" }, { bytes => 'hello' }, { line => "\r\n" },
+      { timeout => $_[0] });
+  },
+  sub { $client->_read_chunked($_[0], $_[1]) },
+  raises => truncated_ok(phase => 'chunk-header', partial => 'hello',
+    message => qr/where a chunk header belongs, with no terminating zero chunk/);
 
 site_ok '_read_chunked: the chunk data stops short',
   sub {
@@ -404,7 +420,33 @@ sub drive_stream {
     drive_stream(\@got),
     raises => sub {
       truncated_ok(phase => 'chunk-header', partial => '',
-        summary => { delivered => 1, stopped => 0 })->(@_);
+        summary => { delivered => 1, stopped => 0 },
+        message => qr/inside a chunk header, after 2 bytes of one/)->(@_);
+      is_deeply \@got, ['hello', 'hello'],
+        'both runs delivered the completed chunk';
+    };
+}
+
+# The third site sharing this phase (karr k77), and the other half of it: the
+# stream ends where the next chunk header would start rather than inside one.
+# A third site is what made it worth re-checking the whole file for the same
+# gap header-block had already closed at three sites of its own (karr k73) --
+# this is the second phase found with two ways to run out and only one
+# pinned, and it turned up twice over (buffered and streamed), not once.
+{
+  my @got;
+  site_ok 'streaming, chunked: the chunk header never arrives',
+    sub {
+      scripted($HEAD_OK, { line => "Transfer-Encoding: chunked\r\n" }, $BLANK,
+        { line => "5\r\n" }, { bytes => 'hello' }, { line => "\r\n" },
+        { timeout => $_[0] });
+    },
+    drive_stream(\@got),
+    raises => sub {
+      truncated_ok(phase => 'chunk-header', partial => '',
+        summary => { delivered => 1, stopped => 0 },
+        message => qr/where a chunk header belongs, with no terminating zero chunk/)
+        ->(@_);
       is_deeply \@got, ['hello', 'hello'],
         'both runs delivered the completed chunk';
     };
