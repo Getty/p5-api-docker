@@ -2,13 +2,16 @@
 
 `API::Docker::Type` is imported, not inherited. Its `import` pulls Moo, the
 type vocabulary and the serialisation role into the calling package, then
-installs one keyword.
+installs two keywords: `docker` and `docker_extends`.
 
     package API::Docker::Type::Port;
     use API::Docker::Type;      # gives you Moo, the types, and `docker`
 
-This mirrors `IO::K8s::Resource` in ../io-k8s-p5. Read that file — it is the
-same design and it works.
+The design comes from `IO::K8s::Resource` in ../io-k8s-p5, which solves the
+same problem for Kubernetes. The built implementation is
+`lib/API/Docker/Type.pm` — read that first; it has diverged where Docker
+needed it to, most visibly in storing a recursive type descriptor rather than
+IO::K8s's flat `is_array_of_objects` flags.
 
 ## What `docker` does
 
@@ -65,5 +68,9 @@ unknown one is kept as-is under its original name.
 
 Docker distinguishes an absent flag from a false one. `Bool` must serialise to
 JSON `true`/`false` and never to `1`/`""`, and an unset Bool must be absent
-rather than false. This is the same trap `IO::K8s` documents; borrow its
-solution rather than inventing one.
+rather than false. Two traps make this harder than it looks in Perl: every
+reference is true, so `\0` and a `JSON::PP::Boolean` must be dereferenced
+rather than tested, and `'false'` is a non-empty string and therefore true, so
+the strings have to be spelled out. `_normalize_bool` in
+`lib/API/Docker/Type.pm` is the one place this is decided; anything that can
+mean true or false goes through it, and anything that cannot dies.

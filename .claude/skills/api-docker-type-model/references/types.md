@@ -2,15 +2,22 @@
 
 ## Types
 
-    Str  Int  Num  Bool          scalars
-    [Str]                        an array of scalars
-    ['Core::PortBinding']        an array of typed objects
-    'Core::HostConfig'           a single typed object
-    { Str, Str }                 a hash whose KEYS ARE CALLER DATA
-    { Str, ['Core::PortBinding'] }  same, values are typed
+    Str  Int  Num  Bool           scalars
+    [Str]                         an array of scalars
+    [[Str]]                       an array of arrays of scalars
+    ['PortBinding']               an array of typed objects
+    'HostConfig'                  a single typed object
+    { Str, Str }                  a hash whose KEYS ARE CALLER DATA
+    { Str, ['PortBinding'] }      same, values are typed
 
-A quoted class name is a short name, expanded through the same prefix map
-`IO::K8s::Resource` uses. Keep the map in one place.
+Docker's `definitions:` are flat — there are no groups and no prefix map. A
+quoted short name is expanded under `API::Docker::Type::`, and an inline
+object nests under its owner (`Mount::BindOptions`). `+Full::Class::Name`
+escapes the expansion.
+
+The swagger's `allOf` is not a type but inheritance: `docker_extends 'Resources'`
+at the top of the class, which merges the parent's registry entries first so
+serialisation keeps the swagger's own field order.
 
 ## Keys that are caller data — never translate these
 

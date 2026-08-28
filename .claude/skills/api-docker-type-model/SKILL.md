@@ -1,26 +1,54 @@
 ---
 name: api-docker-type-model
-description: "Use when writing or changing a class under API::Docker::Type::*, the API::Docker::Type DSL, maint/spec-drift-check.pl, or anything under spec/ — generating typed classes from Docker's swagger, mapping snake_case attributes to the daemon's CamelCase, or deciding what a field's type and version note should say."
+description: "Use when working on API::Docker's typed object model — a class under API::Docker::Type::*, the API::Docker::Type DSL, maint/spec-to-type.pl, maint/spec-drift-check.pl, or anything under spec/. Also when a type class is wrong, out of date or missing, when a field's Perl name or =attr prose needs changing, when adding classes for a newer swagger, or when a drift-check or --verify run reports a difference."
 ---
 
-# API::Docker::Type — generated classes over the Docker Engine API
+# API::Docker::Type — the generated model over the Docker Engine API
 
-Every class under `API::Docker::Type::*` is a Perl mirror of one `definitions:`
-entry in Docker's swagger. They are written from the spec, not from a running
-daemon, and `maint/spec-drift-check.pl` is what keeps that claim true.
+Every class under `API::Docker::Type::*` mirrors one `definitions:` entry in
+Docker's swagger. They are **generated** by `maint/spec-to-type.pl` out of
+`spec/`, and `maint/spec-drift-check.pl` is what keeps them honest.
 
-The working reference is `../io-k8s-p5`, which does this for Kubernetes.
-Read `lib/IO/K8s/Resource.pm` and `maint/spec-drift-check.pl` there before
-writing the DSL — the load-bearing idea is the attribute **registry**, not the
-classes.
+## The two rules that override everything else
 
-## The shape of a class
+**Never hand-edit a file under `lib/API/Docker/Type/`.** Not one character,
+not a typo, not a comma. `t/spec_to_type.t` runs the generator and asserts
+that every class is byte-identical to what it emits — a hand edit turns the
+suite red, and the edit is lost the moment anyone regenerates. Change the
+generator or its data files instead; the next section says which.
+
+**The generator only ever creates.** It writes a file that does not exist and
+refuses to overwrite one that does. There is no `--force` and no bulk
+refresh, and the refusal is enforced against relative paths, absolute paths,
+`maint/../lib`, symlinks and subdirectories. When a newer spec lands, the
+drift checker reports the difference and a human decides field by field. A
+generated class is one that someone has since read, corrected and
+documented; a re-run would throw that away silently.
+
+## Where a change belongs
+
+| What you want to change | Where it goes |
+|---|---|
+| The prose of an `=attr`, a `# ABSTRACT`, a DESCRIPTION | `maint/spec-to-type-prose.yaml` |
+| The Perl spelling of a field | `maint/spec-to-type-names.yaml` |
+| The class name of an inline object | `inline_class_names` in `maint/spec-drift-exceptions.yaml` |
+| A deliberate deviation from the spec | the other keys of that same exceptions file |
+| How a swagger shape becomes a type | `maint/spec-common.pl` (shared by both scripts) |
+| How a class is rendered | `maint/spec-to-type.pl` |
+| What an attribute *does* at runtime | `lib/API/Docker/Type.pm`, `lib/API/Docker/Role/Type.pm` |
+
+After any of these, `perl maint/spec-to-type.pl --verify DIR` must again say
+the diff is empty for every class.
+
+## What a generated class looks like
 
 ```perl
 package API::Docker::Type::HostConfig;
 # ABSTRACT: Container configuration that depends on the host
 our $VERSION = '0.004';
 use API::Docker::Type;
+
+docker_extends 'Resources';
 
 docker binds => [Str];
 
@@ -30,66 +58,79 @@ A list of volume bindings for this container. Serialised as C<Binds>.
 
 =cut
 
-docker port_bindings => { Str, ['Core::PortBinding'] }, since => '1.41';
-
-=attr port_bindings
-
-Port mapping, keyed by the container port. Serialised as C<PortBindings>.
-The keys are the caller's data and are never translated.
-
-=cut
+docker port_bindings => { Str, ['PortBinding'] }, since => '1.41';
 ```
 
-Four things every attribute states: the **snake_case name**, the **type**,
-the **CamelCase wire name** (derived, not written — see below), and a POD
-block taken from the spec's own `description`.
+Every attribute carries a snake_case name, a type, its CamelCase wire name
+(derived unless `wire => ...` says otherwise) and an `=attr` block taken from
+the spec's own `description`. Docker's definitions are flat, so a quoted
+class name is a short name under `API::Docker::Type::` — there is no prefix
+map. `docker_extends` is how the swagger's `allOf` is expressed.
 
 ## The rules that are not obvious
 
-**The wire name is derived, and the derivation is one-way.** `port_bindings` →
-`PortBindings` works; `PortBindings` → `port_bindings` does not round-trip for
-every field (`CPUShares`, `OOMKillDisable`, `ID`). So the registry stores the
-spec's spelling verbatim and derives the Perl name from it — never the other
-way. When the derivation would produce a name that collides or reads wrong,
-the DSL takes an explicit `wire => 'CPUShares'`.
+**The Perl name is derived from the spec's spelling, never the reverse.**
+`PortBindings` → `port_bindings` works; going back does not, for any name
+with a run of capitals — `CPUShares`, `OOMKillDisable`, `ID`, `NanoCPUs`. So
+those 70 names live in `spec-to-type-names.yaml` as a curated map, and the
+generator refuses to guess: an unlisted capital-run name stops the run. The
+round-trip guard does not save you here, because `DeviceIDs → device_i_ds`
+derives back correctly and still reads wrong.
 
-**Some keys are the caller's data and must never be translated.** In
-`Labels`, `ExposedPorts`, `PortBindings`, `Volumes`, `StorageOpt`, `Tmpfs`,
-`Sysctls` and `Annotations` the *keys* come from the user. A `HashRef` type
-whose keys are data is written `{ Str, $value_type }` and the DSL leaves those
-keys alone. Getting this wrong turns a label `com.example.Some-Label` into
-something the caller never wrote. This is the single most damaging mistake in
-the whole model.
+**Some keys are the caller's data and must never be translated.** Where the
+swagger says `additionalProperties`, the *keys* come from the user —
+`Labels`, `Annotations`, `ExposedPorts`, `PortBindings`, `Volumes`,
+`StorageOpt`, `Tmpfs`, `Sysctls`, `DriverOpts`, `Options` and 30 more sites.
+Find them by the keyword, not by the type: one of the 40 declares
+`additionalProperties` with no `type: object` above it, and reading the spec
+by `type` alone degrades that field to untyped passthrough.
+Such a field is typed `{ Str, $value_type }` and the DSL passes its keys
+through byte for byte. Getting this wrong turns a label
+`com.example.Some-Label` into something the caller never wrote, and it is the
+single most damaging mistake the model can make.
 
-**An unknown field passes through unchanged.** A caller who sets a field this
-model has never heard of — because their engine is newer than the spec we
-generated from — must still reach the daemon. The model translates what it
-knows and forwards the rest verbatim. A model that drops unknown fields would
-cost this distribution the property that a newer engine works on day one.
+**An unknown field passes through unchanged.** A caller whose engine is newer
+than the spec we generated from must still reach the daemon; the model
+translates what it knows and forwards the rest verbatim. This is not
+theoretical: a real Podman `/info` answers with seven fields the swagger does
+not have, and `ImageSummary` still serves `VirtualSize`, which Docker dropped
+from the spec after v1.41.
 
 **`since` is documentation, never a check.** It records which API version
-introduced the field, derived by diffing two specs. Nothing is validated,
-warned about or dropped at runtime. Podman serves fields its announced version
-does not promise, and refuses ones it does — we are not the authority on what
-an engine can do.
+introduced a field, derived by diffing the specs in `spec/` against each
+other — the swagger itself carries no per-field version. Nothing is
+validated, warned about or dropped at runtime. Podman serves fields its
+announced version does not promise and refuses ones it does; we are not the
+authority on what an engine can do.
 
 ## Where the values come from
 
-`spec/` holds the swagger, checked in. Generate against the newest published
-version; keep the older ones for the diff that produces `since`.
+`spec/` holds the swagger verbatim as Docker publishes it, so a `curl | diff`
+still checks out. Generate against the newest version present and keep the
+older ones for the diff that produces `since`.
 
     https://docs.docker.com/reference/api/engine/version/v1.51.yaml
 
-The `description` of a field in the spec is the `=attr` text. Rewrap it, fix
-its grammar, keep its meaning. Do not invent a description for a field the
-spec leaves undescribed — say it is undocumented upstream.
+Parse it with `YAML::XS`, not `YAML::PP`: Docker's `example:` blocks are
+multi-line flow maps whose closing brace is under-indented, and YAML::PP
+refuses the file. Both maint scripts read the spec through
+`maint/spec-common.pl` so field order comes from one place.
+
+A field's `description` is its `=attr` text — rewrapped, its grammar
+straightened, its meaning intact. Where the spec describes nothing, say it is
+undocumented upstream rather than inventing a sentence. Where the spec
+describes neither a definition nor its schema, the generator derives what it
+is from `paths:` or from the definitions that reference it; that is a
+measurement of the same file, not an invention.
 
 ## Completion criteria
 
-A class is done when `maint/spec-drift-check.pl` reports it with no missing
-and no extra fields, every attribute has an `=attr` block, and `prove -lr t/`
-is green. A class nobody can check against the spec is not done, however good
-it looks.
+- `perl maint/spec-to-type.pl --verify DIR` — every class compared, every one
+  identical, the diff empty.
+- `perl maint/spec-drift-check.pl --baseline …` — zero in all seven tiers.
+- `prove -lr t/` green, and `dzil test` green so the POD is known to weave.
+
+A class nobody can check against the spec is not done, however good it looks.
 
 ## Related
 
