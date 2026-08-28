@@ -1,0 +1,45 @@
+---
+claimed_at: 2026-08-28T00:26:18Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T00:26:18Z
+created: 2026-08-27T23:20:59Z
+id: 71
+priority: low
+started: 2026-08-27T23:39:00Z
+status: done
+tags:
+- pod
+- consistency
+title: Entity classes document only a subset of their fields
+updated: 2026-08-28T00:26:18Z
+---
+
+Found during the pre-release audit and confirmed while closing #68.
+
+The four older entity classes carry `has` declarations with no `=attr` block
+at all, so the woven POD documents a subset of what the object actually
+answers to:
+
+  API::Docker::Volume   CreatedAt, Status, Labels, Scope, Options, UsageData
+  API::Docker::Container, ::Image, ::Network  -- same pattern, a
+    representative subset documented rather than every daemon field
+
+The three entity classes added in this round (Plugin, Secret, Config) document
+every field they carry, so the convention the distribution follows now is the
+complete one -- these four predate it.
+
+Not release-blocking: nothing is wrong, only absent, and the accessors work
+whether or not they are documented. It is inconsistency rather than error.
+
+Two things to decide before doing it:
+  - whether every daemon field deserves an =attr, or whether a class should
+    document the ones a caller has reason to touch and say so. The daemon
+    response for a container is enormous; documenting all of it would bury
+    the useful half.
+  - where the descriptions come from. For #68 the RFC3339 shape of
+    CreatedAt/UpdatedAt was taken from a captured fixture rather than
+    guessed, and that is the standard to hold: a description that invents a
+    format is worse than no description.
+
+Related: #68, which closed the same gap for Secret and Config.
