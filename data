@@ -1,0 +1,55 @@
+---
+claimed_at: 2026-08-28T00:26:18Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T00:26:18Z
+created: 2026-08-28T00:04:11Z
+id: 75
+priority: medium
+started: 2026-08-28T00:08:49Z
+status: done
+tags:
+- tests
+title: t/images.t live branch reads an empty RepoTags as a tag
+updated: 2026-08-28T00:26:18Z
+---
+
+Pre-existing, not caused by #72 -- reproduced against a pristine `git archive
+HEAD` tree. t/images.t line 61, the live branch of the 'inspect image'
+subtest:
+
+  my $name = $images->[0]->RepoTags ? $images->[0]->RepoTags->[0]
+                                    : $images->[0]->Id;
+
+An untagged image answers `RepoTags => []`. An empty ArrayRef is TRUE, so the
+ternary takes the tag branch and `->[0]` is undef; inspect(undef) then croaks
+'Image name required' and the subtest dies with no plan.
+
+Measured 2026-08-28 against the rootless Podman socket
+(unix:///run/user/1000/podman/podman.sock, API 1.41), whose store holds two
+<none>:<none> images sorted ahead of the tagged ones:
+
+  sha256:28cf8998...  RepoTags=[]
+  sha256:a9d745d1...  RepoTags=[]
+  sha256:d529dd0c...  RepoTags=["docker.io/library/alpine:3","docker.io/library/alpine:latest"]
+  sha256:c6348fa8...  RepoTags=["docker.io/library/busybox:latest"]
+
+So `API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock prove -lr
+t/` fails on that one file, and has been failing on it for as long as those
+dangling images have been there. The same run against Docker
+(unix:///var/run/docker.sock, 29.7.2, API 1.55) is green, because that store
+has no untagged image.
+
+The fix is the emptiness test the code meant to make:
+
+  my $tags = $images->[0]->RepoTags;
+  my $name = ref $tags eq 'ARRAY' && @$tags ? $tags->[0] : $images->[0]->Id;
+
+Better still, pick the first image in the list that HAS a tag, and fall back
+to an Id only when none does -- inspect by Id works on both engines, so
+either is correct, but the current expression is right for neither.
+
+While measuring this, `alpine:latest` was pulled into both stores:
+t/containers_stats_error.t's live subtest needs it and answered
+`404 no such image: docker.io/library/alpine:latest: image not known`
+without it, on both engines. That may deserve a skip rather than a failure.
