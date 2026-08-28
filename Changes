@@ -2,6 +2,18 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - New `t/type_fixture_passthrough.t`: every fixture under `t/fixtures/*.json`
+    is fed through the generated class its endpoint returns, and `TO_JSON`
+    must carry every key the daemon sent. Pins the case that motivated it --
+    `ImageSummary`'s `VirtualSize`, gone from the swagger since v1.44 but
+    still sent by the engine, must stay filed in `unknown_fields` and reach
+    `TO_JSON` unchanged rather than being dropped by a future cleanup.
+  - `t/entity_container.t`'s subtest on the generated container classes now
+    opts out of live mode like its two siblings already did; it was
+    asserting `containers_list.json`'s captured id and size against whatever
+    a live daemon actually holds, which is nothing on a container-less
+    machine. `API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock
+    prove -lr t/` is green again (karr #86).
   - `containers->list` and `containers->inspect` return generated type
     objects -- an `API::Docker::Type::ContainerSummary` per list entry, an
     `API::Docker::Type::ContainerInspectResponse` for an inspect -- in place
