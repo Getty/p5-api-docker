@@ -1,0 +1,37 @@
+---
+class: standard
+completed: 2026-08-28T01:14:41Z
+created: 2026-08-28T01:07:56Z
+id: 78
+priority: high
+started: 2026-08-28T01:14:41Z
+status: done
+tags:
+- transport
+- docs
+title: 'Role::HTTP POD still shows the per-method timeout options karr #74 removed'
+updated: 2026-08-28T01:14:41Z
+---
+
+karr #74 took read_timeout/connect_timeout out of every resource method; they are carried by API::Docker::Role::Using->using now. lib/API/Docker/Role/HTTP.pm was locked for karr #73 during that change, so its POD still documents the old surface. Four spots, line numbers as of 5af77a1:
+
+  217  $docker->system->events(read_timeout => 0);       # this one may wait
+  244  $docker->system->version(connect_timeout => 0);    # this one may wait
+ 1671  my $frames = $docker->containers->attach($id, read_timeout => 2);
+ 1707  $docker->containers->attach($id, read_timeout => 2, on_frame => ...)
+
+Each becomes $docker->system->using(read_timeout => 0)->events and so on.
+
+Two sentences beside them are wrong as well:
+
+  220  'and of nearly every resource method that reaches the daemon' (read_timeout attr)
+  227  'for which calls carry it and the handful that do not'
+  251  the same 'nearly every resource method' sentence on connect_timeout
+  254  'for which calls carry it'
+
+There is no handful that does not any more: every resource method carries
+what its class was cloned with. The per-request option of get/post/put/
+delete_request/head is unchanged and stays documented as it is.
+
+Verify against the file as it stands after karr #73 lands -- the line numbers
+will have moved.
