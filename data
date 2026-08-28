@@ -1,0 +1,173 @@
+---
+claimed_at: 2026-08-28T14:28:26Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:28:26Z
+created: 2026-08-28T04:24:51Z
+id: 83
+priority: high
+started: 2026-08-28T09:34:34Z
+status: done
+tags:
+- types
+- architecture
+title: A generated class croaks on a daemon value whose type disagrees with the swagger
+updated: 2026-08-28T14:28:26Z
+---
+
+MAINTAINER DECISION. Found 2026-08-28 while building k79 step 6 for
+containers; a test in t/containers_endpoints.t caught it.
+
+Measured:
+
+  API::Docker::Type::ContainerInspectResponse->new(Id => "x", State => "exited")
+  -> dies, Error::TypeTiny::Assertion
+     Value "exited" did not pass type constraint
+     Maybe[InstanceOf["API::Docker::Type::ContainerState"]] (in $args->{"state"})
+
+So a single field whose value disagrees with spec/v1.51.yaml makes the whole
+response unusable, not just that field. This is a property of the model as a
+whole (any object-, array- or scalar-typed attribute), not of containers.
+
+It contradicts what the model's own POD says it does:
+
+  API::Docker::Type, _isa_for:  "croaking while inflating a response we could
+  otherwise use is not an improvement"
+  API::Docker::Type, on `required`: "the same engines omit fields the
+  specification calls required, and croaking on a response we could otherwise
+  use is not an improvement"
+  API::Docker::Role::Type, unknown_fields: "a field the caller set must never
+  be dropped because we have not heard of it"
+
+and it is the same class of risk k79's decision 2 rules out for version
+gating: we are not the authority on what an engine answers. Podman announces
+1.44 and Docker 1.55 on this machine; the model is generated from 1.51.
+
+Where it already bites: API::Docker::API::Containers::_assert_container_running
+is attach's pre-flight guard, documented and measured as fail-open ("a guard
+that is unsure must not be the thing that breaks a working call" -- attaching
+to a stopped container destroys its exit status on Podman). It now has to
+eval the inspect and swallow an Error::TypeTiny to keep that contract. That
+workaround is one method deep; the property is 201 classes wide.
+
+The decision, which is not an agent's to make:
+
+  a) leave it -- a response that disagrees with the swagger is a hard error
+  b) keep the offending value in unknown_fields under its wire name, so the
+     object inflates and nothing is lost (matches the passthrough invariant
+     and k81)
+  c) keep the raw value in the attribute and drop the isa constraint for
+     object-typed fields
+
+If (b) or (c): API::Docker::API::Containers::_assert_container_running loses
+its eval, and t/containers_endpoints.t's "a State that is a string" case
+starts proving the model rather than the workaround.
+
+Lane: api-docker-type-writer (the DSL), with api-docker-engine-worker for
+whether any engine really answers a shape the swagger does not describe.
+
+
+MEASURED 2026-08-28 by the orchestrating agent, to answer this ticket's own
+open question ("whether any engine really answers a shape the swagger does
+not describe"). Read-only probes against the rootless Podman on this machine
+(5.8.4); nothing was created, started or removed.
+
+  Real Podman responses fed through their generated class:
+    SystemVersion   inflates
+    SystemInfo      inflates; 7 fields the swagger does not have --
+                    BuildahVersion, CPURealtimePeriod, CPURealtimeRuntime,
+                    Rootless, SwapFree, SwapTotal, Uptime
+    ImageSummary    inflates (5 objects); 5 unknown -- Dangling, Digest,
+                    History, Names, VirtualSize
+    ImageInspect    inflates; 2 unknown -- ContainerConfig, VirtualSize
+    Network (list and inspect)  inflates; nothing unknown
+  No container or volume existed to probe, and creating one is a write.
+
+  NOT ONE type conflict in any of them. Engines diverge from the swagger in
+  CONTENT constantly -- 14 distinct unknown fields on one idle machine -- and
+  the passthrough invariant already handles that without a croak.
+
+  Docker's own swagger almost never changes a field's type: across v1.41 ->
+  v1.51 exactly two fields changed shape, and both are the same shape renamed
+  (ImageInspect.GraphDriver ref:GraphDriverData -> ref:DriverData;
+  Task.Status inline object -> ref:TaskStatus). So version drift is not a
+  source of type conflicts either.
+
+  And the case that triggered this ticket is SYNTHETIC. t/containers_endpoints.t
+  line 576's `State => 'exited'` sits in a list headed "Anything the check
+  cannot read is not evidence that the container is stopped" -- it was written
+  as a defensive shape for the guard, not captured from an engine.
+
+WHAT THAT DOES AND DOES NOT SETTLE
+
+  It does not argue for (a). It argues that (b) is cheap: the case is rare,
+  and a rare event that makes a whole usable response unusable is exactly the
+  kind you do not want, while a rare passthrough costs nothing. Rarity is an
+  argument for the lenient option, not against it.
+
+  Recommendation: (b). It is continuous with the passthrough invariant that
+  already exists and is already tested; a typed attribute stays trustworthy
+  (if set, it is the declared type) which (c) gives up; nothing is lost, since
+  the value is kept under its wire name and TO_JSON writes it back; and
+  _assert_container_running loses its eval.
+
+
+INDEPENDENT SECOND OPINION 2026-08-28 (Codex, read-only cross-check),
+which sharpens (b) rather than agreeing with it:
+
+  Take (b), but ONLY for from_data. Keep new strict.
+
+  The reasoning: the two entry points have different obligations. from_data
+  inflates an engine RESPONSE -- the library is obliged to salvage what it
+  can, and a hard error there makes every other field of a usable inspect
+  inaccessible over one divergent Podman field. new builds a REQUEST out of
+  caller-authored data, where a value that disagrees with the spec is a typo
+  worth dying on, not an engine being itself.
+
+    from_data({ Id => "x", State => "exited" })
+      ->id                        "x"
+      ->state                     undef
+      ->unknown_fields->{State}   "exited"
+    new(State => "exited")        still dies
+
+  Against (c): dropping the isa on object-typed fields destroys the accessor's
+  contract -- a caller could never know whether ->state is a ContainerState, a
+  string or an array -- and it does not even work as written, because the
+  serialiser calls $value->TO_JSON unconditionally, so inflation would succeed
+  and serialisation would then die instead.
+
+  What (b) costs, stated plainly: the typed accessor is unset although the
+  field was present, so a caller who wants the raw value must know to look in
+  unknown_fields; and "absent" becomes indistinguishable from "present but
+  rejected" unless that is recorded separately.
+
+  It also forces the precedence question in k85 defect 4: TO_JSON currently
+  lets a known field overwrite a same-named entry in unknown_fields, so a
+  preserved mismatched value would be silently dropped on the way back out.
+  Decide that together with this, or give rejected values their own store.
+
+
+DECIDED 2026-08-28 by the maintainer: OPTION (b), READ SIDE ONLY.
+
+  from_data({ Id => "x", State => "exited" })
+    ->id                       "x"
+    ->state                    undef
+    ->unknown_fields->{State}  "exited"    under the WIRE name
+    ->TO_JSON                  carries State => "exited" unchanged
+
+  new(State => "exited")       still dies
+
+The two entry points keep different obligations: from_data inflates an engine
+RESPONSE and salvages what it can, new builds a REQUEST out of caller-authored
+data where a disagreeing value is a typo worth dying on.
+
+Two conditions attached to the implementation:
+  - a rejected value must stay distinguishable from one that was never sent;
+    if that is not visible through unknown_fields alone, the POD says so.
+  - the leniency hangs only off the response path.
+
+Being implemented together with k85 defect 1, since both turn on what
+from_data does with a value it cannot use. k85 defect 4 (the TO_JSON
+precedence) folds in with it.
+
+Implemented as option (b), read side only, in dc59680, together with k85 defect 1 -- the two were the same question. Measured after: from_data({Id=>'x',State=>'exited'}) gives ->id 'x', ->state undef, ->rejected_fields {State=>'state'}, and TO_JSON carrying State=>'exited' unchanged; new(State=>'exited') still dies. Both of the maintainer's conditions met: a rejected field is distinguishable from one never sent, through the new rejected_fields attribute, and the leniency hangs on the from_data entry point rather than on a flag -- pinned by a test that constructs under the flag and asserts new still croaks. One property to know: rejection is field-granular, so one bad element rejects its whole array and keeps it raw.
