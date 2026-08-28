@@ -49,8 +49,10 @@ for this distribution.
 11. **The version in `lib/API/Docker.pm` is the NEXT release.** What's
     currently on CPAN is the previous tag. `dzil release` bumps the
     version automatically — never bump it by hand before a release. The
-    same literal is repeated in all 23 `lib/**/*.pm` files and must
-    stay in sync.
+    same literal is repeated in every `lib/**/*.pm` file and must
+    stay in sync -- 45 of them as of 0.004, and the generated
+    `API::Docker::Type::*` classes make that number move. Count them, do
+    not trust a number written down here.
 
 12. **`{{$NEXT}}` in `Changes` is the placeholder for the upcoming
     release.** Add entries under it as you change behavior; `dzil
