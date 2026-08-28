@@ -1,0 +1,188 @@
+---
+claimed_at: 2026-08-28T14:28:05Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:28:05Z
+created: 2026-08-28T02:43:52Z
+id: 79
+priority: high
+started: 2026-08-28T02:49:14Z
+status: done
+tags:
+- types
+- model
+- architecture
+title: 'Typed object model: generate API::Docker::Type::* from Docker''s swagger'
+updated: 2026-08-28T14:28:05Z
+---
+
+DECIDED with the maintainer 2026-08-28, after looking at ../io-k8s-p5, which
+solves the same problem for Kubernetes. Read that project before starting:
+it is the working reference, not an analogy.
+
+WHAT IS BEING BUILT
+
+A typed object model over the Docker Engine API, generated from Docker's own
+swagger, replacing the seven hand-written entity classes.
+
+  $container->State->Running          instead of  $container->{State}{Running}
+  ->create(host_config => { port_bindings => ... })  reaching the daemon as
+                                       HostConfig => { PortBindings => ... }
+
+THE DECISIONS ALREADY MADE -- do not re-litigate these
+
+1. GENERATED CLASSES REPLACE THE ENTITY CLASSES. API::Docker::Container,
+   ::Image, ::Network, ::Volume, ::Plugin, ::Secret and ::Config go away in
+   their present hand-written form. Their convenience methods (->remove,
+   ->logs, ->attach, ->decoded_data ...) survive on top of the generated
+   classes. One model, not two. Nothing has been released, so this breaks
+   nobody.
+
+2. VERSION AWARENESS IS POD ONLY. Every attribute records in its POD which
+   API version introduced it. Nothing is checked, warned about or dropped at
+   runtime: the field goes out and the engine ignores what it does not know,
+   exactly as today. Reasons: we measured repeatedly that Podman serves
+   fields its announced version does not promise and vice versa, so we are
+   not the authority on what an engine can do; and silently dropping a field
+   the caller set is the class of bug this distribution spent a whole day
+   removing. The registry makes runtime checking retrofittable if it is ever
+   wanted.
+
+3. APPROACH C: build it in one round rather than a core-first subset. The
+   maintainer chose this over the safer staged option. It is only safe if
+   the DSL and the pattern are settled BEFORE the mass of classes is written
+   -- see the skill.
+
+MEASURED FACTS (2026-08-28, so nobody has to re-derive them)
+
+  Docker publishes every API version as swagger:
+    https://docs.docker.com/reference/api/engine/version/v1.51.yaml
+    v1.41, v1.44, v1.48, v1.51 all answer 200. v1.51 is 458 KB.
+
+  Definitions per version:  v1.41: 104   v1.44: 114   v1.51: 132
+
+  Of the 102 definitions v1.41 and v1.51 share, only 19 have changed fields
+  at all: 24 fields added, 31 removed. The version differences are local,
+  not pervasive. Biggest movers: OCIDescriptor (+5), SystemInfo (+4),
+  ImageInspect (+2), ImageSummary (+2), EndpointSettings (+2).
+
+  The swagger carries NO per-field version information. "Since 1.48" can only
+  be derived by diffing two specs against each other -- which is what
+  io-k8s-p5's maint/spec-drift-check.pl --from/--to already does.
+
+  A real `container inspect` from Docker 29.7.2 has 134 distinct keys at
+  depth 4. That is why this is generated and not typed by hand.
+
+  This machine: Podman 5.8.4 announces API 1.44, Docker 29.7.2 announces
+  1.55. The newest published swagger is 1.51. Generate against 1.51.
+
+WHAT TO COPY FROM ../io-k8s-p5
+
+  lib/IO/K8s/Resource.pm      the DSL. `k8s name => Type;` writes into an
+                              attribute registry that both serialisation and
+                              the drift checker read. This is the load-
+                              bearing idea -- not the classes.
+  maint/spec-drift-check.pl   diffs the upstream spec against the registry,
+                              field by field, with an exceptions file for
+                              deliberate deviations. Two modes: coverage
+                              (spec vs lib/) and compare (spec vs spec).
+  spec/v1.36.3.json           the spec lives in the repo.
+  the class shape             `k8s field => Type;` immediately followed by
+                              =attr POD taken from the spec's description.
+
+ORDER OF WORK
+
+  1. spec/ with v1.51 (and v1.41 + v1.44 for the diff)
+  2. API::Docker::Type -- the DSL, the registry, serialisation both ways
+  3. THREE classes by hand, covering the three shapes: flat (Port), nested
+     (HostConfig), array-of-objects (Mount)
+  4. maint/spec-drift-check.pl, run against those three
+  5. only then the remaining ~129, in parallel
+  6. the entity classes rebuilt on top, keeping their convenience methods
+  7. the resource classes returning them
+
+Steps 2-4 are what makes approach C survivable: if the pattern is wrong,
+it is wrong in three classes rather than 132.
+
+SEE ALSO the skill api-docker-type-model, which carries the pattern, and the
+api-docker-type-writer agent, which is briefed with it.
+
+
+DECIDED 2026-08-28, maintainer, on top of the above:
+
+STEP 5 IS GENERATED, AND THE GENERATOR MAY ONLY EVER CREATE.
+
+maint/spec-to-type.pl writes the ~129 remaining classes out of
+spec/v1.51.yaml. The three hand-written classes from step 3 are its
+acceptance test: the generator must reproduce them byte for byte.
+
+But: THE GENERATOR IS NEVER A CLASS UPDATER. It may write a file that does
+not exist yet. It must refuse to overwrite one that does -- no --force, no
+"regenerate all". When a newer spec appears, the drift checker reports the
+difference and a human or an agent decides field by field what happens; a
+generated class is a class someone has since read, corrected and documented,
+and a re-run would silently throw that away.
+
+Enforce it in the script itself, not only in prose: an existing file means
+refuse, or write to a staging path for diffing. Anything that reads like a
+bulk refresh is the failure mode being ruled out here.
+
+
+PROGRESS 2026-08-28 (nachts)
+
+  Steps 1-5 done, committed 5fc5e04 / efd87f3 / 30410a0.
+    201 generated classes, drift checker 0 across all seven tiers,
+    --verify reports 201 compared / 201 identical / diff empty,
+    prove -lr t/ 37 files 420 tests PASS, dzil test 39 files 644 PASS.
+    The overwrite refusal was tested independently against five bypasses
+    (relative path, absolute path, maint/../lib, a symlink to lib, a
+    subdirectory of lib) -- all refused.
+
+  The abstract question resolved without the maintainer: 34 top-level
+  definitions carry no description, but 19 are reachable from paths: and
+  12 from their reference chain, which the generator now derives. Only
+  17 classes needed a hand-written line (5 of them inline schemas the
+  parent does not describe either). Deriving is not inventing.
+
+  Steps 6/7 constrained by something the ticket did not foresee:
+  t/spec_to_type.t requires all 201 generated files to stay byte-identical
+  to the generator's output, so the convenience methods CANNOT be added
+  into them. The entity layer has to compose from outside. Being built as
+  a containers-only vertical slice first, so a wrong shape costs one
+  resource rather than seven.
+
+Handed to the maintainer 2026-08-28. Steps 1-5 complete and verified
+independently; step 6/7 delivered as a containers-only vertical slice on
+purpose, so the composition shape can be rejected at the cost of one
+resource rather than seven.
+
+  5fc5e04  DSL, registry, serialisation, 17 hand classes, drift checker
+  efd87f3  the generator, and its refusal to ever write into lib/
+  30410a0  the remaining 184 classes -- 201 total
+  3d92fbc  the entity layer for containers, Container.pm gone
+
+  prove -lr t/                38 files, 427 tests, PASS
+  dzil test                   40 files, 652 tests, PASS
+  spec-to-type.pl --verify    201 compared, 201 identical, diff empty
+  spec-drift-check.pl         0 in all seven categories
+  ../p5-dist-zilla-plugin-docker-api  16 files, 103 tests, PASS
+
+TWO DECISIONS WAITING, both written up on their own tickets:
+
+  k83  a generated class croaks on a value whose type disagrees with the
+       swagger. Measured against live Podman: engines diverge in CONTENT
+       constantly (14 unknown fields on one idle machine) but not one type
+       conflict, and the swagger changed a field's type twice in ten
+       versions, both renames. The triggering case is synthetic. That makes
+       option (b) cheap, not unnecessary. Recommendation on the ticket.
+
+  k79 step 6/7 return shape: containers->list/inspect now hand back
+       ContainerSummary / ContainerInspectResponse with snake_case
+       accessors ($c->id, $c->state->running). This ticket's own example
+       text says $container->State->Running, so the naming was settled
+       after the ticket was written -- worth a look before k84 repeats it
+       six times.
+
+REMAINING: k84 (the other six entities), k80 (199 undocumented fields),
+k81 (fixture regression for the passthrough invariant), k82 (namespace::clean
+in Role::Type). k84 is deliberately not started.
