@@ -68,6 +68,13 @@ Revision history for API-Docker
     constructor, so the check sees one more unreadable shape rather than an
     exception. Every error that does reach it, the daemon's own 404
     included, still goes to the caller.
+  - `API::Docker::Role::Type` closes with `use namespace::clean`, the way
+    `API::Docker::Role::Filters` and `API::Docker::Role::Using` already did.
+    Its `croak` and `blessed` imports are no longer composed into the
+    consumer as methods, so the surface of all 201 generated classes is the
+    daemon's fields plus the documented handful and nothing else. Nothing
+    called either name; the next entry to arrive there by accident would
+    collide with a swagger field silently (karr k82).
   - The type model is complete: 201 classes under `API::Docker::Type::*`,
     one per definition and one per inline schema of `spec/v1.51.yaml`, all
     of them written by `maint/spec-to-type.pl`.

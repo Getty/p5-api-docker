@@ -5,6 +5,7 @@ use Moo::Role;
 use Carp qw( croak );
 use JSON::MaybeXS ();
 use Scalar::Util qw( blessed );
+use namespace::clean;
 
 =head1 SYNOPSIS
 

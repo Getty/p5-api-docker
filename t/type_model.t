@@ -63,4 +63,19 @@ subtest 'the whole model round-trips an empty object' => sub {
     'a class with nothing set serialises to an empty structure';
 };
 
+subtest 'the role leaks none of its imports as a method' => sub {
+  # Everything imported after `use Moo::Role` is composed into the consumer
+  # as a method unless the role closes with `use namespace::clean`, so
+  # Role::Type's own `croak` and `blessed` used to answer on all 201 classes.
+  # Nothing called them, which is the point: the method surface of a
+  # generated class is the daemon's fields plus a documented handful, and a
+  # name that arrives there by accident collides silently when the swagger
+  # one day spells a field that way. Drop the namespace::clean line from
+  # API::Docker::Role::Type and this fails 201 times (karr k82).
+  for my $leak (qw( croak blessed )) {
+    my @found = grep { $_->can($leak) } @classes;
+    is_deeply \@found, [], "no generated class answers ->$leak";
+  }
+};
+
 done_testing;
