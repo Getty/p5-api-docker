@@ -16,7 +16,7 @@ force-loaded via `briefing.skills` — this file is for the orchestrating agent.
    the other for cleanup. Don't blend.
 6. **Read before you write** — `Role::HTTP` is the single seam every resource API and
    entity class hangs off. A change to `_request`'s options, return shape or error
-   handling reaches all 23 modules and the mock harness at once.
+   handling reaches every module in `lib/` and the mock harness at once.
 7. **Tests verify intent, not just behavior** — a test that can't fail when the logic
    changes is wrong, and a helper that normalises its input before asserting is that
    test. Reproduce a bug before fixing it; leave the regression behind.

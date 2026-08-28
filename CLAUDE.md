@@ -144,10 +144,9 @@ testing nothing:
 API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock prove -lr t/
 ```
 
-That run is green -- 39 files, 427 tests as of 0.004 -- but the suite grows
-with every fixture and every generated type, so that count is already stale
-by the time you read it. Run the command, don't trust a number written down
-here (the same mistake this line made once already: karr #86).
+Run it and read the result. No file or test count belongs here: one was
+written down twice and was wrong both times, because the suite grows with
+every fixture and every generated type.
 
 `t/system.t`'s `events` subtest used to assert a shape a real daemon does not
 return for an empty window; the live

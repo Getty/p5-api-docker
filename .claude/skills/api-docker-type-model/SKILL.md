@@ -72,7 +72,7 @@ map. `docker_extends` is how the swagger's `allOf` is expressed.
 **The Perl name is derived from the spec's spelling, never the reverse.**
 `PortBindings` → `port_bindings` works; going back does not, for any name
 with a run of capitals — `CPUShares`, `OOMKillDisable`, `ID`, `NanoCPUs`. So
-those 70 names live in `spec-to-type-names.yaml` as a curated map, and the
+those names live in `spec-to-type-names.yaml` as a curated map, and the
 generator refuses to guess: an unlisted capital-run name stops the run. The
 round-trip guard does not save you here, because `DeviceIDs → device_i_ds`
 derives back correctly and still reads wrong.
@@ -80,21 +80,23 @@ derives back correctly and still reads wrong.
 **Some keys are the caller's data and must never be translated.** Where the
 swagger says `additionalProperties`, the *keys* come from the user —
 `Labels`, `Annotations`, `ExposedPorts`, `PortBindings`, `Volumes`,
-`StorageOpt`, `Tmpfs`, `Sysctls`, `DriverOpts`, `Options` and 30 more sites.
-Find them by the keyword, not by the type: one of the 40 declares
-`additionalProperties` with no `type: object` above it, and reading the spec
-by `type` alone degrades that field to untyped passthrough.
-Such a field is typed `{ Str, $value_type }` and the DSL passes its keys
-through byte for byte. Getting this wrong turns a label
+`StorageOpt`, `Tmpfs`, `Sysctls`, `DriverOpts`, `Options` and a good many
+more. Such a field is typed `{ Str, $value_type }` and the DSL passes its
+keys through byte for byte. Getting this wrong turns a label
 `com.example.Some-Label` into something the caller never wrote, and it is the
 single most damaging mistake the model can make.
+
+Find these by grepping the spec for `additionalProperties`, never by looking
+for `type: object` — at least one field declares the keyword with no type
+above it, and reading the spec by type alone quietly degrades that field to
+untyped passthrough.
 
 **An unknown field passes through unchanged.** A caller whose engine is newer
 than the spec we generated from must still reach the daemon; the model
 translates what it knows and forwards the rest verbatim. This is not
-theoretical: a real Podman `/info` answers with seven fields the swagger does
-not have, and `ImageSummary` still serves `VirtualSize`, which Docker dropped
-from the spec after v1.41.
+theoretical: a real Podman `/info` answers with fields the swagger does not
+have, and `ImageSummary` still serves `VirtualSize`, which Docker dropped from
+the spec after v1.41.
 
 **`since` is documentation, never a check.** It records which API version
 introduced a field, derived by diffing the specs in `spec/` against each
