@@ -1,0 +1,40 @@
+---
+class: standard
+completed: 2026-08-28T11:22:35Z
+created: 2026-08-28T01:07:00Z
+id: 77
+priority: low
+started: 2026-08-28T11:14:26Z
+status: done
+tags:
+- transport
+- tests
+title: t/read_timeout.t cannot see half of the chunk-header check being removed
+updated: 2026-08-28T11:22:35Z
+---
+
+Found while doing karr #73's mutation check, and left alone there because it
+is karr #64's, not #73's.
+
+'chunk-header' is one phase covering two distinct ways of running out: the
+stream ended where a chunk header belongs with no terminating zero chunk
+(_read_line returned undef), and the stream ended inside a chunk header line
+(the line came back unterminated). t/read_timeout.t's site pins the phase and
+nothing else, so removing either half leaves the other one raising the same
+phase and the site still passes.
+
+Measured: commenting out the 'unless defined $line' half of
+_assert_chunk_header leaves 'prove -l t/read_timeout.t' PASS (24 tests) while
+t/truncated_response.t FAILs. So the defect is covered by the suite as a
+whole, and not by the file whose declared job is pairing each read site's two
+outcomes.
+
+karr #73 hit exactly this for the new 'header-block' phase, which has the same
+two halves, and fixed it there by giving t/read_timeout.t's truncated_ok an
+optional 'message => qr/.../' key and passing it at the three head sites. The
+same key is already available to the chunk sites; nothing new is needed but
+the assertions.
+
+Not urgent -- nothing is unprotected, one file is just weaker than it reads.
+
+Fixed. Both chunk-header sites (buffered _read_chunked and streaming) only ever scripted the 'unterminated line' half; added the 'no terminating zero chunk' half as a new site per pair, plus message => on all four, mirroring k73's header-block fix. Went through the whole file for other two-halved phases with one assertion: only header-block (already fixed) and chunk-header (now fixed, at both its sites) have two croak paths in lib/API/Docker/Role/HTTP.pm -- status-line, chunk-data, chunk-terminator and content-length are single-half phases needing no message. Verified by removing each half of _assert_chunk_header in turn: removing 'unless defined $line' failed only the two new 'never arrives' sites (2/26); removing the unterminated-line half failed only the two 'stops halfway' sites (2/26); restored, prove -lr t/ and dzil test both green. Commit 8ca66aa.
