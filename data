@@ -1,0 +1,55 @@
+---
+claimed_at: 2026-08-28T14:28:52Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:28:52Z
+created: 2026-08-28T11:39:26Z
+id: 88
+priority: medium
+started: 2026-08-28T12:10:03Z
+status: done
+tags:
+- docs
+- types
+title: api-docker-core skill still describes the hand-written entity classes
+updated: 2026-08-28T14:28:52Z
+---
+
+Found while landing k84 (the last six entities onto the generated model).
+Not fixed there on purpose: the skill is managed with manage-skills and
+editing it is its own change.
+
+.claude/skills/api-docker-core/SKILL.md is now wrong in three places:
+
+  - the layer diagram still ends `_wrap / _wrap_list ->
+    API::Docker::{Image,Container,Network,Volume}`. Those four classes no
+    longer exist. Every resource wraps into an API::Docker::Type::* class
+    with an API::Docker::Role::Entity::* composed onto it.
+  - "Entity classes mirror daemon fields verbatim and normalise nothing:
+    `$container->State` is a status string from `list` and a hashref from
+    `inspect`" -- the field is `->state` now, and the model does normalise:
+    a declared Bool comes out as 1/0 (measured on Plugin.Enabled) and
+    TO_JSON puts the JSON boolean back.
+  - the invariant "`list` and `inspect` return entity objects" is still
+    true but should say which class, and that four of the seven resources
+    answer both calls with ONE definition (Network, Volume, Plugin,
+    Secret, Config -- read off spec/v1.51.yaml, not assumed) while
+    containers and images have two.
+
+Also stale, same family, cheap to fix in the same pass: CLAUDE.md rule 11
+and .claude/rules/api-docker-rules.md rule 6 both still say "23" modules.
+There are 230 .pm files under lib/ now. Commit 21e72f7 took counts out of
+the instruction files for exactly this reason; these two were missed.
+
+Lane: api-docker-doc-writer, or whoever owns manage-skills here.
+
+
+CORRECTION by the orchestrating agent: the part of this ticket claiming
+CLAUDE.md rule 11 and api-docker-rules.md rule 6 still say '23 modules' is
+already false. Commit 21e72f7 took every file and test count out of the
+instruction files -- rule 11 now says to count them, rule 6 says 'every
+module in lib/'. Verified by grep: no occurrence of '23 modules' or 'all 23'
+remains in either file. Only the api-docker-core skill part of this ticket
+stands.
+
+Done in b6fbf58 (skill) plus a follow-up commit for the agent briefings. The two statements the ticket named were indeed false, not stale: the layer diagram ended at four classes that no longer exist, and 'entity classes normalise nothing' is disproved by the generated Plugin.enabled, which normalises to 1/0 on inflation and to a JSON boolean on TO_JSON. Three more the agent found by checking the skill against the code rather than the briefing: TLS is implemented and the skill called it a stub, callback streaming exists and the skill said 'No streaming.', and _build_registry_auth_header does not exist (it is _registry_auth_header). Verified: prove 42/708 PASS, dzil test 44/940 PASS.
