@@ -2,6 +2,51 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - The type model is complete: 201 classes under `API::Docker::Type::*`,
+    one per definition and one per inline schema of `spec/v1.51.yaml`, all
+    of them written by `maint/spec-to-type.pl`.
+    `maint/spec-drift-check.pl` reports 0 in every tier -- no missing class,
+    no missing or extra field, no type mismatch, no undeclared `allOf`
+    inheritance and no `since` that the specs do not bear out -- and the
+    generator reproduces every one of the 201 byte for byte, which
+    `t/spec_to_type.t` asserts. `t/type_model.t` loads them all and checks
+    that each registered its attributes and that every class an attribute
+    points at can be loaded.
+  - New `API::Docker::Type`: the DSL, attribute registry and two-way
+    serialisation the generated object model is built on, plus the first
+    seventeen classes under `API::Docker::Type::*` -- Port, Mount with its
+    four inline options classes, Resources, HostConfig and the leaf types
+    they reference. The classes are generated from Docker's published
+    swagger, which is now checked into `spec/` verbatim (v1.41, v1.44 and
+    v1.51; v1.51 carries 132 definitions). A `docker` declaration writes a
+    Moo attribute and a registry entry at once: the attribute is what a
+    caller uses, the registry is what serialisation and the drift checker
+    read. Snake_case attribute names map to the daemon's CamelCase --
+    `port_bindings` to `PortBindings` -- with the spec's spelling declared
+    explicitly wherever deriving it would miss (`IP`, `UTSMode`,
+    `KernelMemoryTCP`, `DeviceIDs`, `IOMaximumIOps`). Three properties are
+    load-bearing and each has a test: the keys of an `additionalProperties`
+    field are the caller's data and are never translated, a field the model
+    does not know goes in and out unchanged so a newer engine still works,
+    and `since` is POD only -- nothing is checked, warned about or dropped
+    at runtime. `allOf` in the swagger becomes Perl inheritance, so a
+    `HostConfig` carries its own 39 fields and `Resources`' 31.
+  - `containers->list` and `containers->inspect` return generated type
+    objects -- an `API::Docker::Type::ContainerSummary` per list entry, an
+    `API::Docker::Type::ContainerInspectResponse` for an inspect -- in place
+    of the single `API::Docker::Container` that served both shapes, which is
+    gone. Field names are the swagger's own in snake_case: `$c->Id` is now
+    `$c->id`, `$c->SizeRootFs` is `$c->size_root_fs`, and `$c->state` is the
+    status string on a summary but an `API::Docker::Type::ContainerState` on
+    an inspect, where the flag is `$c->state->running`. The nineteen
+    convenience methods -- `start`, `stop`, `logs`, `attach`, `remove`,
+    `is_running` and the rest -- keep their signatures and their return
+    values, and live in `API::Docker::Role::Entity::Container`, composed onto
+    both generated classes at load time. Nothing was written into the
+    generated files: `maint/spec-to-type.pl --verify` still reports 201
+    compared, 201 identical, 0 different. A field neither class knows is no
+    longer dropped either -- it survives under the name it arrived with in
+    `unknown_fields` and goes back out unchanged.
   - The remaining six resources return generated type objects too, the way
     containers already did, and the seven hand-written entity classes are
     gone -- what still ships under those names is the stubs below.
@@ -39,30 +84,6 @@ Revision history for API-Docker
     class declares the field as `Bool` and normalises it on the way in.
     `TO_JSON` writes a JSON boolean back, so what reaches the engine is
     unchanged.
-  - The generated type classes say what a field is where the swagger says
-    nothing at all. 199 attributes rendered as `Undocumented upstream.` and
-    stopped there; 192 now add what the spec states somewhere else -- the
-    same wire name described under another definition, a property's
-    `example`, the example response of the path that answers it -- or a
-    read-only measurement, named with the engine and version it was taken
-    on. Where the two disagree both stay on the page: an
-    `ImageHistoryResponseItem`'s `Id` is a bare digest in the swagger's
-    example, and `sha256:<missing>` on nine of the ten layers a real engine
-    answers with -- a marker, not something to look an image up by. The
-    remaining 7 keep the admission: an invented sentence would read exactly
-    like a measured one.
-  - A daemon value that disagrees with the swagger costs its own field rather
-    than the whole response. `from_data` leaves the typed attribute unset,
-    keeps the raw value in `unknown_fields` under its wire name and names it
-    in the new `rejected_fields` attribute, so `TO_JSON` writes it back
-    unchanged and a caller can tell "the engine did not send this" from "the
-    engine sent it and the model could not use it". An inspect response
-    whose `State` is the bare status string now inflates, with every other
-    field of it readable. `new` is unchanged and still croaks: there
-    the value came from the caller and is a typo worth stopping on, not an
-    engine being itself. `containers->list` and `containers->inspect` build
-    through `from_data`, which is what carries this and the wire-name rule
-    below out to the entity objects.
   - `from_data` and `new` no longer read their keys the same way, because a
     response and a request are not the same data. `from_data` inflates what
     an engine sent and reads the swagger's wire names only, so a key it does
@@ -76,40 +97,30 @@ Revision history for API-Docker
     `new` now also refuses two keys that resolve to one attribute --
     `privileged` and `Privileged` together, which hash order used to decide
     -- and refuses them when the two values agree as well.
-  - `docker` refuses a field asking for a wire name an earlier field of the
-    same class already has, the way it already refused a duplicate Perl
-    name. Two fields on one wire name would leave one of them unreachable on
-    inflation while `TO_JSON` wrote both to that key. None of the 201
-    generated classes does it; the generator could emit it the day a
-    hand-picked `wire` meets a derived one.
-  - New `t/type_fixture_passthrough.t`: every fixture under `t/fixtures/*.json`
-    is fed through the generated class its endpoint returns, and `TO_JSON`
-    must carry every key the daemon sent. Pins the case that motivated it --
-    `ImageSummary`'s `VirtualSize`, gone from the swagger since v1.44 but
-    still sent by the engine, must stay filed in `unknown_fields` and reach
-    `TO_JSON` unchanged rather than being dropped by a future cleanup.
-  - `t/entity_container.t`'s subtest on the generated container classes now
-    opts out of live mode like its two siblings already did; it was
-    asserting `containers_list.json`'s captured id and size against whatever
-    a live daemon actually holds, which is nothing on a container-less
-    machine. `API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock
-    prove -lr t/` is green again (karr k86).
-  - `containers->list` and `containers->inspect` return generated type
-    objects -- an `API::Docker::Type::ContainerSummary` per list entry, an
-    `API::Docker::Type::ContainerInspectResponse` for an inspect -- in place
-    of the single `API::Docker::Container` that served both shapes, which is
-    gone. Field names are the swagger's own in snake_case: `$c->Id` is now
-    `$c->id`, `$c->SizeRootFs` is `$c->size_root_fs`, and `$c->state` is the
-    status string on a summary but an `API::Docker::Type::ContainerState` on
-    an inspect, where the flag is `$c->state->running`. The nineteen
-    convenience methods -- `start`, `stop`, `logs`, `attach`, `remove`,
-    `is_running` and the rest -- keep their signatures and their return
-    values, and live in `API::Docker::Role::Entity::Container`, composed onto
-    both generated classes at load time. Nothing was written into the
-    generated files: `maint/spec-to-type.pl --verify` still reports 201
-    compared, 201 identical, 0 different. A field neither class knows is no
-    longer dropped either -- it survives under the name it arrived with in
-    `unknown_fields` and goes back out unchanged.
+  - A daemon value that disagrees with the swagger costs its own field rather
+    than the whole response. `from_data` leaves the typed attribute unset,
+    keeps the raw value in `unknown_fields` under its wire name and names it
+    in the new `rejected_fields` attribute, so `TO_JSON` writes it back
+    unchanged and a caller can tell "the engine did not send this" from "the
+    engine sent it and the model could not use it". An inspect response
+    whose `State` is the bare status string now inflates, with every other
+    field of it readable. `new` is unchanged and still croaks: there
+    the value came from the caller and is a typo worth stopping on, not an
+    engine being itself. `containers->list` and `containers->inspect` build
+    through `from_data`, which is what carries this and the wire-name rule
+    below out to the entity objects.
+  - The generated type classes say what a field is where the swagger says
+    nothing at all. 199 attributes rendered as `Undocumented upstream.` and
+    stopped there; 192 now add what the spec states somewhere else -- the
+    same wire name described under another definition, a property's
+    `example`, the example response of the path that answers it -- or a
+    read-only measurement, named with the engine and version it was taken
+    on. Where the two disagree both stay on the page: an
+    `ImageHistoryResponseItem`'s `Id` is a bare digest in the swagger's
+    example, and `sha256:<missing>` on nine of the ten layers a real engine
+    answers with -- a marker, not something to look an image up by. The
+    remaining 7 keep the admission: an invented sentence would read exactly
+    like a measured one.
   - `containers->attach`'s pre-flight running check still fails open on a
     state it cannot read, and no longer needs an `eval` to manage it: an
     inspect whose `State` is a bare status string rather than the declared
@@ -124,16 +135,36 @@ Revision history for API-Docker
     daemon's fields plus the documented handful and nothing else. Nothing
     called either name; the next entry to arrive there by accident would
     collide with a swagger field silently (karr k82).
-  - The type model is complete: 201 classes under `API::Docker::Type::*`,
-    one per definition and one per inline schema of `spec/v1.51.yaml`, all
-    of them written by `maint/spec-to-type.pl`.
-    `maint/spec-drift-check.pl` reports 0 in every tier -- no missing class,
-    no missing or extra field, no type mismatch, no undeclared `allOf`
-    inheritance and no `since` that the specs do not bear out -- and the
-    generator reproduces every one of the 201 byte for byte, which
-    `t/spec_to_type.t` asserts. `t/type_model.t` loads them all and checks
-    that each registered its attributes and that every class an attribute
-    points at can be loaded.
+  - `docker` refuses a field asking for a wire name an earlier field of the
+    same class already has, the way it already refused a duplicate Perl
+    name. Two fields on one wire name would leave one of them unreachable on
+    inflation while `TO_JSON` wrote both to that key. None of the 201
+    generated classes does it; the generator could emit it the day a
+    hand-picked `wire` meets a derived one.
+  - New `maint/spec-to-type.pl`, which writes a class under
+    `API::Docker::Type::*` out of `spec/v1.51.yaml`. Its acceptance is that
+    it reproduces the seventeen hand-written classes byte for byte, and
+    `t/spec_to_type.t` keeps it that way. **It is not a class updater**: it
+    creates a file that does not exist, refuses to overwrite one that does,
+    and has no code path that opens a file under `lib/` for writing at all
+    -- output goes to a staging directory a human copies from. There is no
+    `--force` and no bulk refresh, because a generated class is one somebody
+    has since read, corrected and documented, and a re-run would throw that
+    away. When a newer spec lands the drift checker reports it and a person
+    decides field by field.
+  - What the generator cannot derive lives in files, not in heuristics.
+    `maint/spec-to-type-names.yaml` carries the Perl name for each of the 70
+    swagger fields whose name has a run of capitals; an unlisted one stops
+    the run, because the derivation turns `DeviceIDs` into `device_i_ds`,
+    which passes every check there is and still reads wrong. The fourteen
+    inline classes whose name is a judgement rather than a derivation -- one
+    element of an array named for the whole array, and the one property the
+    swagger spells in lower case -- stay in
+    `maint/spec-drift-exceptions.yaml`, the same file the drift checker
+    reads, and the generator refuses to write any of those shapes unnamed. `maint/spec-to-type-prose.yaml` holds the sentences a human wrote
+    that the swagger does not contain. A class the swagger describes
+    nowhere, or one whose name would be lower-case, is reported and not
+    written -- nothing is invented.
   - Two more things the generator derives instead of refusing. 34 of the 132
     definitions carry neither a description nor a title, but the spec states
     what they are elsewhere: `paths:` names the request or response a
@@ -162,30 +193,6 @@ Revision history for API-Docker
     it, so `TaskSpec.Placement.Preferences.Spread` lands under
     `...::Placement::Preference::Spread` rather than keeping the plural.
 
-  - New `maint/spec-to-type.pl`, which writes a class under
-    `API::Docker::Type::*` out of `spec/v1.51.yaml`. Its acceptance is that
-    it reproduces the seventeen hand-written classes byte for byte, and
-    `t/spec_to_type.t` keeps it that way. **It is not a class updater**: it
-    creates a file that does not exist, refuses to overwrite one that does,
-    and has no code path that opens a file under `lib/` for writing at all
-    -- output goes to a staging directory a human copies from. There is no
-    `--force` and no bulk refresh, because a generated class is one somebody
-    has since read, corrected and documented, and a re-run would throw that
-    away. When a newer spec lands the drift checker reports it and a person
-    decides field by field.
-  - What the generator cannot derive lives in files, not in heuristics.
-    `maint/spec-to-type-names.yaml` carries the Perl name for each of the 70
-    swagger fields whose name has a run of capitals; an unlisted one stops
-    the run, because the derivation turns `DeviceIDs` into `device_i_ds`,
-    which passes every check there is and still reads wrong. The fourteen
-    inline classes whose name is a judgement rather than a derivation -- one
-    element of an array named for the whole array, and the one property the
-    swagger spells in lower case -- stay in
-    `maint/spec-drift-exceptions.yaml`, the same file the drift checker
-    reads, and the generator refuses to write any of those shapes unnamed. `maint/spec-to-type-prose.yaml` holds the sentences a human wrote
-    that the swagger does not contain. A class the swagger describes
-    nowhere, or one whose name would be lower-case, is reported and not
-    written -- nothing is invented.
   - Reading the spec is now shared between the generator and the drift
     checker (`maint/spec-common.pl`), so the two cannot disagree about which
     definitions are classes, what a field's type is, or what order the
@@ -194,25 +201,6 @@ Revision history for API-Docker
     which is then checked against the parser, path by path and name by name,
     and refuses to answer if the two disagree.
 
-  - New `API::Docker::Type`: the DSL, attribute registry and two-way
-    serialisation the generated object model is built on, plus the first
-    seventeen classes under `API::Docker::Type::*` -- Port, Mount with its
-    four inline options classes, Resources, HostConfig and the leaf types
-    they reference. The classes are generated from Docker's published
-    swagger, which is now checked into `spec/` verbatim (v1.41, v1.44 and
-    v1.51; v1.51 carries 132 definitions). A `docker` declaration writes a
-    Moo attribute and a registry entry at once: the attribute is what a
-    caller uses, the registry is what serialisation and the drift checker
-    read. Snake_case attribute names map to the daemon's CamelCase --
-    `port_bindings` to `PortBindings` -- with the spec's spelling declared
-    explicitly wherever deriving it would miss (`IP`, `UTSMode`,
-    `KernelMemoryTCP`, `DeviceIDs`, `IOMaximumIOps`). Three properties are
-    load-bearing and each has a test: the keys of an `additionalProperties`
-    field are the caller's data and are never translated, a field the model
-    does not know goes in and out unchanged so a newer engine still works,
-    and `since` is POD only -- nothing is checked, warned about or dropped
-    at runtime. `allOf` in the swagger becomes Perl inheritance, so a
-    `HostConfig` carries its own 39 fields and `Resources`' 31.
   - New `maint/spec-drift-check.pl`, which is what makes a generated class
     checkable: coverage mode diffs one spec against the registry the DSL
     writes -- missing classes, missing and extra fields, type mismatches,
@@ -224,6 +212,18 @@ Revision history for API-Docker
     reads the specs with YAML::XS, a develop-only dependency: YAML::PP 0.41
     cannot parse the file Docker publishes, whose `example:` blocks are
     flow maps closed at less indentation than the key that opens them.
+  - New `t/type_fixture_passthrough.t`: every fixture under `t/fixtures/*.json`
+    is fed through the generated class its endpoint returns, and `TO_JSON`
+    must carry every key the daemon sent. Pins the case that motivated it --
+    `ImageSummary`'s `VirtualSize`, gone from the swagger since v1.44 but
+    still sent by the engine, must stay filed in `unknown_fields` and reach
+    `TO_JSON` unchanged rather than being dropped by a future cleanup.
+  - `t/entity_container.t`'s subtest on the generated container classes now
+    opts out of live mode like its two siblings already did; it was
+    asserting `containers_list.json`'s captured id and size against whatever
+    a live daemon actually holds, which is nothing on a container-less
+    machine. `API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock
+    prove -lr t/` is green again (karr k86).
   - `containers->start`, `->stop`, `->restart`, `->pause` and `->unpause`
     now return 1 when the call changed the container's state and 0 when it
     was already in the state asked for, instead of always returning undef.
