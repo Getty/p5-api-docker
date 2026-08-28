@@ -1,0 +1,20 @@
+---
+class: standard
+completed: 2026-08-28T16:54:47Z
+created: 2026-08-28T16:43:23Z
+id: 95
+priority: medium
+started: 2026-08-28T16:54:47Z
+status: done
+tags:
+- docs
+- changes
+title: Changes {{$NEXT}} miscounts the 'Undocumented upstream.' split (192/7 vs measured
+  194/5)
+updated: 2026-08-28T16:54:47Z
+---
+
+
+The 'generated type classes say what a field is' entry in Changes claims '199 attributes rendered as Undocumented upstream. and stopped there; 192 now add what the spec states somewhere else ... The remaining 7 keep the admission.' Measured against the current tree: grep -c 'Undocumented upstream.' across lib/API/Docker/Type/**/*.pm totals 199 (matches), but splitting by whether more prose follows on the same paragraph gives 194 extended / 5 bare, not 192/7. The 5 bare ones are in ContainerState.pm, EndpointPortConfig.pm, PluginPrivilege.pm and Plugin/Config.pm (x2). Either the count drifted after the entry was written, or the counting method differs -- worth a quick re-verify and correction before release. Low severity.
+
+RESOLVED 2026-08-28 (main agent, re-measured): 5 attributes carry the bare sentence and nothing else (ContainerState.error, EndpointPortConfig.name, PluginPrivilege.description, Plugin::Config.ipc_host, Plugin::Config.pid_host); 2 more -- PluginDevice.name and PluginDevice.description -- carry only the generated 'The swagger lists this field as required' boilerplate after it, which is no description. 5 + 2 = 7, which is what Changes says. The 194/5 count treated the boilerplate as prose. Not a drift; closing.
