@@ -1,0 +1,65 @@
+---
+claimed_at: 2026-08-28T01:14:36Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T01:14:36Z
+created: 2026-08-28T00:03:46Z
+id: 74
+priority: high
+started: 2026-08-28T00:33:48Z
+status: done
+tags:
+- transport
+- api
+title: Replace per-method timeout options with a cloning ->using()
+updated: 2026-08-28T01:14:36Z
+---
+
+DECIDED by the maintainer 2026-08-28. This supersedes what #74 originally
+said (forward the two timeouts into the eleven body-hash methods) and also
+reverses part of #72.
+
+THE SHAPE
+
+  $docker->containers->using(read_timeout => 5)->create(Image => 'alpine')
+  $docker->images->using(connect_timeout => 2, read_timeout => 30)->pull(...)
+
+->using returns a CLONE of the resource class carrying the values, which it
+passes to _request on every call made through it. The client attribute stays
+the rule; ->using is the exception for a run of calls.
+
+AND THE PER-METHOD OPTIONS COME OUT AGAIN
+
+All 72 of them, added in #72. Three ways to say the same thing is one too
+many; the maintainer's words: "das verwirrt nur, das machts zu kompliziert".
+After this there are two, and they sit at different levels:
+
+  API::Docker->new(read_timeout => 30)          the rule, for a client
+  $docker->containers->using(read_timeout => 5) the exception, for a run
+
+That also dissolves this ticket's original problem rather than solving it: if
+create and the other ten read no options at all, their argument list is
+unambiguously the request body again, and neither the HashRef form nor a
+delete out of the body hash is needed.
+
+WHY NOT ->with()
+
+Measured, not assumed: Moo exports `with` as the role-composition keyword,
+and every resource class calls `with 'API::Docker::Role::Filters'`. Defining
+`sub with` shadows it -- perl warns "Subroutine with redefined" and the role
+is then silently NOT composed. A stealth bug. `using` collides with nothing.
+
+WHAT THE BUILD HAS TO GET RIGHT
+
+  - the clone must carry the same client, which the resource classes hold as
+    a weak_ref -- a clone that takes a strong reference, or that outlives the
+    client, is a leak or a crash
+  - ->using must not mutate the original: two clones from one resource class
+    must not see each other's values
+  - the entity classes hold the client differently; decide whether
+    $container->using(...)->logs is in scope, and say why either way
+  - where the shared code lives: API::Docker::Role::Filters is the existing
+    precedent for a role every resource class consumes
+
+Related: #72 (which added what this removes), #61 and #59 (the timeouts
+themselves), #70.
