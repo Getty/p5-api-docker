@@ -1,17 +1,21 @@
-requires 'Moo';
 requires 'Carp';
 requires 'Errno';
+requires 'Import::Into';
 requires 'IO::Handle';
-requires 'JSON::MaybeXS';
-requires 'MIME::Base64';
-requires 'IO::Socket::UNIX';
 requires 'IO::Socket::INET';
+requires 'IO::Socket::UNIX';
+requires 'JSON::MaybeXS';
+requires 'Log::Any';
+requires 'MIME::Base64';
+requires 'Module::Runtime';
+requires 'Moo';
 requires 'namespace::clean';
-requires 'Path::Tiny';
 requires 'overload';
+requires 'Package::Stash';
+requires 'Path::Tiny';
 requires 'Scalar::Util';
 requires 'Socket';
-requires 'Log::Any';
+requires 'Types::Standard';
 
 # Only the tcp:// transport with tls => 1 loads this, and it is loaded at the
 # moment that connection is opened. It brings in Net::SSLeay, which is XS
@@ -24,4 +28,13 @@ on test => sub {
     requires 'Test::More';
     requires 'Path::Tiny';
     requires 'Exporter';
+};
+
+# The drift checker under maint/ reads Docker's swagger from spec/ and the
+# exceptions file beside itself. YAML::XS rather than YAML::PP is not a
+# preference: YAML::PP 0.41 will not parse the file Docker publishes -- see
+# the comment at the top of maint/spec-drift-check.pl. Nothing under lib/
+# loads a YAML parser.
+on develop => sub {
+  requires 'YAML::XS';
 };

@@ -2,6 +2,36 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - New `API::Docker::Type`: the DSL, attribute registry and two-way
+    serialisation the generated object model is built on, plus the first
+    sixteen classes under `API::Docker::Type::*` -- Port, Mount with its
+    four inline options classes, Resources, HostConfig and the leaf types
+    they reference. The classes are generated from Docker's published
+    swagger, which is now checked into `spec/` verbatim (v1.41, v1.44 and
+    v1.51; v1.51 carries 132 definitions). A `docker` declaration writes a
+    Moo attribute and a registry entry at once: the attribute is what a
+    caller uses, the registry is what serialisation and the drift checker
+    read. Snake_case attribute names map to the daemon's CamelCase --
+    `port_bindings` to `PortBindings` -- with the spec's spelling declared
+    explicitly wherever deriving it would miss (`IP`, `UTSMode`,
+    `KernelMemoryTCP`, `DeviceIDs`, `IOMaximumIOps`). Three properties are
+    load-bearing and each has a test: the keys of an `additionalProperties`
+    field are the caller's data and are never translated, a field the model
+    does not know goes in and out unchanged so a newer engine still works,
+    and `since` is POD only -- nothing is checked, warned about or dropped
+    at runtime. `allOf` in the swagger becomes Perl inheritance, so a
+    `HostConfig` carries its own 39 fields and `Resources`' 31.
+  - New `maint/spec-drift-check.pl`, which is what makes a generated class
+    checkable: coverage mode diffs one spec against the registry the DSL
+    writes -- missing classes, missing and extra fields, type mismatches,
+    `allOf` inheritance that was not declared -- and compare mode diffs two
+    specs against each other. The swagger carries no per-field version at
+    all, so that second mode is the only place a `since` can come from, and
+    with `--baseline` the first mode checks the ones already written.
+    Deliberate deviations live in `maint/spec-drift-exceptions.yaml`. It
+    reads the specs with YAML::XS, a develop-only dependency: YAML::PP 0.41
+    cannot parse the file Docker publishes, whose `example:` blocks are
+    flow maps closed at less indentation than the key that opens them.
   - `containers->start`, `->stop`, `->restart`, `->pause` and `->unpause`
     now return 1 when the call changed the container's state and 0 when it
     was already in the state asked for, instead of always returning undef.

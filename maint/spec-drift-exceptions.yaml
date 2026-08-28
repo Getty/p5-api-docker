@@ -1,0 +1,52 @@
+# Deliberate deviations between Docker's swagger and the generated model,
+# read by maint/spec-drift-check.pl.
+#
+# Every entry here is a decision that has already been made, not a TODO. Say
+# WHY -- a Changes bullet or a karr ticket -- so a later reader can tell a
+# settled call apart from noise before touching it. The file is read as it
+# is, with no merge against built-in defaults, so deleting an entry
+# immediately surfaces whatever it was hiding.
+#
+# The checker derives almost everything structurally: which definitions are
+# classes, which are scalars/arrays/maps, how `allOf` resolves, and what a
+# field's type must be. Only the entries below cannot be derived.
+
+# An inline object inside an ARRAY becomes a class named for one element,
+# and making a plural singular is a judgement call, not a derivation. Keyed
+# by the dotted schema path; everything not listed follows the mechanical
+# rule (Mount.BindOptions -> API::Docker::Type::Mount::BindOptions).
+inline_class_names:
+  Resources.Ulimits: API::Docker::Type::Resources::Ulimit
+
+# Classes the spec calls for that are deliberately not shipped. Matched as a
+# literal prefix of the class name.
+#
+# Nothing is listed here yet, on purpose. The model is being written in one
+# round (karr k79, decision 3) and the ~116 classes this report still calls
+# missing are work that has not happened yet, not a decision -- suppressing
+# them would hide the only number that says how far along the model is.
+ignore_missing_classes: []
+
+# A field in the spec this dist deliberately does not carry.
+#   - class: API::Docker::Type::Something
+#     field: SomeWireName
+#     reason: ...
+ignore_missing_fields: []
+
+# A field this dist carries that the spec does not have. The place this will
+# be needed is a field a real engine answers with and the swagger never
+# documented -- record the engine and version that was measured on.
+ignore_extra_fields: []
+
+# A field whose type deliberately differs from the spec's. The skill lists
+# the known cases (Created is an integer epoch from list and an RFC3339
+# string from inspect; a swarm object's Version is a map, not a scalar);
+# none of them is in the classes written so far.
+ignore_type_mismatch: []
+
+# A `since` annotation that deliberately differs from what diffing the specs
+# in spec/ produces.
+ignore_since: []
+
+# Classes under API::Docker::Type:: with no counterpart in the spec at all.
+perl_only: []

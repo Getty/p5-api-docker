@@ -1,0 +1,52 @@
+package API::Docker::Type::Port;
+# ABSTRACT: An open port on a container
+our $VERSION = '0.004';
+use API::Docker::Type;
+
+=head1 DESCRIPTION
+
+Generated from the C<Port> definition of Docker's swagger, checked in as
+C<spec/v1.51.yaml>. One entry of the C<Ports> array a container list
+answers with.
+
+=cut
+
+docker ip => Str, wire => 'IP';
+
+=attr ip
+
+Host IP address that the container's port is mapped to. Serialised as
+C<IP> -- spelled out, because deriving it from the Perl name would produce
+C<Ip>.
+
+=cut
+
+docker private_port => Int, required => 1;
+
+=attr private_port
+
+Port on the container. A C<uint16>. The swagger lists this field as
+required; nothing here enforces that, see L<API::Docker::Type/C<since> is
+documentation>.
+
+=cut
+
+docker public_port => Int;
+
+=attr public_port
+
+Port exposed on the host. A C<uint16>.
+
+=cut
+
+docker type => Str, required => 1, enum => [qw( tcp udp sctp )];
+
+=attr type
+
+One of C<tcp>, C<udp> or C<sctp>. Undocumented upstream: the swagger gives
+this field an enumeration but no description. Required per the swagger, not
+enforced here.
+
+=cut
+
+1;
