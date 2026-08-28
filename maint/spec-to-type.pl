@@ -487,6 +487,80 @@ sub split_description {
   return ($first, $body);
 }
 
+# ---------------------------------------------------------------------------
+# What a definition IS, where the definition itself does not say
+#
+# 34 of v1.51's definitions carry neither description nor title. The spec
+# still states the fact, in two other places: `paths:` names the request or
+# response a definition is the schema of, and the other definitions name the
+# fields that hold it. Reading either is a measurement of the same checked-in
+# file, no less verifiable than a description field -- so a sentence built
+# out of one is a derivation, not an invention, and the refusal below stays
+# only for what neither reaches.
+# ---------------------------------------------------------------------------
+
+# "one entry of A, B and C" rather than "one entry of A, one entry of B and
+# one entry of C": where every site is reached the same way, the lead is said
+# once. ThrottleDevice sits in four fields of Resources and reads as a list.
+sub join_phrases {
+  my (@phrases) = @_;
+  return '' unless @phrases;
+  my $lead = '';
+  for my $candidate ('one entry of ', 'one value of ', 'the value of ', 'the body of ') {
+    next if grep { index($_, $candidate) != 0 } @phrases;
+    $lead = $candidate;
+    s/\A\Q$candidate\E// for @phrases;
+    last;
+  }
+  return $lead . $phrases[0] if @phrases == 1;
+  my $last = pop @phrases;
+  return $lead . join(', ', @phrases) . " and $last";
+}
+
+sub path_site_phrase {
+  my ($site) = @_;
+  my $endpoint = 'C<' . $site->{method} . ' ' . $site->{path} . '>';
+  my $where = $site->{kind} eq 'response'
+    ? 'the C<' . $site->{code} . '> response to ' . $endpoint
+    : 'the body of a ' . $endpoint . ' request';
+  my $base = length $site->{field}
+    ? 'the C<' . $site->{field} . '> field of ' . $where
+    : $where;
+  return 'one entry of ' . $base if $site->{via} eq 'array';
+  return 'one value of ' . $base if $site->{via} eq 'map';
+  return $base if length $site->{field};
+  return $site->{kind} eq 'response' ? 'the body of ' . $where : $where;
+}
+
+sub ref_site_phrase {
+  my ($site) = @_;
+  my $field = 'C<' . $site->{field} . '>';
+  return 'one entry of ' . $field if $site->{via} eq 'array';
+  return 'one value of ' . $field if $site->{via} eq 'map';
+  return 'the value of ' . $field;
+}
+
+# ({ abstract, sentence }) or nothing.
+sub derive_identity {
+  my ($spec, $name) = @_;
+  if (my $sites = $SPEC->can('path_index')->($spec)->{$name}) {
+    my @phrases = map { path_site_phrase($_) } @$sites;
+    return {
+      abstract => ucfirst $phrases[0],
+      sentence => 'C<paths:> says what it is: ' . join_phrases(@phrases) . '.',
+    };
+  }
+  if (my $sites = $SPEC->can('reference_index')->($spec)->{$name}) {
+    my @phrases = map { ref_site_phrase($_) } @$sites;
+    return {
+      abstract => ucfirst $phrases[0],
+      sentence => 'Nothing in C<paths:> reaches it either; it is '
+        . join_phrases(@phrases) . '.',
+    };
+  }
+  return undef;
+}
+
 sub build_class {
   my ($class, $model_info, $spec, $defs, $exc, $since, $label) = @_;
   my $path   = $model_info->{path};
@@ -495,11 +569,36 @@ sub build_class {
   my $own_description;
   my $is_inline = @parts > 1;
   if ($is_inline) {
+    # For an inline object the property and the schema are the same node, so
+    # a description written on the property IS the schema's description --
+    # "Optional configuration for the `bind` type." sits on Mount.BindOptions
+    # and describes the object it opens. Only an array's items are a
+    # different node, and there the property describes the array rather than
+    # one element of it, which is why nothing is borrowed across that step.
     my $prop = $SPEC->can('_schema_at')->($spec, join('.', @parts[0 .. $#parts - 1]), $parts[-1]);
-    my $inline = $SPEC->can('inline_object_schema')->($prop);
-    $own_description = $inline->{description};
+    $own_description = $SPEC->can('inline_object_schema')->($prop)->{description};
   }
   else { $own_description = $schema->{description} }
+  my $identity;
+  if (!defined $own_description || !length $own_description) {
+    if (!$is_inline) { $identity = derive_identity($spec, $parts[0]) }
+    else {
+      # An inline schema that is an array's items: the class is named for one
+      # element and the property for the whole array, so saying which array is
+      # the singularisation the exceptions file records, spelled out. For an
+      # inline object that IS the property, the same sentence would only
+      # repeat the class name back at the reader, so there is nothing to
+      # derive and the refusal stands.
+      my $parent_path = join '.', @parts[0 .. $#parts - 1];
+      my $prop = $SPEC->can('_schema_at')->($spec, $parent_path, $parts[-1]);
+      my $field = "$parent_path.$parts[-1]";
+      # No sentence: the provenance line above already says "the inline items
+      # schema of C<Resources.Ulimits>", and repeating the path underneath it
+      # would be filler.
+      $identity = { abstract => 'One entry of C<' . $field . '>' }
+        if $SPEC->can('is_array_schema')->($prop);
+    }
+  }
 
   # Two shapes where the mechanical class name is a guess rather than a
   # derivation, and both belong in inline_class_names:
@@ -512,13 +611,19 @@ sub build_class {
   #
   # Neither is fatal to the model, both are wrong to guess at, so the class is
   # reported and not written.
-  if ($is_inline && !$exc->{inline_class_names}{$path}) {
-    die { needs_class_name => $class }
-      if (split /::/, $class)[-1] !~ /\A[A-Z]/;
-    my $parent_path = join '.', @parts[0 .. $#parts - 1];
-    my $prop_schema = $SPEC->can('_schema_at')->($spec, $parent_path, $parts[-1]);
-    die { needs_class_name => $class }
-      if ($prop_schema->{type} // '') eq 'array';
+  if (!$exc->{inline_class_names}{$path}) {
+    if ($is_inline) {
+      die { needs_class_name => $class }
+        if (split /::/, $class)[-1] !~ /\A[A-Z]/;
+      my $parent_path = join '.', @parts[0 .. $#parts - 1];
+      my $prop_schema = $SPEC->can('_schema_at')->($spec, $parent_path, $parts[-1]);
+      die { needs_class_name => $class }
+        if $SPEC->can('is_array_schema')->($prop_schema);
+    }
+    # A definition that is itself an array of inline objects: the class is one
+    # element and the definition names the whole array, so it is the same
+    # judgement.
+    die { needs_class_name => $class } if $model_info->{from_items};
   }
 
   my $prose = $PROSE{$class} // {};
@@ -531,10 +636,12 @@ sub build_class {
     # nothing to derive it from. The class is not rendered: a generated
     # placeholder would be an invention, and the whole point of the prose file
     # is that inventions are written by a person and recorded.
-    die { needs_abstract => $class }
-      unless defined $own_description && length $own_description;
-    $abstract = strip_go_opener((split_description($own_description))[0], $parts[-1]);
-    $abstract = md_inline($abstract, "$class ABSTRACT");
+    if (defined $own_description && length $own_description) {
+      $abstract = strip_go_opener((split_description($own_description))[0], $parts[-1]);
+      $abstract = md_inline($abstract, "$class ABSTRACT");
+    }
+    elsif ($identity) { $abstract = $identity->{abstract} }
+    else { die { needs_abstract => $class } }
   }
 
   # DESCRIPTION
@@ -560,6 +667,8 @@ sub build_class {
     $provenance =~ s/\.\z/, which the swagger leaves undescribed./;
   }
   push @blocks, [ wrap_text($provenance, '') ];
+  append_sentence(\@blocks, $identity->{sentence})
+    if $identity && $identity->{sentence};
   if (@{ $model_info->{extends} }) {
     my $own   = scalar @{ $model_info->{order} };
     my $total = scalar @{ $model_info->{flat_order} };

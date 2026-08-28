@@ -10,8 +10,8 @@ use API::Docker::Type::Mount::VolumeOptions;
 =head1 DESCRIPTION
 
 Generated from the C<Mount> definition of C<spec/v1.51.yaml>, which the
-swagger leaves undescribed. It is the element type of
-L<API::Docker::Type::HostConfig/mounts>.
+swagger leaves undescribed. Nothing in C<paths:> reaches it either; it is
+one entry of C<HostConfig.Mounts> and C<TaskSpec.ContainerSpec.Mounts>.
 
 The four C<*Options> fields are objects the swagger writes inline rather
 than referencing, so each becomes a class named after this one:

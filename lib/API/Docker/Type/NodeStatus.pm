@@ -1,0 +1,39 @@
+package API::Docker::Type::NodeStatus;
+# ABSTRACT: The status of a node
+our $VERSION = '0.004';
+use API::Docker::Type;
+
+=head1 DESCRIPTION
+
+Generated from the C<NodeStatus> definition of C<spec/v1.51.yaml>.
+
+It provides the current status of the node, as seen by the manager.
+
+=cut
+
+docker state => Str, enum => [qw( unknown down ready disconnected )];
+
+=attr state
+
+NodeState represents the state of a node. The swagger enumerates C<unknown>,
+C<down>, C<ready> and C<disconnected>.
+
+=cut
+
+docker message => Str;
+
+=attr message
+
+Undocumented upstream.
+
+=cut
+
+docker addr => Str;
+
+=attr addr
+
+IP address of the node.
+
+=cut
+
+1;

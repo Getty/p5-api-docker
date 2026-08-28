@@ -62,14 +62,26 @@ subtest 'the generator refuses to write into the model' => sub {
   }
 };
 
-subtest 'the generator refuses to overwrite a staged file' => sub {
+subtest 'the generator refuses to overwrite a file it already wrote' => sub {
   my $dir = File::Spec->catdir($stage, 'twice');
   my $only = '^API::Docker::Type::HealthConfig$';
-  my $first = qx{$^X \Q$SCRIPT\E --stage \Q$dir\E --only \Q$only\E 2>&1};
+  my $first = qx{$^X \Q$SCRIPT\E --verify \Q$dir\E --only \Q$only\E 2>&1};
   like $first, qr/rendered\s+1 class/, 'the first run writes the class';
-  my $second = qx{$^X \Q$SCRIPT\E --stage \Q$dir\E --only \Q$only\E 2>&1};
+  my $second = qx{$^X \Q$SCRIPT\E --verify \Q$dir\E --only \Q$only\E 2>&1};
   like $second, qr/never overwrites a\nfile/,
     'the second run refuses rather than regenerating it';
+};
+
+subtest 'stage has nothing left to write' => sub {
+  # The end state of karr k79 step 5: every class the spec calls for is in
+  # lib/, so the generator's creating half has no work. A number other than
+  # zero here means the spec grew a definition and nobody noticed -- which is
+  # the drift checker's report, arrived at from the other side.
+  my $out = qx{$^X \Q$SCRIPT\E --stage \Q$stage\E/nothing 2>&1};
+  like $out, qr/rendered\s+0 class\(es\)/,
+    'no class in the spec is missing from lib/';
+  unlike $out, qr/NEEDS A/,
+    'and nothing is blocked waiting for a name or an abstract';
 };
 
 subtest 'a name with a run of capitals must be in the map' => sub {
@@ -83,7 +95,7 @@ subtest 'a name with a run of capitals must be in the map' => sub {
   while (my $line = <$in>) { print $out $line unless $line =~ /\AEndpointID:/ }
   close $out;
   close $in;
-  my $report = qx{$^X \Q$SCRIPT\E --stage \Q$stage\E/names --names \Q$names\E --only '^API::Docker::Type::EndpointSettings\$' 2>&1};
+  my $report = qx{$^X \Q$SCRIPT\E --verify \Q$stage\E/names --names \Q$names\E --only '^API::Docker::Type::EndpointSettings\$' 2>&1};
   like $report, qr/'EndpointID'.*carries a run of capitals/s,
     'the run stops and names the field';
   like $report, qr/spec-to-type-names\.yaml/, 'and says where to put the answer';

@@ -1,0 +1,188 @@
+package API::Docker::Type::ContainerSummary;
+# ABSTRACT: One entry of the C<200> response to C<GET /containers/json>
+our $VERSION = '0.004';
+use API::Docker::Type;
+use API::Docker::Type::ContainerSummary::HostConfig;
+use API::Docker::Type::ContainerSummary::NetworkSettings;
+use API::Docker::Type::MountPoint;
+use API::Docker::Type::OCIDescriptor;
+use API::Docker::Type::Port;
+
+=head1 DESCRIPTION
+
+Generated from the C<ContainerSummary> definition of C<spec/v1.51.yaml>,
+which the swagger leaves undescribed. C<paths:> says what it is: one entry
+of the C<200> response to C<GET /containers/json> and the C<Containers>
+field of the C<200> response to C<GET /system/df>.
+
+=cut
+
+docker id => Str;
+
+=attr id
+
+The ID of this container as a 128-bit (64-character) hexadecimal string (32
+bytes).
+
+=cut
+
+docker names => [Str];
+
+=attr names
+
+The names associated with this container. Most containers have a single
+name, but when using legacy "links", the container can have multiple names.
+
+For historic reasons, names are prefixed with a forward-slash (C</>).
+
+=cut
+
+docker image => Str;
+
+=attr image
+
+The name or ID of the image used to create the container.
+
+This field shows the image reference as was specified when creating the
+container, which can be in its canonical form (e.g.,
+C<docker.io/library/ubuntu:latest> or
+C<docker.io/library/ubuntu@sha256:72297848456d5d37d1262630108ab308d3e9ec7ed1c3286a32fe09856619a782>),
+short form (e.g., C<ubuntu:latest>)), or the ID(-prefix) of the image (e.g.,
+C<72297848456d>).
+
+The content of this field can be updated at runtime if the image used to
+create the container is untagged, in which case the field is updated to
+contain the the image ID (digest) it was resolved to in its canonical,
+non-truncated form (e.g.,
+C<sha256:72297848456d5d37d1262630108ab308d3e9ec7ed1c3286a32fe09856619a782>).
+
+=cut
+
+docker image_id => Str, wire => 'ImageID';
+
+=attr image_id
+
+The ID (digest) of the image that this container was created from.
+Serialised as C<ImageID> -- spelled out, because deriving it from the Perl
+name would produce C<ImageId>.
+
+=cut
+
+docker image_manifest_descriptor => 'OCIDescriptor', since => '1.51';
+
+=attr image_manifest_descriptor
+
+OCI descriptor of the platform-specific manifest of the image the container
+was created from.
+
+Note: Only available if the daemon provides a multi-platform image store.
+
+This field is not populated in the C<GET /system/df> endpoint. See
+L<API::Docker::Type::OCIDescriptor>.
+
+=cut
+
+docker command => Str;
+
+=attr command
+
+Command to run when starting the container.
+
+=cut
+
+docker created => Int;
+
+=attr created
+
+Date and time at which the container was created as a Unix timestamp (number
+of seconds since EPOCH).
+
+=cut
+
+docker ports => [ 'Port' ];
+
+=attr ports
+
+Port-mappings for the container. See L<API::Docker::Type::Port>.
+
+=cut
+
+docker size_rw => Int;
+
+=attr size_rw
+
+The size of files that have been created or changed by this container.
+
+This field is omitted by default, and only set when size is requested in the
+API request.
+
+=cut
+
+docker size_root_fs => Int;
+
+=attr size_root_fs
+
+The total size of all files in the read-only layers from the image that the
+container uses. These layers can be shared between containers.
+
+This field is omitted by default, and only set when size is requested in the
+API request.
+
+=cut
+
+docker labels => { Str, Str };
+
+=attr labels
+
+User-defined key/value metadata. B<The keys are the caller's data> and are
+never translated.
+
+=cut
+
+docker state => Str,
+  enum => [qw( created running paused restarting exited removing dead )];
+
+=attr state
+
+The state of this container. The swagger enumerates C<created>, C<running>,
+C<paused>, C<restarting>, C<exited>, C<removing> and C<dead>.
+
+=cut
+
+docker status => Str;
+
+=attr status
+
+Additional human-readable status of this container (e.g. C<Exit 0>).
+
+=cut
+
+docker host_config => 'ContainerSummary::HostConfig';
+
+=attr host_config
+
+Summary of host-specific runtime information of the container. This is a
+reduced set of information in the container's "HostConfig" as available in
+the container "inspect" response. See
+L<API::Docker::Type::ContainerSummary::HostConfig>.
+
+=cut
+
+docker network_settings => 'ContainerSummary::NetworkSettings';
+
+=attr network_settings
+
+Summary of the container's network settings. See
+L<API::Docker::Type::ContainerSummary::NetworkSettings>.
+
+=cut
+
+docker mounts => [ 'MountPoint' ];
+
+=attr mounts
+
+List of mounts used by the container. See L<API::Docker::Type::MountPoint>.
+
+=cut
+
+1;

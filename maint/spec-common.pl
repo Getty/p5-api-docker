@@ -50,7 +50,9 @@ sub load {
     or die "spec-common: no 'definitions' key in $path\n";
   my $order = _scan_order($path);
   _cross_check($defs, $order, $path);
-  return { definitions => $defs, order => $order, path => $path };
+  # The whole document, not just definitions: `paths:` is where the spec says
+  # what a definition without a description of its own IS.
+  return { definitions => $defs, order => $order, path => $path, document => $spec };
 }
 
 # The property names of one schema path, in the order the swagger writes
@@ -265,9 +267,17 @@ sub is_class_schema {
 # Resources.Ulimits has to become Resources::Ulimit.
 sub class_for_path {
   my ($path, $exc) = @_;
-  return $exc->{inline_class_names}{$path} if $exc->{inline_class_names}{$path};
-  (my $class = $path) =~ s/\./::/g;
-  return $PREFIX . $class;
+  # A renamed ancestor carries its descendants: once Resources.Ulimits is
+  # Resources::Ulimit, anything nested inside it belongs under that name and
+  # not under the plural the swagger wrote. The longest matching prefix wins,
+  # so a descendant can still be named outright.
+  my @parts = split /\./, $path;
+  for my $take (reverse 0 .. $#parts) {
+    my $prefix = join '.', @parts[0 .. $take];
+    my $mapped = $exc->{inline_class_names}{$prefix} or next;
+    return join '::', $mapped, @parts[$take + 1 .. $#parts];
+  }
+  return $PREFIX . join '::', @parts;
 }
 
 # The type descriptor string a property's schema calls for, in the same
@@ -280,15 +290,20 @@ sub spec_type {
     return 'object<' . $PREFIX . $ref . '>' if is_class_schema($target);
     return spec_type($target, $ref, $defs, $exc);
   }
+  # Keyed on the structural keyword, not on `type`: swagger lets `type` be
+  # omitted where `items` or `additionalProperties` already says what the
+  # schema is, and v1.51 does exactly that once --
+  # ContainerStatsResponse.networks is `additionalProperties: {$ref:
+  # ContainerNetworkStats}` with no `type: object` above it. Reading `type`
+  # first turned that typed map into an untyped passthrough, which is the
+  # quiet half of the mistake this model exists to avoid.
   my $type = $schema->{type} // '';
   return 'array<' . spec_type($schema->{items} // {}, $path, $defs, $exc) . '>'
-    if $type eq 'array';
-  if ($type eq 'object') {
-    my $ap = $schema->{additionalProperties};
-    return 'hash<' . spec_type($ap, $path, $defs, $exc) . '>' if ref $ap eq 'HASH';
-    return 'object<' . class_for_path($path, $exc) . '>' if $schema->{properties};
-    return 'any';
-  }
+    if is_array_schema($schema);
+  my $ap = $schema->{additionalProperties};
+  return 'hash<' . spec_type($ap, $path, $defs, $exc) . '>' if ref $ap eq 'HASH';
+  return 'object<' . class_for_path($path, $exc) . '>' if $schema->{properties};
+  return 'any' if $type eq 'object';
   return 'str'  if $type eq 'string';
   return 'int'  if $type eq 'integer';
   return 'num'  if $type eq 'number';
@@ -299,16 +314,20 @@ sub spec_type {
 # The schema that becomes an inline class for this property, if any: the
 # property's own schema when it is an object with properties, or its items
 # when it is an array of such objects.
+# An array whether or not the swagger bothered to say `type: array`.
+sub is_array_schema {
+  my ($schema) = @_;
+  return 0 unless ref $schema eq 'HASH';
+  return 1 if ($schema->{type} // '') eq 'array';
+  return ref $schema->{items} eq 'HASH' ? 1 : 0;
+}
+
 sub inline_object_schema {
   my ($schema) = @_;
   return undef unless ref $schema eq 'HASH';
   return undef if single_ref($schema);
-  return $schema if ($schema->{type} // '') eq 'object' && $schema->{properties};
-  return $schema if !$schema->{type} && $schema->{properties};
-  if (($schema->{type} // '') eq 'array') {
-    my $items = $schema->{items};
-    return inline_object_schema($items) if ref $items eq 'HASH';
-  }
+  return inline_object_schema($schema->{items}) if is_array_schema($schema);
+  return $schema if $schema->{properties};
   return undef;
 }
 
@@ -409,6 +428,28 @@ sub expected_model {
     }
   };
   $add_inline->($_) for sort keys %own;
+
+  # A definition that is not class-shaped can still carry an inline object:
+  # GenericResources is `type: array` whose items are an object with two
+  # properties, so a field typed `$ref: GenericResources` is an array of
+  # something, and that something needs a class. Registered under the
+  # definition's own path, which is what spec_type names, and marked as
+  # coming from items so the generator asks for a name the way it does for
+  # any other array element.
+  for my $name (sort keys %$defs) {
+    next if $own{$name};
+    my $inner = inline_object_schema($defs->{$name}) or next;
+    my $class = class_for_path($name, $exc);
+    $model{$class} //= {
+      path => $name, extends => [], props => {},
+      order => [ ordered_properties($spec, $name) ],
+      from_items => (($defs->{$name}{type} // '') eq 'array' ? 1 : 0),
+    };
+    $model{$class}{flat_order} //= $model{$class}{order};
+    $model{$class}{props}{$_} = { schema => $inner->{properties}{$_}, path => $name }
+      for keys %{ $inner->{properties} // {} };
+    $add_inline->($name);
+  }
   return \%model;
 }
 
@@ -439,6 +480,151 @@ sub _properties_of {
     %props = (%props, %{ _properties_of($schema->{additionalProperties}) });
   }
   return \%props;
+}
+
+# ---------------------------------------------------------------------------
+# Where a definition is used
+#
+# 34 of the 132 definitions in v1.51 carry neither a description nor a title,
+# so there is nothing in the definition itself to say what the type IS. The
+# spec still says it, twice over, just not in that field: `paths:` names the
+# request or response a definition is the schema of, and the other
+# definitions name the fields that hold it. Both are measurements of the same
+# checked-in file, as verifiable as a description field, which is why
+# maint/spec-to-type.pl is allowed to write a sentence out of them.
+# ---------------------------------------------------------------------------
+
+# Definition name -> [ { method, path, kind, code, via }, ... ], sorted.
+#   kind  'response' or 'request' -- a body parameter is input, not output,
+#         and a generated sentence has to say so
+#   via   'direct', 'array' (the definition is ONE ENTRY of the answer) or
+#         'map' (one value of it)
+sub path_index {
+  my ($spec) = @_;
+  return $spec->{_path_index} if $spec->{_path_index};
+  my %index;
+  my $paths = $spec->{document}{paths} // {};
+  # Recursive, because a definition is not always the whole body: the exec
+  # inspect response is an inline object with a ProcessConfig field, and the
+  # network create body an inline object with an IPAM field. `field` is the
+  # dotted path inside the body, empty when the definition IS the body.
+  my $record;
+  $record = sub {
+    my ($schema, $site, $field) = @_;
+    return unless ref $schema eq 'HASH';
+    if (my $ref = $schema->{'$ref'}) {
+      push @{ $index{ strip_ref($ref) } }, { %$site, via => 'direct', field => $field };
+      return;
+    }
+    for my $part (@{ $schema->{allOf} || [] }) { $record->($part, $site, $field) }
+    if (ref $schema->{items} eq 'HASH') {
+      my $items = $schema->{items};
+      if (my $ref = $items->{'$ref'}) {
+        push @{ $index{ strip_ref($ref) } }, { %$site, via => 'array', field => $field };
+      }
+      else { $record->($items, $site, $field) }
+    }
+    if (ref $schema->{additionalProperties} eq 'HASH') {
+      my $ap = $schema->{additionalProperties};
+      if (my $ref = $ap->{'$ref'}) {
+        push @{ $index{ strip_ref($ref) } }, { %$site, via => 'map', field => $field };
+      }
+      else { $record->($ap, $site, $field) }
+    }
+    for my $name (sort keys %{ $schema->{properties} // {} }) {
+      $record->($schema->{properties}{$name}, $site,
+        (length $field ? "$field.$name" : $name));
+    }
+  };
+  for my $path (sort keys %$paths) {
+    my $item = $paths->{$path};
+    next unless ref $item eq 'HASH';
+    for my $method (sort keys %$item) {
+      next unless $method =~ /\A(?:get|put|post|delete|head|patch)\z/;
+      my $op = $item->{$method};
+      next unless ref $op eq 'HASH';
+      my $site = { method => uc $method, path => $path };
+      for my $code (sort keys %{ $op->{responses} // {} }) {
+        $record->($op->{responses}{$code}{schema},
+          { %$site, kind => 'response', code => $code }, '');
+      }
+      for my $param (@{ $op->{parameters} // [] }, @{ $item->{parameters} // [] }) {
+        next unless ref $param eq 'HASH' && ($param->{in} // '') eq 'body';
+        $record->($param->{schema}, { %$site, kind => 'request' }, '');
+      }
+    }
+  }
+  for my $name (keys %index) {
+    my %seen;
+    $index{$name} = [
+      grep { !$seen{ join '|', map { $_ // '' } @{$_}{qw( method path kind code via field )} }++ }
+      # The body itself before a field of it, a response before a request,
+      # then by status, path and method: the first entry is what a generated
+      # abstract names, so the order has to be total and stable.
+      sort {
+        (length($a->{field}) <=> length($b->{field}) && (length($a->{field}) ? 1 : -1))
+          || $a->{kind} cmp $b->{kind}
+          || ($a->{code} // '') cmp ($b->{code} // '')
+          || $a->{path} cmp $b->{path}
+          || $a->{method} cmp $b->{method}
+          || $a->{field} cmp $b->{field}
+      } @{ $index{$name} }
+    ];
+  }
+  return $spec->{_path_index} = \%index;
+}
+
+# Definition name -> [ { field, via }, ... ] -- the dotted schema paths of
+# every field in every other definition that holds one. `field` is named the
+# way the swagger names it (HostConfig.Mounts), which is the same notation
+# the drift checker prints.
+sub reference_index {
+  my ($spec) = @_;
+  return $spec->{_reference_index} if $spec->{_reference_index};
+  my $defs = $spec->{definitions};
+  my %index;
+  my $walk;
+  $walk = sub {
+    my ($schema, $field) = @_;
+    return unless ref $schema eq 'HASH';
+    if (my $ref = $schema->{'$ref'}) {
+      push @{ $index{ strip_ref($ref) } }, { field => $field, via => 'direct' };
+      return;
+    }
+    for my $part (@{ $schema->{allOf} || [] }) { $walk->($part, $field) }
+    if (ref $schema->{items} eq 'HASH') {
+      my $items = $schema->{items};
+      if (my $ref = $items->{'$ref'}) {
+        push @{ $index{ strip_ref($ref) } }, { field => $field, via => 'array' };
+      }
+      else { $walk->($items, $field) }
+    }
+    if (ref $schema->{additionalProperties} eq 'HASH') {
+      my $ap = $schema->{additionalProperties};
+      if (my $ref = $ap->{'$ref'}) {
+        push @{ $index{ strip_ref($ref) } }, { field => $field, via => 'map' };
+      }
+      else { $walk->($ap, $field) }
+    }
+    for my $name (sort keys %{ $schema->{properties} // {} }) {
+      $walk->($schema->{properties}{$name}, ($field ? "$field.$name" : $name));
+    }
+  };
+  for my $name (sort keys %$defs) {
+    my $schema = $defs->{$name};
+    # allOf's own $ref is inheritance, not a field, and saying "referenced by
+    # HostConfig" about Resources would describe the wrong relationship.
+    my @parts = $schema->{allOf} ? grep { !$_->{'$ref'} } @{ $schema->{allOf} } : ($schema);
+    $walk->($_, $name) for @parts;
+  }
+  for my $name (keys %index) {
+    my %seen;
+    $index{$name} = [
+      grep { !$seen{ $_->{field} }++ }
+      sort { $a->{field} cmp $b->{field} } @{ $index{$name} }
+    ];
+  }
+  return $spec->{_reference_index} = \%index;
 }
 
 # Definitions that are deliberately not classes, for a report's benefit.

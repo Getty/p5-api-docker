@@ -56,11 +56,6 @@ API::Docker::Type::PortBinding:
 
 API::Docker::Type::ThrottleDevice:
   abstract: A per-device block IO rate limit
-  description_append:
-    - >-
-      It is the element type of C<BlkioDeviceReadBps>, C<BlkioDeviceWriteBps>,
-      C<BlkioDeviceReadIOps> and C<BlkioDeviceWriteIOps> on
-      L<API::Docker::Type::Resources>.
   attr:
     rate:
       extra:
@@ -108,8 +103,6 @@ API::Docker::Type::DeviceRequest:
 
 API::Docker::Type::Mount:
   abstract: One entry of a container's Mounts specification
-  description_append:
-    - It is the element type of L<API::Docker::Type::HostConfig/mounts>.
   description_extra:
     - >-
       The four C<*Options> fields are objects the swagger writes inline rather
@@ -213,3 +206,100 @@ API::Docker::Type::HostConfig::LogConfig:
     config:
       extra:
         - 'The swagger''s example is C<< {"max-file": "5", "max-size": "10m"} >>.'
+
+# --- Classes the swagger describes nowhere -------------------------------
+#
+# Everything above this line was written while the seventeen hand-written
+# classes were. What follows is the other half of the same job: the classes
+# for which neither the definition, nor the property holding it, nor `paths:`,
+# nor the field that references it says what the thing is. The generator
+# refuses those, and these are the answers.
+
+# The three streaming payloads. Nothing references them and no path names
+# them as a schema, because they are the newline-delimited JSON objects the
+# daemon writes into a response body rather than the body itself -- the
+# reference documentation says so in prose, and this distribution's transport
+# has been parsing them since before the type model existed (see
+# API::Docker::Role::HTTP, which falls back to line-by-line NDJSON, and
+# API::Docker::Error::Stream, which is croaked on the errorDetail one).
+API::Docker::Type::BuildInfo:
+  abstract: One event of the stream a C<POST /build> answers with
+  description_append:
+    - >-
+      Nothing references it and no path names it as a schema, because it is
+      not a response body: C<POST /build> answers C<200> and then writes one
+      of these objects per line until the daemon closes the connection. A
+      failed build is still C<200>, and arrives as an event carrying
+      C<errorDetail>.
+API::Docker::Type::CreateImageInfo:
+  abstract: One event of the stream a C<POST /images/create> answers with
+  description_append:
+    - >-
+      The pull progress stream: C<POST /images/create> answers C<200> and then
+      writes one of these objects per line. Like a build, a failed pull is
+      still C<200> and reports itself through C<errorDetail>.
+API::Docker::Type::PushImageInfo:
+  abstract: One event of the stream a C<POST /images/{name}/push> answers with
+  description_append:
+    - >-
+      The push progress stream, the same shape as a pull's. A failed push is
+      C<200> with an C<errorDetail> event, so the status line is not the
+      verdict.
+
+# Inline objects the swagger writes without a description, and whose property
+# carries none either. The class name is the only thing the spec offers, so
+# these say what the fields are rather than inventing a purpose for them.
+API::Docker::Type::GenericResource::DiscreteResourceSpec:
+  abstract: An integer-valued user-defined resource
+  description_append:
+    - The C<Kind>/C<Value> pair for a countable resource, C<SSD=3> in the
+      swagger's example.
+API::Docker::Type::GenericResource::NamedResourceSpec:
+  abstract: A string-valued user-defined resource
+  description_append:
+    - The C<Kind>/C<Value> pair for a named resource, C<GPU=UUID1> in the
+      swagger's example.
+API::Docker::Type::ImageManifestSummary::Size:
+  abstract: The sizes of one manifest of an image
+  description_append:
+    - Two byte counts, C<Content> and C<Total>.
+API::Docker::Type::ImageManifestSummary::ImageData::Size:
+  abstract: The unpacked size of an image manifest
+  description_append:
+    - One byte count, C<Unpacked>.
+API::Docker::Type::Plugin::Config::Args:
+  abstract: The command-line arguments a plugin accepts
+API::Docker::Type::Plugin::Config::Linux:
+  abstract: The Linux-specific capabilities and devices a plugin needs
+API::Docker::Type::Plugin::Config::Network:
+  abstract: The network mode a plugin runs in
+API::Docker::Type::Plugin::Config::RootFS:
+  abstract: The root filesystem of a plugin
+  description_append:
+    - >-
+      The two fields are spelled in lower case upstream, C<type> and
+      C<diff_ids>, and the property itself is C<rootfs>; the class is named
+      C<RootFS> to match C<ImageInspect.RootFS>, which is recorded in
+      C<maint/spec-drift-exceptions.yaml>.
+API::Docker::Type::Plugin::Config::User:
+  abstract: The user and group a plugin's process runs as
+API::Docker::Type::Service::Endpoint:
+  abstract: The resolved endpoint of a service
+  description_append:
+    - >-
+      The specification a service was asked for, alongside the ports and
+      virtual IPs the swarm actually gave it.
+API::Docker::Type::ServiceSpec::Mode::Replicated:
+  abstract: The replicated mode of a service, and its replica count
+API::Docker::Type::SystemVersion::Platform:
+  abstract: The name of the platform the daemon reports itself as
+API::Docker::Type::TaskSpec::Placement:
+  abstract: Where in the swarm a task may be scheduled
+  description_append:
+    - >-
+      Hard constraints, soft preferences, the platforms the task can run on,
+      and a cap on how many replicas one node may take.
+API::Docker::Type::TaskSpec::Placement::Preference:
+  abstract: One scheduling preference of a task
+API::Docker::Type::TaskSpec::Placement::Preference::Spread:
+  abstract: The node attribute a task is spread over

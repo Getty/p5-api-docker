@@ -1,0 +1,40 @@
+package API::Docker::Type::ManagerStatus;
+# ABSTRACT: The status of a manager
+our $VERSION = '0.004';
+use API::Docker::Type;
+
+=head1 DESCRIPTION
+
+Generated from the C<ManagerStatus> definition of C<spec/v1.51.yaml>.
+
+It provides the current status of a node's manager component, if the node is
+a manager.
+
+=cut
+
+docker leader => Bool;
+
+=attr leader
+
+Undocumented upstream. The daemon defaults it to false.
+
+=cut
+
+docker reachability => Str, enum => [qw( unknown unreachable reachable )];
+
+=attr reachability
+
+Reachability represents the reachability of a node. The swagger enumerates
+C<unknown>, C<unreachable> and C<reachable>.
+
+=cut
+
+docker addr => Str;
+
+=attr addr
+
+The IP address and port at which the manager is reachable.
+
+=cut
+
+1;

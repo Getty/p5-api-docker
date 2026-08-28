@@ -6,9 +6,10 @@ use API::Docker::Type;
 =head1 DESCRIPTION
 
 Generated from the C<ThrottleDevice> definition of C<spec/v1.51.yaml>, which
-the swagger leaves undescribed. It is the element type of
-C<BlkioDeviceReadBps>, C<BlkioDeviceWriteBps>, C<BlkioDeviceReadIOps> and
-C<BlkioDeviceWriteIOps> on L<API::Docker::Type::Resources>.
+the swagger leaves undescribed. Nothing in C<paths:> reaches it either; it
+is one entry of C<Resources.BlkioDeviceReadBps>,
+C<Resources.BlkioDeviceReadIOps>, C<Resources.BlkioDeviceWriteBps> and
+C<Resources.BlkioDeviceWriteIOps>.
 
 =cut
 

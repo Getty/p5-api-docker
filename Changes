@@ -2,6 +2,44 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - The type model is complete: 201 classes under `API::Docker::Type::*`,
+    one per definition and one per inline schema of `spec/v1.51.yaml`, all
+    of them written by `maint/spec-to-type.pl`.
+    `maint/spec-drift-check.pl` reports 0 in every tier -- no missing class,
+    no missing or extra field, no type mismatch, no undeclared `allOf`
+    inheritance and no `since` that the specs do not bear out -- and the
+    generator reproduces every one of the 201 byte for byte, which
+    `t/spec_to_type.t` asserts. `t/type_model.t` loads them all and checks
+    that each registered its attributes and that every class an attribute
+    points at can be loaded.
+  - Two more things the generator derives instead of refusing. 34 of the 132
+    definitions carry neither a description nor a title, but the spec states
+    what they are elsewhere: `paths:` names the request or response a
+    definition is the schema of, and the other definitions name the fields
+    that hold it. Both are read now, and both distinguish the shapes -- one
+    entry of an array answer from a whole answer, a body parameter (input)
+    from a response. That takes the classes needing a human-written abstract
+    from 54 to 17, all of which are written out in
+    `maint/spec-to-type-prose.yaml`: the three streaming payloads of
+    `/build`, `/images/create` and `/images/{name}/push`, which no path names
+    because they are newline-delimited events rather than a body, and
+    fourteen inline objects the swagger describes nowhere at all.
+  - Fixed while generating the mass: a field whose schema carries
+    `additionalProperties` but no `type: object` was read as untyped and
+    passed through unmodelled. `ContainerStatsResponse.networks` is the one
+    such field in v1.51, and it is a map from interface name to
+    `ContainerNetworkStats` -- keys the caller's data, values typed. The spec
+    is now read by its structural keywords (`items`,
+    `additionalProperties`, `properties`) rather than by `type`, which
+    swagger allows to be left out.
+  - `GenericResources` is `type: array` at the definition level, so a field
+    that references it is an array of something that had no class at all.
+    That something is now `API::Docker::Type::GenericResource`, and a
+    definition of that shape is refused until it is named, the same way an
+    array-valued property is. A renamed class carries its nested classes with
+    it, so `TaskSpec.Placement.Preferences.Spread` lands under
+    `...::Placement::Preference::Spread` rather than keeping the plural.
+
   - New `maint/spec-to-type.pl`, which writes a class under
     `API::Docker::Type::*` out of `spec/v1.51.yaml`. Its acceptance is that
     it reproduces the seventeen hand-written classes byte for byte, and

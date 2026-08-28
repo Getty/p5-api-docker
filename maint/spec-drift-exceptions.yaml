@@ -25,6 +25,9 @@ inline_class_names:
   ClusterVolume.PublishStatus:          API::Docker::Type::ClusterVolume::PublishStatus
   ClusterVolumeSpec.AccessMode.Secrets: API::Docker::Type::ClusterVolumeSpec::AccessMode::Secret
   EngineDescription.Plugins:            API::Docker::Type::EngineDescription::Plugin
+  # `type: array` at the definition level, so the definition names the whole
+  # array and the class is one element of it.
+  GenericResources:                     API::Docker::Type::GenericResource
   # `rootfs` is the only lower-case one. RootFS, to match ImageInspect.RootFS
   # and the root_fs already in maint/spec-to-type-names.yaml.
   Plugin.Config.rootfs:                 API::Docker::Type::Plugin::Config::RootFS
