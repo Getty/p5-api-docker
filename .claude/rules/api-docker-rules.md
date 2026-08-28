@@ -96,7 +96,10 @@ names a specific item to handle.
   `unix:///var/run/docker.sock` does not exist here, and `check_live_access` answers a
   missing socket with `skip_all`. A live run pointed at the default therefore reports
   success while testing nothing. The real endpoint is
-  `API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock` (announces API 1.41).
+  `API_DOCKER_TEST_HOST=unix:///run/user/1000/podman/podman.sock`. Ask the engine
+  what it announces rather than reading it off a path prefix -- `GET /version`
+  on that socket says 1.44, and the `/v1.41/` in a hand-written curl is only
+  what the request asked for.
 - **Live write tests mutate the real engine.** `API_DOCKER_TEST_WRITE=1` creates and
   removes actual containers, images, networks and volumes; cleanup runs in an `END`
   block, so an interrupted run leaves them behind. Run only when the task is about live
