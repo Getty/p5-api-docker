@@ -2,6 +2,15 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - The generated type classes say what a field is where the swagger says
+    nothing at all. 199 attributes rendered as `Undocumented upstream.` and
+    stopped there; the curated ones now add what the spec states somewhere
+    else -- the same wire name described under another definition, a
+    property's `example`, the example response of the path that answers it --
+    or a read-only measurement, named with the engine and version it was
+    taken on. Where none of that produced anything the admission stays: an
+    invented sentence would read exactly like a measured one.
+
   - A daemon value that disagrees with the swagger costs its own field rather
     than the whole response. `from_data` leaves the typed attribute unset,
     keeps the raw value in `unknown_fields` under its wire name and names it

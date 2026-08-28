@@ -52,8 +52,11 @@ docker size => 'ImageManifestSummary::Size', since => '1.51', required => 1;
 
 =attr size
 
-Undocumented upstream. See L<API::Docker::Type::ImageManifestSummary::Size>.
-The swagger lists this field as required; nothing here enforces that, see
+Undocumented upstream. Two byte counts: C<Content> for what of this manifest
+and its children is in the local content store, C<Total> for that plus every
+other locally present byte belonging to it. See
+L<API::Docker::Type::ImageManifestSummary::Size>. The swagger lists this
+field as required; nothing here enforces that, see
 L<API::Docker::Type/C<since> is documentation>.
 
 =cut

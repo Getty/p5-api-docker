@@ -41,7 +41,8 @@ docker type => Str, required => 1, enum => [qw( tcp udp sctp )];
 
 =attr type
 
-Undocumented upstream. The swagger enumerates C<tcp>, C<udp> and C<sctp>.
+Undocumented upstream. The protocol the port speaks, C<tcp> in the swagger's
+example for this object. The swagger enumerates C<tcp>, C<udp> and C<sctp>.
 The swagger lists this field as required; nothing here enforces that, see
 L<API::Docker::Type/C<since> is documentation>.
 

@@ -83,9 +83,13 @@ docker ipam => 'IPAM', wire => 'IPAM';
 
 =attr ipam
 
-Undocumented upstream. See L<API::Docker::Type::IPAM>. Serialised as C<IPAM>
--- spelled out, because deriving it from the Perl name would produce
-C<Ipam>.
+Undocumented upstream. The network's address management -- which IPAM
+driver, that driver's options, and the pools it allocates from. Measured
+against Podman 5.8.4 (API 1.44), the default bridge answers C<< {"Driver":
+"default", "Options": {"driver": "host-local"}, "Config": [{"Subnet":
+"10.88.0.0/16", "Gateway": "10.88.0.1"}]} >>. See
+L<API::Docker::Type::IPAM>. Serialised as C<IPAM> -- spelled out, because
+deriving it from the Perl name would produce C<Ipam>.
 
 =cut
 

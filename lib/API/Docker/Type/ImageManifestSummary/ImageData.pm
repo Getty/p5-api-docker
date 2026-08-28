@@ -37,7 +37,8 @@ docker size => 'ImageManifestSummary::ImageData::Size', since => '1.51';
 
 =attr size
 
-Undocumented upstream. See
+Undocumented upstream. One byte count, C<Unpacked>: the unpacked,
+uncompressed image content a container running this image uses. See
 L<API::Docker::Type::ImageManifestSummary::ImageData::Size>.
 
 =cut

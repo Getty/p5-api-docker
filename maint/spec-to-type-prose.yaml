@@ -39,6 +39,11 @@ API::Docker::Type::Port:
     public_port:
       extra:
         - A C<uint16>.
+    type:
+      extra:
+        - >-
+          The protocol the port speaks, C<tcp> in the swagger's example for
+          this object.
 
 API::Docker::Type::PortBinding:
   description_append:
@@ -303,3 +308,235 @@ API::Docker::Type::TaskSpec::Placement::Preference:
   abstract: One scheduling preference of a task
 API::Docker::Type::TaskSpec::Placement::Preference::Spread:
   abstract: The node attribute a task is spread over
+
+# --- Fields the swagger leaves undescribed --------------------------------
+#
+# The generator's curation list ends with the fields whose schema carries no
+# `description` at all. Each renders as `Undocumented upstream.` and nothing
+# more, which is honest and tells a reader nothing. What follows says what
+# such a field is, taken -- in this order -- from the spec itself somewhere
+# else (the same wire name described under another definition, the `example`
+# of the property, or the example response of the path that answers it), from
+# a read-only measurement against a real engine, or from what this
+# distribution already has on record.
+#
+# `Undocumented upstream.` stays alone wherever none of the three produced
+# anything. An invented sentence here would read exactly like a measured one,
+# which makes it worse than the admission.
+#
+# The curation list does not shrink as entries are added: it reports what the
+# swagger says, and the swagger still says nothing. What shrinks is the set of
+# =attr blocks that stop at the admission.
+
+API::Docker::Type::ContainerState:
+  attr:
+    dead:
+      extra:
+        - >-
+          The boolean beside L</status>'s C<dead> value, as L</running>,
+          L</paused> and L</restarting> stand beside theirs. The swagger's
+          example is C<false>.
+
+API::Docker::Type::EndpointSettings:
+  attr:
+    links:
+      extra:
+        - >-
+          Container links for this endpoint. The swagger describes the same
+          field name under L<API::Docker::Type::HostConfig/links> as a list of
+          links in the form C<container_name:alias>; the example given here is
+          the bare C<< ["container_1", "container_2"] >>.
+    aliases:
+      extra:
+        - >-
+          The network aliases of this endpoint. L</dns_names> names them as
+          one of the four things an endpoint's DNS names are built from --
+          the container name, its network aliases, its short ID and its
+          hostname. The swagger's example is C<< ["server_x", "server_y"] >>.
+
+API::Docker::Type::EndpointIPAMConfig:
+  attr:
+    ipv4_address:
+      extra:
+        - >-
+          An IPv4 address for the endpoint, C<172.20.30.33> in the swagger's
+          example. This is the address configured; the one the endpoint ends
+          up with is reported separately as
+          L<API::Docker::Type::EndpointSettings/ip_address>.
+    ipv6_address:
+      extra:
+        - >-
+          The IPv6 counterpart of L</ipv4_address>, C<2001:db8:abcd::3033> in
+          the swagger's example.
+    link_local_ips:
+      extra:
+        - >-
+          Link-local addresses for the endpoint. The swagger's example holds
+          one of each family, C<< ["169.254.34.68", "fe80::3468"] >>.
+
+API::Docker::Type::ImageInspect::RootFS:
+  attr:
+    type:
+      extra:
+        - >-
+          How the root filesystem is stored. C<layers> is the only value the
+          swagger shows, and the only one measured: C<GET /images/{id}/json>
+          on Podman 5.8.4 (API 1.44) answers C<"Type": "layers">.
+    layers:
+      extra:
+        - >-
+          One diff ID per layer of the image. Measured against Podman 5.8.4
+          (API 1.44), a Debian-based image answers eight C<sha256:...>
+          digests here; the swagger's example shows two of the same form.
+
+API::Docker::Type::ImageHistoryResponseItem:
+  description_append:
+    - >-
+      The swagger describes none of the six fields, but the example response
+      it gives for C<GET /images/{name}/history> shows all six across three
+      layers, and the sentences below are read off it.
+  attr:
+    id:
+      extra:
+        - >-
+          The layer's ID, a bare hex digest without a C<sha256:> prefix in the
+          swagger's example response.
+    created:
+      extra:
+        - >-
+          A Unix timestamp in seconds -- C<1398108230> in the swagger's
+          example response, the same form the spec spells out for
+          L<API::Docker::Type::ImageSummary/created>.
+    created_by:
+      extra:
+        - >-
+          What created the layer, C<< "/bin/sh -c #(nop) ADD file:eb15... in
+          /" >> in the swagger's example response, and the empty string for a
+          layer that carries none.
+    tags:
+      extra:
+        - >-
+          The image names pointing at this layer, C<< ["ubuntu:lucid",
+          "ubuntu:10.04"] >> in the swagger's example response, and empty for
+          the layers below it.
+    size:
+      extra:
+        - >-
+          The layer's size in bytes: C<182964289> for the one that adds the
+          root filesystem in the swagger's example response, C<0> for the two
+          that only carry metadata.
+    comment:
+      extra:
+        - >-
+          The message set when the layer was committed or imported, which is
+          what L<API::Docker::Type::ImageInspect/comment> describes for a
+          whole image. C<"Imported from -"> on the imported layer of the
+          swagger's example response, empty on the other two.
+
+API::Docker::Type::ImageID:
+  description_append:
+    - >-
+      The only C<$ref> to it in the whole spec is C<BuildInfo.aux>, so this is
+      the object a build stream reports the finished image's ID in; see
+      L<API::Docker::Type::BuildInfo/aux>.
+  attr:
+    id:
+      extra:
+        - >-
+          The image ID or digest the definition's own description names. The
+          swagger's example is
+          C<sha256:85f05633ddc1c50679be2b16a0479ab6f7637f8884e0cfe0f4d20e1ebb3d6e7c>.
+
+API::Docker::Type::ImageManifestSummary:
+  attr:
+    size:
+      extra:
+        - >-
+          Two byte counts: C<Content> for what of this manifest and its
+          children is in the local content store, C<Total> for that plus every
+          other locally present byte belonging to it.
+
+API::Docker::Type::ImageManifestSummary::ImageData:
+  attr:
+    size:
+      extra:
+        - >-
+          One byte count, C<Unpacked>: the unpacked, uncompressed image
+          content a container running this image uses.
+
+API::Docker::Type::Network:
+  attr:
+    ipam:
+      extra:
+        - >-
+          The network's address management -- which IPAM driver, that driver's
+          options, and the pools it allocates from. Measured against Podman
+          5.8.4 (API 1.44), the default bridge answers C<< {"Driver":
+          "default", "Options": {"driver": "host-local"}, "Config":
+          [{"Subnet": "10.88.0.0/16", "Gateway": "10.88.0.1"}]} >>.
+
+API::Docker::Type::NetworkContainer:
+  description_append:
+    - >-
+      The keys of that map are container IDs, and the swagger describes the
+      field holding it as containing the endpoints attached to the network.
+  attr:
+    name:
+      extra:
+        - The container's name, C<container_1> in the swagger's example.
+    endpoint_id:
+      extra:
+        - >-
+          The endpoint's ID, the value the swagger describes under
+          L<API::Docker::Type::EndpointSettings/endpoint_id> as unique for a
+          service endpoint in a sandbox.
+    mac_address:
+      extra:
+        - >-
+          The endpoint's MAC address on this network, which the swagger notes
+          under L<API::Docker::Type::EndpointSettings/mac_address> a network
+          driver may ignore.
+    ipv4_address:
+      extra:
+        - >-
+          The address with its prefix length, C<172.19.0.2/16> in the
+          swagger's example -- not the bare address
+          L<API::Docker::Type::EndpointSettings/ip_address> carries.
+    ipv6_address:
+      extra:
+        - >-
+          The IPv6 counterpart of L</ipv4_address>, empty in the swagger's
+          example, where the network has none.
+
+API::Docker::Type::IPAMConfig:
+  description_append:
+    - >-
+      Neither the definition nor any of its four fields carries a description,
+      but L<API::Docker::Type::IPAM/config> writes out the map form an entry
+      takes: C<< {"Subnet": <CIDR>, "IPRange": <CIDR>, "Gateway": <IP
+      address>, "AuxAddress": <device_name:IP address>} >>. That is where the
+      four sentences below come from.
+  attr:
+    subnet:
+      extra:
+        - >-
+          A CIDR block. Measured against Podman 5.8.4 (API 1.44), the default
+          bridge network answers C<10.88.0.0/16>; the swagger's example is
+          C<172.20.0.0/16>.
+    ip_range:
+      extra:
+        - >-
+          A CIDR block inside L</subnet>, C<172.20.10.0/24> against a
+          C<172.20.0.0/16> subnet in the swagger's examples.
+    gateway:
+      extra:
+        - >-
+          An IP address. Measured against Podman 5.8.4 (API 1.44), the default
+          bridge network answers C<10.88.0.1>; the swagger's example is
+          C<172.20.10.11>.
+    auxiliary_addresses:
+      extra:
+        - >-
+          A device name for each key and an IP address for each value, which
+          is what C<< "AuxAddress": <device_name:IP address> >> in
+          L<API::Docker::Type::IPAM/config> spells out.

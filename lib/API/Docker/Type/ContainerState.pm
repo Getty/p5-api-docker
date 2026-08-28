@@ -73,7 +73,9 @@ docker dead => Bool;
 
 =attr dead
 
-Undocumented upstream.
+Undocumented upstream. The boolean beside L</status>'s C<dead> value, as
+L</running>, L</paused> and L</restarting> stand beside theirs. The
+swagger's example is C<false>.
 
 =cut
 

@@ -25,7 +25,10 @@ docker links => [Str];
 
 =attr links
 
-Undocumented upstream.
+Undocumented upstream. Container links for this endpoint. The swagger
+describes the same field name under L<API::Docker::Type::HostConfig/links>
+as a list of links in the form C<container_name:alias>; the example given
+here is the bare C<< ["container_1", "container_2"] >>.
 
 =cut
 
@@ -42,7 +45,10 @@ docker aliases => [Str];
 
 =attr aliases
 
-Undocumented upstream.
+Undocumented upstream. The network aliases of this endpoint. L</dns_names>
+names them as one of the four things an endpoint's DNS names are built from
+-- the container name, its network aliases, its short ID and its hostname.
+The swagger's example is C<< ["server_x", "server_y"] >>.
 
 =cut
 
