@@ -138,6 +138,9 @@ encoding, shared by Images, Plugins, Distribution and System
 =item * L<API::Docker::Role::Filters> - the C<filters> query parameter,
 normalised into the one shape the engine reads
 
+=item * L<API::Docker::Role::Using> - C<using>, the resource class clone that
+bounds a run of calls
+
 =back
 
 =back
@@ -554,19 +557,26 @@ around _request => sub {
 Two bounds, covering different halves of a request.
 L<API::Docker::Role::HTTP/connect_timeout> bounds opening the connection;
 L<API::Docker::Role::HTTP/read_timeout> bounds reading the answer. Both are
-attributes of the client and options of every method that reaches the daemon,
-where they override the attribute for that one call:
+attributes of the client, and they are set in two places -- which are two
+levels, not two spellings of one thing:
 
+    # the rule, for this client
     my $docker = API::Docker->new(connect_timeout => 2, read_timeout => 30);
 
-    $docker->containers->list(read_timeout => 5);    # tighter, for this call
-    $docker->system->events(read_timeout => 0);      # off, for this call
+    # the exception, for this run of calls
+    $docker->containers->using(read_timeout => 5)->list;
+    $docker->system->using(read_timeout => 0)->events;
+
+L<API::Docker::Role::Using/using> returns a clone of the resource class
+carrying the bounds, and every request made through that clone is given them.
+There is deliberately no third way: the individual methods take no timeout
+options, so their arguments are the request and nothing else.
 
 Both are off by default, which is the behaviour this distribution has always
 had. C<0> means the same as unset -- no bound -- and is how a client-wide
-default is turned off for one call: the options are read with C<exists>
-rather than for truth, so a C<0> reaches the transport instead of vanishing
-into "no opinion".
+default is turned off for a run of calls: what C<using> carries is read with
+C<exists> rather than for truth, so a C<0> reaches the transport instead of
+vanishing into "no opinion".
 
 Three things they do not do:
 
@@ -603,14 +613,20 @@ per-transport measurements behind all of this.
 
 =head2 Where a bound applies
 
-Every public method of every resource class that reaches the daemon takes both
-options and forwards them -- and so do the requests a method makes on the
-caller's behalf without being asked:
+Every public method of every resource class that reaches the daemon -- all of
+them, with no exception for the ones whose arguments are the request body --
+makes its request with the bounds in force. That is what the clone buys: the
+method builds the request and the resource class it was called on says how
+long to wait for it, so there is no list of methods that forward a bound and
+no list of methods that cannot.
+
+The requests a method makes on the caller's behalf without being asked are
+bounded too, and for the same reason -- they run on the same resource class:
 
 =over
 
 =item * L<API::Docker::API::Containers/attach> asks whether the container is
-running before attaching. That check carries the bounds the attach was given.
+running before attaching. That check carries the bounds the attach carries.
 
 =item * L<API::Docker::API::Plugins/install> and
 L<API::Docker::API::Plugins/upgrade> with C<< accept_privileges => 1 >> fetch
@@ -618,25 +634,18 @@ the plugin's privileges first. That fetch carries them too.
 
 =item * L</negotiate_version> runs before the first request of a client with
 no L</api_version>, and inherits the bounds of the request that triggered it:
-C<< $docker->containers->list(read_timeout => 5) >> on a fresh client bounds
-the C<GET /version> as well as the list. Called directly it has only the
-client's attributes to go on.
+C<< $docker->containers->using(read_timeout => 5)->list >> on a fresh client
+bounds the C<GET /version> as well as the list. It is the one place the two
+options are still written out per call, because it can be called directly and
+is not reached through a resource class:
+
+    $docker->negotiate_version(read_timeout => 5);
 
 =back
 
-Two methods take the options only in their ArrayRef form --
-L<API::Docker::API::Images/get_all> and
-L<API::Docker::API::Plugins/configure> -- because in their list form a
-trailing C<< read_timeout => 5 >> would be two more names, or two more
-settings, with nothing to tell the difference.
-
-Eleven methods take neither, and their bound is whatever the client attribute
-says: C<create> and C<update> on C<< containers >>, C<< secrets >> and
-C<< configs >>, C<create> on C<< networks >>, C<< volumes >> and
-C<< exec >>, and C<< networks->connect >> and C<< networks->disconnect >>.
-Each of those takes its arguments as the request body itself, so a
-C<read_timeout> key in one of them would be a field the daemon is sent rather
-than an option this client reads.
+The entity classes have no C<using> of their own; a bound for
+C<< $container->logs >> goes on the resource class instead, see
+L<API::Docker::Role::Using/"What has no clone of its own">.
 
 =head1 CONTAINER ENGINES
 
@@ -747,6 +756,9 @@ changes nothing for a client that speaks plaintext or over a Unix socket.
 encoding
 
 =item * L<API::Docker::Role::Filters> - the C<filters> query parameter
+
+=item * L<API::Docker::Role::Using> - C<using>, the resource class clone that
+bounds a run of calls
 
 =item * L<API::Docker::API::System> - System and daemon operations
 

@@ -2,7 +2,7 @@ package API::Docker::API::Distribution;
 # ABSTRACT: Docker Engine Distribution API
 our $VERSION = '0.004';
 use Moo;
-with 'API::Docker::Role::RegistryAuth';
+with 'API::Docker::Role::RegistryAuth', 'API::Docker::Role::Using';
 use Carp qw( croak );
 use namespace::clean;
 
@@ -32,7 +32,9 @@ This module provides access to the Docker distribution endpoint
 (C<GET /distribution/{name}/json>), which asks a I<registry> for the manifest
 descriptor of an image reference without pulling the image.
 
-Accessed via C<< $docker->distribution >>.
+Accessed via C<< $docker->distribution >>, or through
+L<API::Docker::Role::Using/using> for a run of calls that needs its own
+transport bound: C<< $docker->distribution->using(read_timeout => 5) >>.
 
 The reference goes into the path unescaped, so its slashes and its tag stay
 readable on the wire (C</distribution/myrepo/app:1.0/json>) -- that is what
@@ -111,8 +113,7 @@ sub inspect {
 
   return $self->client->get("/distribution/$name/json",
     $self->_auth_headers(\%opts),
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
     (exists $opts{response} ? (response => $opts{response}) : ()));
 }
 
@@ -151,15 +152,6 @@ anonymous, which is what a public image needs
 
 =item * C<response> - HashRef the status line and the response headers are
 written into, as for L<API::Docker::Role::HTTP/get>
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 

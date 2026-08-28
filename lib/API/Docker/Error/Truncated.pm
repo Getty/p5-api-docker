@@ -33,16 +33,24 @@ use overload
 =head1 DESCRIPTION
 
 L<API::Docker::Role::HTTP> croaks with an object of this class when the daemon
-closed the connection in the middle of a response it had already said how long
-it would be -- a body shorter than its C<Content-Length>, a chunk shorter than
-its own header, a chunk header cut in half, or a chunked body with no
-terminating zero chunk.
+closed the connection in the middle of a response -- a status line with no
+terminator, a header block with no blank line to close it, a body shorter than
+its C<Content-Length>, a chunk shorter than its own header, a chunk header cut
+in half, or a chunked body with no terminating zero chunk.
 
-It is a structural check, not a heuristic: the only thing it compares is the
-body against what the response itself announced. A body delimited by nothing
-but the close -- C<attach>, C<< logs(follow => 1) >>, C</exec/{id}/start>, the
-whole C<application/vnd.docker.raw-stream> family -- announces no end, so
-there an EOF B<is> the end and this is never raised.
+It is a structural check, not a heuristic, and it asks one of two questions
+depending on how the piece is delimited. Where the response announced a length
+it compares what arrived against it. Where the framing is by terminator
+instead -- the head, and the chunk headers -- it asks whether the terminator
+came before the stream ended, which needs nothing to compare and is just as
+decidable. Neither is a guess about content: a header block that never closed
+is not a short one, it is an unfinished one.
+
+A body delimited by nothing but the close -- C<attach>,
+C<< logs(follow => 1) >>, C</exec/{id}/start>, the whole
+C<application/vnd.docker.raw-stream> family -- announces no end and has no
+terminator either, so there an EOF B<is> the end and this is never raised.
+Its B<head> is framed like any other, and is checked like any other.
 
 =head2 Why it is fatal
 
@@ -67,11 +75,18 @@ then the stream ended early. L<API::Docker::Error::Timeout> is raised when the
 daemon goes B<quiet> for longer than a C<read_timeout>, which is a bound the
 caller asked for; this needs no option and is on for every request.
 
-Not a status. The status line arrived intact and said 200; the response after
-it did not. An engine that reports a failure the normal way raises
-L<API::Docker::Error::HTTP>, and one that reports it inside an HTTP 200 stream
-raises L<API::Docker::Error::Stream>. This is the third thing: no report at
-all, because the connection went away mid-sentence.
+Not a status. Where a status line arrived intact it said 200 and the response
+after it did not follow; where L</phase> is C<'status-line'> there was no
+usable status to begin with. An engine that reports a failure the normal way
+raises L<API::Docker::Error::HTTP>, and one that reports it inside an HTTP 200
+stream raises L<API::Docker::Error::Stream>. This is the third thing: no
+report at all, because the connection went away mid-sentence.
+
+Nor is it the daemon answering nothing whatsoever. A connection that closed
+before a single byte of the status line is still the plain
+C<No response from Docker daemon> croak it has always been -- there is no
+half-sent response to describe, and that string predates every error class
+here.
 
 A response with a status of 400 or above raises this rather than
 L<API::Docker::Error::HTTP> when B<its> body is the one cut short, which is
@@ -151,6 +166,16 @@ Which piece of the response framing the stream ended inside. One of:
 
 =over
 
+=item * C<'status-line'> - the stream ended inside the status line, before the
+CRLF that terminates it. A status line with nothing after it parses perfectly
+well -- C<'HTTP/1.1 200 OK'> yields 200 and C<OK> -- so the missing terminator
+is the only thing that says the daemon never finished writing it
+
+=item * C<'header-block'> - the stream ended inside a header line, or where
+one belongs with the blank line that ends the field section never sent. The
+second covers a head with no fields at all: RFC 9112 section 2.1 requires the
+empty line whether there are twenty fields or none
+
 =item * C<'content-length'> - fewer bytes arrived than the C<Content-Length>
 header announced
 
@@ -180,8 +205,8 @@ has expected => (
 
 The byte count the framing announced for the piece that was cut short: the
 C<Content-Length> for C<'content-length'>, the chunk's own size for
-C<'chunk-data'>. C<undef> for the two phases where nothing had been announced
-yet.
+C<'chunk-data'>. C<undef> for the four phases with no announcement to fall
+short of, which are the ones framed by a terminator instead.
 
 =cut
 
@@ -218,6 +243,12 @@ Always the empty string for a streamed request, which keeps no body by design.
 Nothing is lost there either: every byte that arrived went through the same
 decoding as every other byte, so the units it completed reached the callback
 and are counted in L</summary> before this is raised.
+
+Also always the empty string when L</phase> is C<'status-line'> or
+C<'header-block'>: the response was cut before its body began, so there are no
+body bytes to hand over. The bytes of the head itself are deliberately not put
+here -- they are not a body, and L</message> already says how far into which
+piece the stream got.
 
 =cut
 

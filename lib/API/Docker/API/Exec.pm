@@ -2,6 +2,7 @@ package API::Docker::API::Exec;
 # ABSTRACT: Docker Engine Exec API
 our $VERSION = '0.004';
 use Moo;
+with 'API::Docker::Role::Using';
 use Carp qw( croak );
 use namespace::clean;
 
@@ -31,7 +32,9 @@ use namespace::clean;
 This module provides methods for executing commands inside running containers
 using the Docker Exec API.
 
-Accessed via C<< $docker->exec >>.
+Accessed via C<< $docker->exec >>, or through
+L<API::Docker::Role::Using/using> for a run of calls that needs its own
+transport bound: C<< $docker->exec->using(read_timeout => 5) >>.
 
 =cut
 
@@ -85,8 +88,7 @@ sub start {
   return $self->client->stream_frames('POST', "/exec/$exec_id/start",
     body => $body,
     $opts{Tty} ? ( tty => 1 ) : (),
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
     exists $opts{on_frame} ? ( on_frame => $opts{on_frame} ) : (),
   );
 }
@@ -128,15 +130,6 @@ L<API::Docker::Role::HTTP/"Detecting a framed stream">
 
 =item * C<on_frame> - CodeRef called with each frame as it arrives, instead of
 the ArrayRef being collected and returned; see below
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -184,8 +177,7 @@ sub resize {
   $params{w} = $opts{w} if defined $opts{w};
   return $self->client->post("/exec/$exec_id/resize", undef,
     params => \%params,
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
 }
 
@@ -203,25 +195,15 @@ Options:
 
 =item * C<w> - New width in character columns
 
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
-
 =back
 
 =cut
 
 sub inspect {
-  my ($self, $exec_id, %opts) = @_;
+  my ($self, $exec_id) = @_;
   croak "Exec ID required" unless $exec_id;
   return $self->client->get("/exec/$exec_id/json",
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
 }
 
@@ -230,21 +212,6 @@ sub inspect {
     my $info = $exec->inspect($exec_id);
 
 Get information about an exec instance.
-
-Options:
-
-=over
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
-
-=back
 
 =cut
 

@@ -214,17 +214,17 @@ distribution has always had. C<0> means the same and is the way to say it
 explicitly, so a client carrying a default can be opted out of per request.
 
     my $docker = API::Docker->new(read_timeout => 30);
-    $docker->system->events(read_timeout => 0);       # this one may wait
+    $docker->system->using(read_timeout => 0)->events;   # this one may wait
 
 Per request it is an option of L</get>, L</post>, L</put>, L</delete_request>
-and L</head>, and of nearly every resource method that reaches the daemon,
-which overrides the attribute either way -- up for a slow endpoint, down for
-a stream that should not stall, off with C<0>.
+and L</head>. A resource class carries it through
+L<API::Docker::Role::Using/using>, which clones the class rather than taking
+it per method -- up for a slow endpoint, down for a stream that should not
+stall, off with C<0>.
 
 See L</"Bounding a request that never ends"> for what it does and does not
-cover, L<API::Docker/"What a timeout covers"> for the same question asked of
-both bounds at once, and L<API::Docker/"Where a bound applies"> for which
-calls carry it and the handful that do not.
+cover, and L<API::Docker/"What a timeout covers"> for the same question
+asked of both bounds at once.
 
 =cut
 
@@ -241,17 +241,17 @@ the behaviour this distribution has always had; C<0> means the same and is the
 way to say it explicitly.
 
     my $docker = API::Docker->new(connect_timeout => 5);
-    $docker->system->version(connect_timeout => 0);    # this one may wait
+    $docker->system->using(connect_timeout => 0)->version;  # may wait
 
 Separate from L</read_timeout> rather than folded into it, because the two
 bound different things and want different numbers: a connect is either
 immediate or broken, while a read is waiting on work the daemon has to do.
 
 Per request it is an option of L</get>, L</post>, L</put>, L</delete_request>
-and L</head>, and of nearly every resource method that reaches the daemon.
-See L</"Bounding the connection itself"> for what it does on each transport,
-which is not the same thing on all three, and
-L<API::Docker/"Where a bound applies"> for which calls carry it.
+and L</head>. A resource class carries it through
+L<API::Docker::Role::Using/using>. See L</"Bounding the connection itself">
+for what it does on each transport, which is not the same thing on all
+three.
 
 =cut
 
@@ -1222,13 +1222,23 @@ sub _read_head {
   $ctx ||= {};
 
   my $status_line = $self->_read_line($sock, $ctx);
+  # A daemon that closed without answering at all, which is the one shape here
+  # that was never silent and is left saying exactly what it always said.
   croak "No response from Docker daemon" unless defined $status_line;
+  $self->_assert_status_line($ctx, $status_line);
   $status_line =~ s/\r?\n$//;
 
   my ($proto, $status_code, $status_text) = split /\s+/, $status_line, 3;
 
+  # while(1)-and-assert rather than `while (my $line = ...)`, which is the
+  # same shape _read_chunked uses and for the same reason: the loop used to
+  # end on anything false, so an end of stream inside the header block left it
+  # exactly as the blank line would have. The assert is now the only way out
+  # that is not the blank line.
   my %headers;
-  while (my $line = $self->_read_line($sock, $ctx)) {
+  while (1) {
+    my $line = $self->_read_line($sock, $ctx);
+    $self->_assert_header_line($ctx, $line);
     $line =~ s/\r?\n$//;
     last if $line eq '';
     if ($line =~ /^([^:]+):\s*(.*)$/) {
@@ -1237,6 +1247,67 @@ sub _read_head {
   }
 
   return [$status_code, $status_text, \%headers];
+}
+
+# The two ways the head ends early, and neither of them has a byte count to
+# compare either (karr #73).
+#
+# karr #64 left the head out on the grounds that nothing in a status line or a
+# header block announces its own length, so there was no announcement to hold
+# a short one against. True, and beside the point: an announcement is not what
+# is being checked here, any more than it is in _assert_chunk_header one level
+# down. HTTP/1.1 frames the head by terminating every line, and the field
+# section by an empty line that is mandatory even when there are no fields at
+# all (RFC 9112 section 2.1), so "the stream ended where the terminator
+# belongs" is a complete test on its own. It is the same question that reader
+# already asks about a chunk header, asked of the head.
+#
+# What it was worth. A head cut short is not just a bogus status: the response
+# is then read with whichever headers happened to arrive, and a cut landing
+# before Content-Length or Transfer-Encoding leaves neither -- which is
+# exactly the close-delimited branch of _read_body, where an EOF is the
+# legitimate end and nothing looks wrong. Measured over a socketpair whose
+# peer writes "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Half"
+# and closes: status 200, one header, an empty body, no complaint. The cuts
+# that did get caught were caught by accident one level lower, because the
+# half-arrived header happened to be one of those two.
+#
+# Nothing legitimate ends a head without the blank line, which was measured
+# rather than taken from the RFC, on both engines and including the two heads
+# an engine writes by hand instead of through its HTTP server: attach and
+# /exec/{id}/start answer with "HTTP/1.1 200 OK", one Content-Type line and
+# the blank line, on Docker 29.7.2 and on rootless Podman 5.8.4 alike. So do
+# 204, 304, HEAD, chunked and every other shape either of them produces.
+sub _assert_status_line {
+  my ($self, $ctx, $line) = @_;
+
+  # Only the unterminated half: a status line that never started at all is the
+  # croak above, which says something better than this could.
+  $self->_croak_truncated($ctx, phase => 'status-line',
+    detail => 'the stream ended inside the status line, after '
+      . length($line) . ' byte' . (length($line) == 1 ? '' : 's') . ' of one')
+    unless $line =~ /\n\z/;
+
+  return;
+}
+
+# Both halves here, because the header block has no equivalent of that croak:
+# undef is a block that was never closed -- with no headers at all, or after
+# some -- and an unterminated line is one cut in the middle of a field.
+sub _assert_header_line {
+  my ($self, $ctx, $line) = @_;
+
+  $self->_croak_truncated($ctx, phase => 'header-block',
+    detail => 'the stream ended where a header line belongs, with no blank '
+      . 'line to close the header block')
+    unless defined $line;
+
+  $self->_croak_truncated($ctx, phase => 'header-block',
+    detail => 'the stream ended inside a header line, after '
+      . length($line) . ' byte' . (length($line) == 1 ? '' : 's') . ' of one')
+    unless $line =~ /\n\z/;
+
+  return;
 }
 
 sub _read_body {
@@ -1668,7 +1739,7 @@ going (karr #59).
 L</read_timeout> bounds that:
 
     # Give up after two seconds of silence rather than waiting forever.
-    my $frames = $docker->containers->attach($id, read_timeout => 2);
+    my $frames = $docker->containers->using(read_timeout => 2)->attach($id);
 
 =head3 It is an idle timeout, not a deadline
 
@@ -1704,7 +1775,7 @@ stopping is an C<eval>:
 
     my $out = '';
     eval {
-        $docker->containers->attach($id, read_timeout => 2,
+        $docker->containers->using(read_timeout => 2)->attach($id,
             on_frame => sub { $out .= $_[0]{data} });
     };
     die $@ if $@ && !(ref $@
@@ -1980,28 +2051,41 @@ silent one.
 
 =head2 Failure in the middle of a response
 
-The daemon can also stop saying anything, having already said how much it was
-going to say. A body shorter than its C<Content-Length>, a chunk shorter than
-its own header, a chunk header cut in half, a chunked body with no terminating
-zero chunk: each of those is a response that ended before it was finished, and
-each croaks with an L<API::Docker::Error::Truncated>.
+The daemon can also stop saying anything in the middle of saying it. A status
+line with no terminator, a header block with no blank line to close it, a body
+shorter than its C<Content-Length>, a chunk shorter than its own header, a
+chunk header cut in half, a chunked body with no terminating zero chunk: each
+of those is a response that ended before it was finished, and each croaks with
+an L<API::Docker::Error::Truncated>.
 
     my $tar = eval { $docker->images->get_tar('busybox') };
     die $@ if $@ && !(ref $@
         && $@->isa('API::Docker::Error::Truncated'));
 
-It is a structural check and the only thing it compares is the body against
-what the response itself announced -- so it needs no option, applies to every
-request, and cannot fire on a response that is complete. The exception carries
+It is a structural check, so it needs no option, applies to every request, and
+cannot fire on a response that is complete. Which question it asks depends on
+how the piece is framed: where the response announced a length, what arrived
+is compared against it; where the framing is by terminator instead -- the head
+and the chunk headers -- it asks whether the terminator came before the stream
+ended, which is decidable without anything to compare. The exception carries
 what did arrive: C<< ->partial >> for a buffered request, C<< ->summary >> for
 a streamed one, and C<< ->phase >> for which piece of the framing ran out.
 
 This B<is> a behaviour change and not a bug fix in passing. Until it existed
-all four shapes above were returned rather than raised, and none of them was
+every shape above was returned rather than raised, and none of them was
 distinguishable from a complete response: C<ndjson> gave a shorter ArrayRef,
 C<raw> gave fewer bytes, the default gave whatever the truncated bytes
-happened to parse as. Code that was silently receiving half a response now
-gets an exception where it used to get a value.
+happened to parse as. A cut head was quieter still -- the response was read on
+with whichever headers had arrived, and one cut before C<Content-Length> and
+C<Transfer-Encoding> left neither, which is the close-delimited path below,
+where an EOF is the legitimate end and nothing looks wrong. Code that was
+silently receiving half a response now gets an exception where it used to get
+a value.
+
+The one thing here that is B<not> raised as an object: a connection that
+closed without a single byte of a status line still croaks with the plain
+C<No response from Docker daemon> string it always has. Nothing about it was
+ever silent, and it is a message callers may be matching on.
 
 =head3 Where an end of stream is still the end
 
@@ -2011,6 +2095,14 @@ C<application/vnd.docker.raw-stream> family -- carry neither a
 C<Content-Length> nor chunked encoding, so the response announces no end and
 there is nothing for a short one to be short of. That is how every one of them
 finishes, and treating it as truncation would break all of them.
+
+Their B<heads> are another matter and are checked like every other head. An
+engine writes those two by hand rather than through its HTTP server, so it is
+worth saying that they are well-formed: both answer with C<HTTP/1.1 200 OK>, a
+single C<Content-Type> line and the blank line, measured on Docker 29.7.2 and
+on rootless Podman 5.8.4. So does every other shape either of them produces --
+200, 204, 304, C<HEAD>, chunked. Nothing legitimate ends a head without its
+blank line.
 
 The same goes for a stream a callback ended with C<< $stop->() >>: the rest of
 the response is unread because the caller said so, and every check on the

@@ -723,8 +723,9 @@ Revision history for API-Docker
   - `containers->attach` on a container that has already exited no longer has
     to hang. Measured on rootless Podman 5.8.4 (API 1.44), the behaviour
     recorded on 5.4.2 is unchanged: the buffered frames arrive and the daemon
-    then holds the connection open indefinitely. With `read_timeout => 2` the
-    call croaks after 2.1s carrying all 42 bytes it received. An unbounded
+    then holds the connection open indefinitely. With
+    `->using(read_timeout => 2)` on the resource class the call croaks after
+    2.1s carrying all 42 bytes it received. An unbounded
     `system->events` likewise ends after the timeout instead of never (2.3s
     on Podman, 2.0s on Docker 29.7.2).
   - `containers->stats` is NOT bounded by `read_timeout`, and its POD says so.
@@ -822,21 +823,14 @@ Revision history for API-Docker
     `SO_RCVTIMEO` bounds the underlying receives rather than the time since
     the last plaintext byte, so it is not an exact idle timer under TLS.
   - New `connect_timeout`, beside `read_timeout` and shaped the same way: a
-    client attribute and a per-request option, off by default, forwarded by
-    the same fourteen resource methods that forward `read_timeout` --
-    `images->build`, `->pull`, `->push`, `->get`, `->get_all`, `->load`,
-    `containers->logs`, `->attach`, `->stats`, `exec->start`,
-    `plugins->install`, `->upgrade`, `->push` and `system->events` -- and
-    documented in each of their option lists. Measured at the seam the value
+    client attribute and a per-request option of `get`, `post`, `put`,
+    `delete_request` and `head`, off by default. Measured at the seam the value
     has to cross, what `_build__socket` is handed as `IO::Socket`'s
     `Timeout`: it arrives as the value passed rather than as undef. An
     explicit `connect_timeout => 0` turns a client-wide default off for one
     call, because the option is resolved with `exists` rather than for
     truth, and every request reconnects, so a per-request bound is never a
-    stale one. The preflight requests two of those methods make first --
-    `attach`'s running check and `install`/`upgrade`'s privileges fetch
-    under `accept_privileges` -- carry the client attribute only, as they
-    already did for `read_timeout`.
+    stale one.
     `IO::Socket`'s own `Timeout` was measured rather than assumed -- against
     a host dropping SYNs it gives up at 2.00s where the kernel takes over
     two minutes, and on a unix socket whose listener backlog is full it
@@ -879,39 +873,58 @@ Revision history for API-Docker
     response with the zero chunk, and 204 and 304 arrive with no
     Content-Length and no Transfer-Encoding on either, so nothing legitimate
     reaches the new fatal path.
-  - `read_timeout` and `connect_timeout` are options of every method that
-    reaches the daemon, not of fourteen of them. `Networks`, `Volumes`,
-    `Secrets`, `Configs` and `Distribution` forwarded neither from anywhere,
-    so `$docker->networks->list(read_timeout => 5)` returned having ignored
-    the bound -- `%opts` is a plain hash and a key nothing reads raises
-    nothing. 72 of the 83 public methods forward both now, always resolved
-    with `exists` rather than truth, so an explicit `0` still turns a
-    client-wide default off for one call. Methods that took no options hash
-    at all gained a trailing one; nothing that worked before calls
-    differently. `plugins->configure` takes them only behind its ArrayRef
-    form, as `images->get_all` already did, because in the plain list form a
-    trailing `read_timeout => 5` is indistinguishable from two more
-    settings.
-  - The requests a method makes on the caller's behalf carry the bounds too:
-    `containers->attach`'s running check, the `/plugins/privileges` fetch
-    that `install` and `upgrade` make under `accept_privileges => 1`, and
-    version negotiation -- which turns out to be bounded from the request
-    that triggers it rather than only from the client attribute, because the
-    `around _request` that fires it holds that request's own options. So
-    `$docker->containers->list(read_timeout => 5)` on a client with no
+  - `read_timeout` and `connect_timeout` are set in two places and no more:
+    on the client, and on a resource class cloned for a run of calls. The new
+    `API::Docker::Role::Using` gives every resource class a `using` method
+    returning such a clone --
+    `$docker->containers->using(read_timeout => 5)->list` -- and all 72
+    requests the resource methods make carry what their class was cloned
+    with, resolved with `exists` rather than truth, so an explicit `0` still
+    turns a client-wide default off. Nothing else moves onto the clone: a
+    streaming callback, the `response` out-parameter, `auth` and `tty`
+    describe one request and stay arguments of the method that builds it.
+  - The clone holds the same client, weakly, exactly as the resource class it
+    came from does. It is deliberately not a client copy: a cloned client is
+    a temporary, and every entity built through it takes `client` as a
+    `weak_ref`, so `->list` would hand back containers whose client was
+    already gone -- and the copy would re-negotiate the API version on every
+    call. `using` does not touch the resource class it was called on, two
+    clones of one class never see each other, and `->using(a)->using(b)`
+    merges key by key with the later value winning, so tightening one bound
+    cannot silently drop the other. An empty `->using()`, an unknown option
+    and an odd number of arguments all croak rather than carrying nothing
+    while looking like a bound. `using` rather than `with`, measured: Moo
+    exports `with` as the role-composition keyword, and defining one would
+    warn `Subroutine with redefined` and then leave every resource class's
+    roles silently uncomposed.
+  - The eleven methods whose arguments are the request body -- `create` and
+    `update` on `containers`, `secrets` and `configs`, `create` on
+    `networks`, `volumes` and `exec`, `networks->connect` and `->disconnect`
+    -- are bounded like everything else now, with their argument list still
+    unambiguously the body. `plugins->configure` reads no options at all any
+    more: the ArrayRef form stays as a form, and anything after the ArrayRef
+    croaks instead of being read as a setting or quietly dropped;
+    `images->get_all` keeps its ArrayRef form for `on_chunk`.
+  - The requests a method makes on the caller's behalf carry the bounds too,
+    and by construction rather than by forwarding: `containers->attach`'s
+    running check and the `/plugins/privileges` fetch that `install` and
+    `upgrade` make under `accept_privileges => 1` run on the same resource
+    class as the call that triggered them. Version negotiation still inherits
+    from the request that fires it, because the `around _request` that
+    triggers it holds that request's own options -- so
+    `$docker->containers->using(read_timeout => 5)->list` on a client with no
     `api_version` bounds the `GET /version` as well as the list.
-  - Eleven methods still take neither, and say so: `create` and `update` on
-    `containers`, `secrets` and `configs`, `create` on `networks`, `volumes`
-    and `exec`, and `networks->connect`/`->disconnect`. Each takes its
-    arguments as the JSON request body itself, so a `read_timeout` key in
-    one of them would be a field sent to the daemon rather than an option
-    this client reads. Their bound is the client attribute.
+    `negotiate_version` is the one method still taking the two options
+    directly: it is a client method, not a resource one, so a caller bounding
+    a negotiation on its own has nowhere else to say so.
   - New `TIMEOUTS` section in `API::Docker` saying once what a bound covers
     and what it does not: `read_timeout` is idle time since the last byte
     rather than a deadline, `connect_timeout` bounds opening the connection,
     neither bounds writing the request, and under TLS `SO_RCVTIMEO` measures
     the receives underneath the record layer rather than plaintext arrival,
-    so a record dribbling in slowly enough resets the clock.
+    so a record dribbling in slowly enough resets the clock. It also says
+    where a bound is set: the client attribute for the rule, the `using`
+    clone for the exception, and deliberately no third place.
   - Every field on the `Container`, `Image`, `Network` and `Volume` entity
     classes has an `=attr`, closing the gap `Plugin`, `Secret` and `Config`
     never had. Documenting all of them rather than a stated selection is the

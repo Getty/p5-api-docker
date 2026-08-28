@@ -2,7 +2,7 @@ package API::Docker::API::Volumes;
 # ABSTRACT: Docker Engine Volumes API
 our $VERSION = '0.004';
 use Moo;
-with 'API::Docker::Role::Filters';
+with 'API::Docker::Role::Filters', 'API::Docker::Role::Using';
 use API::Docker::Volume;
 use Carp qw( croak );
 use namespace::clean;
@@ -32,7 +32,9 @@ use namespace::clean;
 This module provides methods for managing Docker volumes including creation,
 listing, inspection, and removal.
 
-Accessed via C<< $docker->volumes >>.
+Accessed via C<< $docker->volumes >>, or through
+L<API::Docker::Role::Using/using> for a run of calls that needs its own
+transport bound: C<< $docker->volumes->using(read_timeout => 5) >>.
 
 =cut
 
@@ -68,8 +70,7 @@ sub list {
     if defined $opts{filters};
   my $result = $self->client->get('/volumes',
     params => \%params,
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
   return $self->_wrap_list($result->{Volumes} // []);
 }
@@ -88,15 +89,6 @@ Options:
 =item * C<filters> - HashRef of filter name to ArrayRef of string values; the
 engine accepts C<dangling>, C<driver>, C<label> and C<name> here.
 Shape-checked and normalised by L<API::Docker::Role::Filters>
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 
@@ -120,11 +112,10 @@ Create a volume. Returns L<API::Docker::Volume> object.
 =cut
 
 sub inspect {
-  my ($self, $name, %opts) = @_;
+  my ($self, $name) = @_;
   croak "Volume name required" unless $name;
   my $result = $self->client->get("/volumes/$name",
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
   return $self->_wrap($result);
 }
@@ -135,21 +126,6 @@ sub inspect {
 
 Get detailed information about a volume. Returns L<API::Docker::Volume> object.
 
-Options:
-
-=over
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
-
-=back
-
 =cut
 
 sub remove {
@@ -159,8 +135,7 @@ sub remove {
   $params{force} = $opts{force} ? 1 : 0 if defined $opts{force};
   return $self->client->delete_request("/volumes/$name",
     params => \%params,
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
 }
 
@@ -169,21 +144,6 @@ sub remove {
     $volumes->remove('my-volume', force => 1);
 
 Remove a volume. Optional C<force> parameter.
-
-Options:
-
-=over
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
-
-=back
 
 =cut
 
@@ -194,8 +154,7 @@ sub prune {
     if defined $opts{filters};
   return $self->client->post('/volumes/prune', undef,
     params => \%params,
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
 }
 
@@ -213,15 +172,6 @@ Options:
 =item * C<filters> - HashRef of filter name to ArrayRef of string values; the
 engine accepts C<label> here. Shape-checked and normalised by
 L<API::Docker::Role::Filters>
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 

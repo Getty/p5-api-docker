@@ -63,6 +63,38 @@ This commit updates the Sybase driver distribution to use the new
 bundle. Additionally, it fixes an issue where...
 ```
 
+## Changelog entries
+
+Where the repo carries a `Changes` or `CHANGELOG`, the entry belongs in the same commit
+as the change it describes, and the rules above apply to it unchanged. One thing makes
+it harder than a commit message: a message is written once and never seen again, while
+the unreleased section stays open for weeks and is edited again every time the same
+area is touched.
+
+**One topic, one entry.** Before writing a bullet, read the unreleased section for the
+topic you are about to describe. If it already has one, **rewrite that bullet** to say
+where the code now stands — never append a second. Three bullets circling one option
+are three chances to contradict each other, and the reader wants the released state,
+not the sequence of attempts that produced it.
+
+**Describe the destination, not the journey.** No "used to", no "previously", no
+walkthrough of the mechanism, no defence of the alternative that lost. Name what is
+true now and what a user does differently because of it. The reasoning has homes that
+keep it — the commit body, the ticket, an ADR; a changelog is read by someone who
+never saw the old behaviour.
+
+**Reference only the tracker the repo publishes.** A `#123` earns its place when a
+reader can open it — GitHub or Gitea issues on a repo that has them. An internal board
+ticket (karr) is unreadable outside the workspace and numbered independently of the
+public tracker, so `#254` in a changelog is a link GitHub resolves against *its* issue
+254: a dead one today, someone else's bug once the repo has that many. Where the
+internal ticket is the only record, name the change instead of the number.
+
+Aim for one to three lines per entry, and let the count of entries fall out of the
+work rather than the detail per entry. For scale: a mature Getty distribution carries
+320 releases in a 348-line `Changes` — a whole history shorter than a single unreleased
+section that was allowed to accrete.
+
 ## Multi-repo commits
 
 When committing across multiple repos in a workspace, each repo gets its own

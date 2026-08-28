@@ -49,6 +49,13 @@ use API::Docker::Error::Timeout;
 # has each site declare which, because four of them could not otherwise fail.
 # The close-delimited sites are untouched -- there an EOF is the end.
 #
+# What karr #73 changed here. The same again, one level up: the three
+# _read_head sites below. Two of them were `returns` and are now `raises`, on
+# the reasoning written out where they stand, and a third was added for the
+# header block that ends on a line boundary -- the shape the old loop could
+# not distinguish from a finished head at all. The close-delimited sites are
+# still untouched, and still for the same reason.
+#
 # Nothing here reaches a Docker daemon, so there is no is_live()/can_write()
 # gating: it is unconditionally safe with no engine installed.
 
@@ -239,6 +246,12 @@ sub truncated_ok {
     is_deeply attr($err, 'summary'), $want{summary},
       'and the units the callback was handed'
       if exists $want{summary};
+    # Where one phase covers two distinct ways of running out -- 'header-block'
+    # is both "cut inside a field" and "the blank line never came" -- the phase
+    # alone cannot fail when only one of the two checks is removed. The message
+    # is what separates them, so a site that has two halves pins it.
+    like "$err", $want{message}, 'and which of them ran out'
+      if exists $want{message};
   };
 }
 
@@ -257,19 +270,25 @@ site_ok '_read_head: the status line never arrives',
       . 'something else than a timeout';
   };
 
-# The head is not covered by karr #64's completeness check: nothing in a
-# status line or a header block announces its own length, so there is no
-# announcement to compare a short one against. What a truncated head should do
-# is its own question -- karr #73.
+# The head, which karr #73 brought under the same check. These two sites used
+# to be `returns` -- the first asserting that 'HTTP/1.1 20' came back as the
+# status '20', the second that the headers arriving before the cut were kept
+# -- on the reading that nothing in a head announces its own length, so there
+# was no announcement to hold a short one against. What replaces that claim is
+# not a softer version of it but its opposite: a head is framed by its
+# terminators rather than by a length, so an end of stream where one belongs
+# is decidable without anything to compare, exactly as it is for a chunk
+# header one level down. Both are now `raises`.
+#
+# The claim these sites carry over is the one the file exists for, and it is
+# untouched: the two meanings of the same empty read still come out
+# differently, and only EAGAIN is a timeout. That distinction lives in _pull,
+# below the new check, so nothing about it moved.
 site_ok '_read_head: half a status line',
   sub { scripted({ line => 'HTTP/1.1 20' }, { timeout => $_[0] }) },
   sub { $client->_read_head($_[0], $_[1]) },
-  returns => sub {
-    my ($out) = @_;
-    is $out->[0][0], '20',
-      'an unterminated final line is still parsed when it is the end of the '
-      . 'response -- which is why the terminator alone cannot decide this';
-  };
+  raises => truncated_ok(phase => 'status-line', partial => '',
+    message => qr/inside the status line, after 11 bytes of one/);
 
 site_ok '_read_head: the header block stops halfway',
   sub {
@@ -277,11 +296,23 @@ site_ok '_read_head: the header block stops halfway',
       { line => 'X-Half' }, { timeout => $_[0] });
   },
   sub { $client->_read_head($_[0], $_[1]) },
-  returns => sub {
-    my ($out) = @_;
-    is $out->[0][2]{'content-type'}, 'application/json',
-      'the headers that did arrive are kept';
-  };
+  raises => truncated_ok(phase => 'header-block', partial => '',
+    message => qr/inside a header line, after 6 bytes of one/);
+
+# The other half of the same phase, and the one the old header loop could not
+# tell from a finished head at all: the block ends on a line boundary with the
+# blank line never sent. `while (my $line = ...)` ended there silently, so a
+# cut landing before Content-Length and Transfer-Encoding left neither, and
+# _read_body then took the close-delimited branch where an EOF is the
+# legitimate end.
+site_ok '_read_head: the header block is never closed',
+  sub {
+    scripted($HEAD_OK, { line => "Content-Type: application/json\r\n" },
+      { timeout => $_[0] });
+  },
+  sub { $client->_read_head($_[0], $_[1]) },
+  raises => truncated_ok(phase => 'header-block', partial => '',
+    message => qr/where a header line belongs, with no blank line/);
 
 # ---------------------------------------------------------------------------
 # _read_body -- the three shapes a buffered body comes in

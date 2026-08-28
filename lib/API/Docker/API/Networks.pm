@@ -2,7 +2,7 @@ package API::Docker::API::Networks;
 # ABSTRACT: Docker Engine Networks API
 our $VERSION = '0.004';
 use Moo;
-with 'API::Docker::Role::Filters';
+with 'API::Docker::Role::Filters', 'API::Docker::Role::Using';
 use API::Docker::Network;
 use Carp qw( croak );
 use namespace::clean;
@@ -32,7 +32,9 @@ use namespace::clean;
 This module provides methods for managing Docker networks including creation,
 listing, connecting containers, and removal.
 
-Accessed via C<< $docker->networks >>.
+Accessed via C<< $docker->networks >>, or through
+L<API::Docker::Role::Using/using> for a run of calls that needs its own
+transport bound: C<< $docker->networks->using(read_timeout => 5) >>.
 
 =cut
 
@@ -68,8 +70,7 @@ sub list {
     if defined $opts{filters};
   my $result = $self->client->get('/networks',
     params => \%params,
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
   return $self->_wrap_list($result // []);
 }
@@ -89,25 +90,15 @@ Options:
 engine accepts C<dangling>, C<driver>, C<id>, C<label>, C<name>, C<scope> and
 C<type> here. Shape-checked and normalised by L<API::Docker::Role::Filters>
 
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
-
 =back
 
 =cut
 
 sub inspect {
-  my ($self, $id, %opts) = @_;
+  my ($self, $id) = @_;
   croak "Network ID required" unless $id;
   my $result = $self->client->get("/networks/$id",
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
   return $self->_wrap($result);
 }
@@ -117,21 +108,6 @@ sub inspect {
     my $network = $networks->inspect($id);
 
 Get detailed information about a network. Returns L<API::Docker::Network> object.
-
-Options:
-
-=over
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
-
-=back
 
 =cut
 
@@ -154,11 +130,10 @@ Create a network. Returns hashref with C<Id> and C<Warning>.
 =cut
 
 sub remove {
-  my ($self, $id, %opts) = @_;
+  my ($self, $id) = @_;
   croak "Network ID required" unless $id;
   return $self->client->delete_request("/networks/$id",
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
 }
 
@@ -167,21 +142,6 @@ sub remove {
     $networks->remove($id);
 
 Remove a network.
-
-Options:
-
-=over
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
-
-=back
 
 =cut
 
@@ -222,8 +182,7 @@ sub prune {
     if defined $opts{filters};
   return $self->client->post('/networks/prune', undef,
     params => \%params,
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
 }
 
@@ -241,15 +200,6 @@ Options:
 =item * C<filters> - HashRef of filter name to ArrayRef of string values; the
 engine accepts C<until> and C<label> here. Shape-checked and normalised by
 L<API::Docker::Role::Filters>
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 

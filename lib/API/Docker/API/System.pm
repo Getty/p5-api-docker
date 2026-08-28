@@ -2,7 +2,8 @@ package API::Docker::API::System;
 # ABSTRACT: Docker Engine System API
 our $VERSION = '0.004';
 use Moo;
-with 'API::Docker::Role::Filters', 'API::Docker::Role::RegistryAuth';
+with 'API::Docker::Role::Filters', 'API::Docker::Role::RegistryAuth',
+  'API::Docker::Role::Using';
 use Carp qw( croak );
 use namespace::clean;
 
@@ -42,7 +43,9 @@ use namespace::clean;
 This module provides access to Docker system-level operations including daemon
 information, version detection, health checks, and event monitoring.
 
-Accessed via C<< $docker->system >>.
+Accessed via C<< $docker->system >>, or through
+L<API::Docker::Role::Using/using> for a run of calls that needs its own
+transport bound: C<< $docker->system->using(read_timeout => 5) >>.
 
 =cut
 
@@ -59,10 +62,9 @@ Reference to L<API::Docker> client. Weak reference to avoid circular dependencie
 =cut
 
 sub info {
-  my ($self, %opts) = @_;
+  my ($self) = @_;
   return $self->client->get('/info',
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
 }
 
@@ -88,28 +90,12 @@ Returns hashref with keys including:
 
 =back
 
-Options:
-
-=over
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
-
-=back
-
 =cut
 
 sub version {
-  my ($self, %opts) = @_;
+  my ($self) = @_;
   return $self->client->get('/version',
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
 }
 
@@ -122,28 +108,12 @@ Get version information about the Docker daemon and API.
 Returns hashref with keys including C<ApiVersion>, C<Version>, C<GitCommit>,
 C<GoVersion>, C<Os>, and C<Arch>.
 
-Options:
-
-=over
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
-
-=back
-
 =cut
 
 sub ping {
-  my ($self, %opts) = @_;
+  my ($self) = @_;
   return $self->client->get('/_ping',
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
 }
 
@@ -152,21 +122,6 @@ sub ping {
     my $pong = $system->ping;
 
 Health check endpoint. Returns C<OK> string if daemon is responsive.
-
-Options:
-
-=over
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
-
-=back
 
 =cut
 
@@ -189,8 +144,7 @@ sub events {
   return $self->client->get('/events',
     params         => \%params,
     croak_on_error => 0,
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
 }
@@ -235,15 +189,6 @@ misspelt one is a failed request rather than a quiet no-match
 =item * C<on_event> - CodeRef called with each event as it arrives, instead of
 the ArrayRef being collected and returned; see below
 
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
-
 =back
 
 =head2 Following the feed
@@ -281,10 +226,9 @@ is off here on both paths, for the reason above.
 =cut
 
 sub df {
-  my ($self, %opts) = @_;
+  my ($self) = @_;
   return $self->client->get('/system/df',
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
   );
 }
 
@@ -295,21 +239,6 @@ sub df {
 Get data usage information (disk usage by images, containers, and volumes).
 
 Returns hashref with C<LayersSize>, C<Images>, C<Containers>, and C<Volumes> arrays.
-
-Options:
-
-=over
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
-
-=back
 
 =cut
 
@@ -339,8 +268,7 @@ sub auth {
     . 'identitytoken, or auth => $config' unless keys %$config;
 
   return $self->client->post('/auth', $config,
-    exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
-    exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
+    %{ $self->_request_options },
     (exists $opts{response} ? (response => $opts{response}) : ()));
 }
 
@@ -398,15 +326,6 @@ base64url-encoded one. Cannot be combined with the keys above
 
 =item * C<response> - HashRef the status line and the response headers are
 written into, as for L<API::Docker::Role::HTTP/get>
-
-=item * C<read_timeout> - Seconds of silence after which the request gives up
-and croaks with an L<API::Docker::Error::Timeout>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding a request that never ends">
-
-=item * C<connect_timeout> - Seconds after which opening the connection gives
-up and croaks with an L<API::Docker::Error::Timeout> whose C<< ->phase >> is
-C<'connect'>. Off by default; see
-L<API::Docker::Role::HTTP/"Bounding the connection itself">
 
 =back
 

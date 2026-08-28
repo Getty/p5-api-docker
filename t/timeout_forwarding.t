@@ -3,21 +3,26 @@ use warnings;
 use Test::More;
 use API::Docker;
 
-# Every public resource method that reaches the daemon forwards read_timeout
-# and connect_timeout (karr #70 for the first fourteen, karr #72 for the rest).
+# Every public resource method that reaches the daemon carries the bounds its
+# resource class was cloned with (karr #74). The two options used to be
+# arguments of each method (karr #70, karr #72); they are now carried by the
+# clone API::Docker::Role::Using/using returns, and a method either splices
+# that clone's options into the list it hands the transport or drops them on
+# the floor.
 #
-# Both options are resolved in _request and nowhere else, so a resource method
-# either puts them into the option list it builds or drops them on the floor.
-# Dropping them is silent: %opts is a plain hash and a key nothing reads is not
-# an error, so `networks->list(read_timeout => 5)` used to return normally
-# having ignored the bound entirely. That is what this asserts, at the seam the
-# value has to cross.
+# Dropping them is silent -- %{ $self->_request_options } is an interpolation
+# nothing forces a method to write -- so `networks->using(read_timeout => 5)
+# ->list` would return normally having ignored the bound entirely. That is
+# what this asserts, at the seam the value has to cross, for every method
+# there is.
 #
 # The pre-flight requests are in the table too -- the running check attach
 # makes, the privileges fetch install and upgrade make under
-# accept_privileges => 1 -- named by the endpoint they issue rather than by the
-# method, because a caller who set a bound and then hangs in a request they
-# never wrote has been told something untrue.
+# accept_privileges => 1 -- named by the endpoint they issue rather than by
+# the method, because a caller who set a bound and then hangs in a request
+# they never wrote has been told something untrue. They need no forwarding of
+# their own here: they run on the same resource class, which is the whole
+# point of putting the bounds there.
 #
 # Nothing here reaches a daemon and nothing here opens a socket: _request is
 # replaced outright, which takes API::Docker's version-negotiation `around`
@@ -50,7 +55,7 @@ sub _request {
 
 # Records what _build__socket was handed rather than connecting, the way
 # t/connect_timeout.t does -- but reached through a resource method, which is
-# the whole of what karr #70 was about.
+# what the bound exists for.
 package Test::TimeoutForward::ConnectProbe;
 use Moo;
 extends 'API::Docker';
@@ -86,195 +91,197 @@ sub _build__socket { die "no socket here\n" }
 
 package main;
 
-# id, the call, and the endpoint whose option list carries the answer -- named
-# rather than taken as "the last call", because several of these reach the
-# daemon twice and only one of the two is the request being asserted.
+# id, the endpoint whose option list carries the answer, the resource class
+# accessor ->using is called on, and the call made through it. The endpoint is
+# named rather than taken as "the last call", because several of these reach
+# the daemon twice and only one of the two is the request being asserted.
 my @cases = (
   # -- containers ----------------------------------------------------------
   [ 'containers->list', 'GET /containers/json',
-    sub { $_[0]->containers->list(@_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->list } ],
   [ 'containers->inspect', 'GET /containers/c1/json',
-    sub { $_[0]->containers->inspect('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->inspect('c1') } ],
   [ 'containers->start', 'POST /containers/c1/start',
-    sub { $_[0]->containers->start('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->start('c1') } ],
   [ 'containers->stop', 'POST /containers/c1/stop',
-    sub { $_[0]->containers->stop('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->stop('c1') } ],
   [ 'containers->restart', 'POST /containers/c1/restart',
-    sub { $_[0]->containers->restart('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->restart('c1') } ],
   [ 'containers->kill', 'POST /containers/c1/kill',
-    sub { $_[0]->containers->kill('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->kill('c1') } ],
   [ 'containers->remove', 'DELETE /containers/c1',
-    sub { $_[0]->containers->remove('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->remove('c1') } ],
   [ 'containers->logs', 'GET /containers/c1/logs',
-    sub { $_[0]->containers->logs('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->logs('c1') } ],
   [ 'containers->attach', 'POST /containers/c1/attach',
-    sub { $_[0]->containers->attach('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->attach('c1') } ],
   [ 'containers->attach pre-flight', 'GET /containers/c1/json',
-    sub { $_[0]->containers->attach('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->attach('c1') } ],
   [ 'containers->top', 'GET /containers/c1/top',
-    sub { $_[0]->containers->top('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->top('c1') } ],
   [ 'containers->stats', 'GET /containers/c1/stats',
-    sub { $_[0]->containers->stats('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->stats('c1') } ],
   [ 'containers->changes', 'GET /containers/c1/changes',
-    sub { $_[0]->containers->changes('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->changes('c1') } ],
   [ 'containers->export', 'GET /containers/c1/export',
-    sub { $_[0]->containers->export('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->export('c1') } ],
   [ 'containers->resize', 'POST /containers/c1/resize',
-    sub { $_[0]->containers->resize('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->resize('c1') } ],
   [ 'containers->wait', 'POST /containers/c1/wait',
-    sub { $_[0]->containers->wait('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->wait('c1') } ],
   [ 'containers->pause', 'POST /containers/c1/pause',
-    sub { $_[0]->containers->pause('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->pause('c1') } ],
   [ 'containers->unpause', 'POST /containers/c1/unpause',
-    sub { $_[0]->containers->unpause('c1', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->unpause('c1') } ],
   [ 'containers->rename', 'POST /containers/c1/rename',
-    sub { $_[0]->containers->rename('c1', 'c2', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->rename('c1', 'c2') } ],
   [ 'containers->get_archive', 'GET /containers/c1/archive',
-    sub { $_[0]->containers->get_archive('c1', path => '/etc', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->get_archive('c1', path => '/etc') } ],
   [ 'containers->put_archive', 'PUT /containers/c1/archive',
-    sub { $_[0]->containers->put_archive('c1', 'tar', path => '/etc',
-      @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->put_archive('c1', 'tar', path => '/etc') } ],
   [ 'containers->stat_archive', 'HEAD /containers/c1/archive',
-    sub { $_[0]->containers->stat_archive('c1', path => '/etc', @_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->stat_archive('c1', path => '/etc') } ],
   [ 'containers->prune', 'POST /containers/prune',
-    sub { $_[0]->containers->prune(@_[1 .. $#_]) } ],
+    'containers' => sub { $_[0]->prune } ],
 
   # -- images --------------------------------------------------------------
   [ 'images->list', 'GET /images/json',
-    sub { $_[0]->images->list(@_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->list } ],
   [ 'images->build', 'POST /build',
-    sub { $_[0]->images->build(context => 'tar', @_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->build(context => 'tar') } ],
   [ 'images->pull', 'POST /images/create',
-    sub { $_[0]->images->pull(fromImage => 'alpine', @_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->pull(fromImage => 'alpine') } ],
   [ 'images->inspect', 'GET /images/alpine/json',
-    sub { $_[0]->images->inspect('alpine', @_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->inspect('alpine') } ],
   [ 'images->history', 'GET /images/alpine/history',
-    sub { $_[0]->images->history('alpine', @_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->history('alpine') } ],
   [ 'images->push', 'POST /images/alpine/push',
-    sub { $_[0]->images->push('alpine', @_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->push('alpine') } ],
   [ 'images->tag', 'POST /images/alpine/tag',
-    sub { $_[0]->images->tag('alpine', repo => 'r', @_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->tag('alpine', repo => 'r') } ],
   [ 'images->remove', 'DELETE /images/alpine',
-    sub { $_[0]->images->remove('alpine', @_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->remove('alpine') } ],
   [ 'images->search', 'GET /images/search',
-    sub { $_[0]->images->search('alpine', @_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->search('alpine') } ],
   [ 'images->prune', 'POST /images/prune',
-    sub { $_[0]->images->prune(@_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->prune } ],
   [ 'images->get', 'GET /images/alpine/get',
-    sub { $_[0]->images->get('alpine', @_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->get('alpine') } ],
   [ 'images->get_all', 'GET /images/get',
-    sub { $_[0]->images->get_all(['alpine'], @_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->get_all(['alpine']) } ],
   [ 'images->load', 'POST /images/load',
-    sub { $_[0]->images->load('tar', @_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->load('tar') } ],
   [ 'images->commit', 'POST /commit',
-    sub { $_[0]->images->commit(container => 'c1', @_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->commit(container => 'c1') } ],
   [ 'images->build_prune', 'POST /build/prune',
-    sub { $_[0]->images->build_prune(@_[1 .. $#_]) } ],
+    'images' => sub { $_[0]->build_prune } ],
 
   # -- networks ------------------------------------------------------------
   [ 'networks->list', 'GET /networks',
-    sub { $_[0]->networks->list(@_[1 .. $#_]) } ],
+    'networks' => sub { $_[0]->list } ],
   [ 'networks->inspect', 'GET /networks/n1',
-    sub { $_[0]->networks->inspect('n1', @_[1 .. $#_]) } ],
+    'networks' => sub { $_[0]->inspect('n1') } ],
   [ 'networks->remove', 'DELETE /networks/n1',
-    sub { $_[0]->networks->remove('n1', @_[1 .. $#_]) } ],
+    'networks' => sub { $_[0]->remove('n1') } ],
   [ 'networks->prune', 'POST /networks/prune',
-    sub { $_[0]->networks->prune(@_[1 .. $#_]) } ],
+    'networks' => sub { $_[0]->prune } ],
 
   # -- volumes -------------------------------------------------------------
   [ 'volumes->list', 'GET /volumes',
-    sub { $_[0]->volumes->list(@_[1 .. $#_]) } ],
+    'volumes' => sub { $_[0]->list } ],
   [ 'volumes->inspect', 'GET /volumes/v1',
-    sub { $_[0]->volumes->inspect('v1', @_[1 .. $#_]) } ],
+    'volumes' => sub { $_[0]->inspect('v1') } ],
   [ 'volumes->remove', 'DELETE /volumes/v1',
-    sub { $_[0]->volumes->remove('v1', @_[1 .. $#_]) } ],
+    'volumes' => sub { $_[0]->remove('v1') } ],
   [ 'volumes->prune', 'POST /volumes/prune',
-    sub { $_[0]->volumes->prune(@_[1 .. $#_]) } ],
+    'volumes' => sub { $_[0]->prune } ],
 
   # -- secrets -------------------------------------------------------------
   [ 'secrets->list', 'GET /secrets',
-    sub { $_[0]->secrets->list(@_[1 .. $#_]) } ],
+    'secrets' => sub { $_[0]->list } ],
   [ 'secrets->inspect', 'GET /secrets/s1',
-    sub { $_[0]->secrets->inspect('s1', @_[1 .. $#_]) } ],
+    'secrets' => sub { $_[0]->inspect('s1') } ],
   [ 'secrets->remove', 'DELETE /secrets/s1',
-    sub { $_[0]->secrets->remove('s1', @_[1 .. $#_]) } ],
+    'secrets' => sub { $_[0]->remove('s1') } ],
 
   # -- configs -------------------------------------------------------------
   [ 'configs->list', 'GET /configs',
-    sub { $_[0]->configs->list(@_[1 .. $#_]) } ],
+    'configs' => sub { $_[0]->list } ],
   [ 'configs->inspect', 'GET /configs/cf1',
-    sub { $_[0]->configs->inspect('cf1', @_[1 .. $#_]) } ],
+    'configs' => sub { $_[0]->inspect('cf1') } ],
   [ 'configs->remove', 'DELETE /configs/cf1',
-    sub { $_[0]->configs->remove('cf1', @_[1 .. $#_]) } ],
+    'configs' => sub { $_[0]->remove('cf1') } ],
 
   # -- exec ----------------------------------------------------------------
   [ 'exec->start', 'POST /exec/e1/start',
-    sub { $_[0]->exec->start('e1', @_[1 .. $#_]) } ],
+    'exec' => sub { $_[0]->start('e1') } ],
   [ 'exec->resize', 'POST /exec/e1/resize',
-    sub { $_[0]->exec->resize('e1', h => 40, w => 120, @_[1 .. $#_]) } ],
+    'exec' => sub { $_[0]->resize('e1', h => 40, w => 120) } ],
   [ 'exec->inspect', 'GET /exec/e1/json',
-    sub { $_[0]->exec->inspect('e1', @_[1 .. $#_]) } ],
+    'exec' => sub { $_[0]->inspect('e1') } ],
 
   # -- system --------------------------------------------------------------
   [ 'system->info', 'GET /info',
-    sub { $_[0]->system->info(@_[1 .. $#_]) } ],
+    'system' => sub { $_[0]->info } ],
   [ 'system->version', 'GET /version',
-    sub { $_[0]->system->version(@_[1 .. $#_]) } ],
+    'system' => sub { $_[0]->version } ],
   [ 'system->ping', 'GET /_ping',
-    sub { $_[0]->system->ping(@_[1 .. $#_]) } ],
+    'system' => sub { $_[0]->ping } ],
   [ 'system->events', 'GET /events',
-    sub { $_[0]->system->events(@_[1 .. $#_]) } ],
+    'system' => sub { $_[0]->events } ],
   [ 'system->df', 'GET /system/df',
-    sub { $_[0]->system->df(@_[1 .. $#_]) } ],
+    'system' => sub { $_[0]->df } ],
   [ 'system->auth', 'POST /auth',
-    sub { $_[0]->system->auth(username => 'u', password => 'p',
-      @_[1 .. $#_]) } ],
+    'system' => sub { $_[0]->auth(username => 'u', password => 'p') } ],
 
   # -- plugins -------------------------------------------------------------
   [ 'plugins->list', 'GET /plugins',
-    sub { $_[0]->plugins->list(@_[1 .. $#_]) } ],
+    'plugins' => sub { $_[0]->list } ],
   [ 'plugins->privileges', 'GET /plugins/privileges',
-    sub { $_[0]->plugins->privileges('p', @_[1 .. $#_]) } ],
+    'plugins' => sub { $_[0]->privileges('p') } ],
   [ 'plugins->install', 'POST /plugins/pull',
-    sub { $_[0]->plugins->install('p', privileges => [], @_[1 .. $#_]) } ],
+    'plugins' => sub { $_[0]->install('p', privileges => []) } ],
   [ 'plugins->install privileges pre-flight', 'GET /plugins/privileges',
-    sub { $_[0]->plugins->install('p', accept_privileges => 1,
-      @_[1 .. $#_]) } ],
+    'plugins' => sub { $_[0]->install('p', accept_privileges => 1) } ],
   [ 'plugins->inspect', 'GET /plugins/p/json',
-    sub { $_[0]->plugins->inspect('p', @_[1 .. $#_]) } ],
+    'plugins' => sub { $_[0]->inspect('p') } ],
   [ 'plugins->remove', 'DELETE /plugins/p',
-    sub { $_[0]->plugins->remove('p', @_[1 .. $#_]) } ],
+    'plugins' => sub { $_[0]->remove('p') } ],
   [ 'plugins->enable', 'POST /plugins/p/enable',
-    sub { $_[0]->plugins->enable('p', @_[1 .. $#_]) } ],
+    'plugins' => sub { $_[0]->enable('p') } ],
   [ 'plugins->disable', 'POST /plugins/p/disable',
-    sub { $_[0]->plugins->disable('p', @_[1 .. $#_]) } ],
+    'plugins' => sub { $_[0]->disable('p') } ],
   [ 'plugins->upgrade', 'POST /plugins/p/upgrade',
-    sub { $_[0]->plugins->upgrade('p', privileges => [], @_[1 .. $#_]) } ],
+    'plugins' => sub { $_[0]->upgrade('p', privileges => []) } ],
   [ 'plugins->upgrade privileges pre-flight', 'GET /plugins/privileges',
-    sub { $_[0]->plugins->upgrade('p', accept_privileges => 1,
-      @_[1 .. $#_]) } ],
+    'plugins' => sub { $_[0]->upgrade('p', accept_privileges => 1) } ],
   [ 'plugins->push', 'POST /plugins/p/push',
-    sub { $_[0]->plugins->push('p', @_[1 .. $#_]) } ],
+    'plugins' => sub { $_[0]->push('p') } ],
   [ 'plugins->configure', 'POST /plugins/p/set',
-    sub { $_[0]->plugins->configure('p', ['A=1'], @_[1 .. $#_]) } ],
+    'plugins' => sub { $_[0]->configure('p', ['A=1']) } ],
 
   # -- distribution --------------------------------------------------------
   [ 'distribution->inspect', 'GET /distribution/alpine/json',
-    sub { $_[0]->distribution->inspect('alpine', @_[1 .. $#_]) } ],
+    'distribution' => sub { $_[0]->inspect('alpine') } ],
   [ 'distribution->exists', 'GET /distribution/alpine/json',
-    sub { $_[0]->distribution->exists('alpine', @_[1 .. $#_]) } ],
+    'distribution' => sub { $_[0]->exists('alpine') } ],
 );
 
 # The option list the named endpoint was requested with, or a string saying
 # why there is none -- which is_deeply then reports instead of an empty hash.
+# @using is what the resource class is cloned with; empty means it is used as
+# it comes off the client.
 sub opts_for {
-  my ($case, @args) = @_;
-  my (undef, $want, $code) = @$case;
+  my ($case, @using) = @_;
+  my (undef, $want, $accessor, $code) = @$case;
 
   my $probe = Test::TimeoutForward::Probe->new(
-    host => 'unix:///nonexistent-api-docker-70.sock', api_version => '1.41');
+    host => 'unix:///nonexistent-api-docker-74.sock', api_version => '1.41');
 
-  eval { $code->($probe, @args); 1 }
+  my $resource = $probe->$accessor;
+  $resource = $resource->using(@using) if @using;
+
+  eval { $code->($resource); 1 }
     or return 'the call died before requesting anything: ' . $@;
 
   my @seen;
@@ -286,41 +293,41 @@ sub opts_for {
   return "never requested $want (requested: " . join(', ', @seen) . ')';
 }
 
+# What of the two the request was actually given, in a shape is_deeply can
+# report: the string opts_for returns when the endpoint was never reached is
+# passed through rather than turned into an empty hash.
+sub bounds_of {
+  my ($opts) = @_;
+  return $opts unless ref $opts eq 'HASH';
+  return { map { exists $opts->{$_} ? ($_ => $opts->{$_}) : () }
+    qw( read_timeout connect_timeout ) };
+}
+
 # ---------------------------------------------------------------------------
 subtest 'both bounds reach the request the method makes' => sub {
   for my $case (@cases) {
-    my $opts = opts_for($case, read_timeout => 3, connect_timeout => 7);
-    is_deeply
-      ref $opts eq 'HASH'
-        ? { map { exists $opts->{$_} ? ($_ => $opts->{$_}) : () }
-              qw( read_timeout connect_timeout ) }
-        : $opts,
+    is_deeply bounds_of(opts_for($case, read_timeout => 3, connect_timeout => 7)),
       { read_timeout => 3, connect_timeout => 7 },
-      $case->[0] . ' forwards both';
+      $case->[0] . ' carries both';
   }
 };
 
 # The subtlety `exists` buys, and the one a `? :` on truth would lose: 0 is
 # "wait as long as it takes", which is how a client-wide default is turned off
-# for one call. Forwarded on truth it would vanish here and the client
+# for a run of calls. Carried on truth it would vanish here and the client
 # attribute would win -- the opposite of what the caller asked for.
-subtest 'an explicit 0 is forwarded, not read as "no opinion"' => sub {
+subtest 'an explicit 0 is carried, not read as "no opinion"' => sub {
   for my $case (@cases) {
-    my $opts = opts_for($case, read_timeout => 0, connect_timeout => 0);
-    is_deeply
-      ref $opts eq 'HASH'
-        ? { map { exists $opts->{$_} ? ($_ => $opts->{$_}) : () }
-              qw( read_timeout connect_timeout ) }
-        : $opts,
+    is_deeply bounds_of(opts_for($case, read_timeout => 0, connect_timeout => 0)),
       { read_timeout => 0, connect_timeout => 0 },
-      $case->[0] . ' forwards an explicit 0 for both';
+      $case->[0] . ' carries an explicit 0 for both';
   }
 };
 
-# The other half of `exists`: neither key is invented when the caller passed
-# none, so a client carrying an attribute is not overridden with undef by
-# every method that could have taken the option.
-subtest 'neither is invented when the caller passed none' => sub {
+# The other half: a resource class nobody cloned invents neither key, so a
+# client carrying an attribute is not overridden with undef by every method
+# that could have been bounded.
+subtest 'neither is invented on a resource class nobody bounded' => sub {
   for my $case (@cases) {
     my $opts = opts_for($case);
     is_deeply
@@ -343,59 +350,62 @@ subtest 'the negotiation inherits the triggering request bounds' => sub {
                 [ read_timeout => 0, connect_timeout => 0 ],
                 []) {
     my $probe = Test::TimeoutForward::NegotiateProbe->new(
-      host => 'unix:///nonexistent-api-docker-72.sock');
+      host => 'unix:///nonexistent-api-docker-74.sock');
 
-    eval { $probe->containers->list(@$args) };
+    my $containers = $probe->containers;
+    $containers = $containers->using(@$args) if @$args;
+    eval { $containers->list };
 
     is_deeply $probe->negotiations, [ { @$args } ],
-      'containers->list(' . join(', ', @$args) . ') negotiates with the same';
+      'containers->using(' . join(', ', @$args) . ')->list negotiates with the same';
   }
 };
 
+# negotiate_version is the one method that still takes the two options
+# directly: it is a client method, not a resource one, so ->using cannot reach
+# it and a caller bounding the negotiation on its own has nowhere else to say
+# so.
 subtest 'negotiate_version puts them on the /version request' => sub {
   for my $args ([ read_timeout => 3, connect_timeout => 7 ],
                 [ read_timeout => 0, connect_timeout => 0 ],
                 []) {
     my $probe = Test::TimeoutForward::Probe->new(
-      host => 'unix:///nonexistent-api-docker-72.sock');
+      host => 'unix:///nonexistent-api-docker-74.sock');
 
     $probe->negotiate_version(@$args);
 
     my ($call) = grep { $_->{path} eq '/version' } @{ $probe->calls };
     is_deeply
-      $call
-        ? { map { exists $call->{opts}{$_} ? ($_ => $call->{opts}{$_}) : () }
-              qw( read_timeout connect_timeout ) }
-        : 'never requested /version',
+      $call ? bounds_of($call->{opts}) : 'never requested /version',
       { @$args },
       'negotiate_version(' . join(', ', @$args) . ') forwards what it was given';
   }
 };
 
 # ---------------------------------------------------------------------------
-# The forwarding above is only worth anything if the transport reads the
-# option, so the other end of the wire is asserted too -- that a value handed
-# to _request as an option reaches the socket constructor. t/connect_timeout.t
-# proves what the socket then does with it.
-subtest 'the transport picks the forwarded value up' => sub {
+# The carrying above is only worth anything if the transport reads the option,
+# so the other end of the wire is asserted too -- that a value ->using put on
+# a resource class reaches the socket constructor. t/connect_timeout.t proves
+# what the socket then does with it.
+subtest 'the transport picks the carried value up' => sub {
   my @seen;
 
   my $probe = Test::TimeoutForward::ConnectProbe->new(
-    host        => 'unix:///nonexistent-api-docker-70.sock',
+    host        => 'unix:///nonexistent-api-docker-74.sock',
     api_version => '1.41',
     seen        => \@seen,
   );
 
-  eval { $probe->images->pull(fromImage => 'alpine', connect_timeout => 7) };
-  eval { $probe->system->events(connect_timeout => 2) };
-  eval { $probe->containers->logs('c1', connect_timeout => 0) };
+  eval { $probe->images->using(connect_timeout => 7)->pull(fromImage => 'alpine') };
+  eval { $probe->system->using(connect_timeout => 2)->events };
+  eval { $probe->containers->using(connect_timeout => 0)->logs('c1') };
   eval { $probe->images->get('alpine') };
-  eval { $probe->networks->list(connect_timeout => 4) };
-  eval { $probe->volumes->inspect('v1', connect_timeout => 6) };
+  eval { $probe->networks->using(connect_timeout => 4)->list };
+  eval { $probe->volumes->using(connect_timeout => 6)->inspect('v1') };
 
   is_deeply \@seen, [7, 2, undef, undef, 4, 6],
     'the option resolved per request, an explicit 0 turning the bound off, '
-    . 'and nothing armed when it was not passed';
+    . 'and nothing armed on a resource class that was never cloned';
 };
 
 done_testing;

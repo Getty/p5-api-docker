@@ -21,6 +21,15 @@ use API::Docker::Error::Truncated;
 # structural check rather than of the read timeout next door in
 # t/read_timeout.t. Nothing waits, so the whole file runs in milliseconds.
 #
+# karr #73 added the head to it. The reasoning that had kept it out -- a head
+# announces no length, so there is nothing to compare -- turned out to be an
+# answer to the wrong question: the head is framed by terminators rather than
+# by a length, and "the terminator never came" needs no comparison. Those
+# subtests sit between the four body shapes and the end-to-end section, and
+# the heads that are legitimate are pinned next to them, including the
+# smallest one there is and the hand-written hijack head measured on both
+# engines.
+#
 # What is deliberately NOT truncation is asserted just as hard, at the bottom:
 # a body delimited by nothing but the close announces no end, so there an EOF
 # is the end. Getting that wrong would break attach, logs(follow) and
@@ -170,6 +179,113 @@ subtest 'a chunk whose data arrived but whose CRLF did not' => sub {
 };
 
 # ---------------------------------------------------------------------------
+# The head, which announces nothing and is framed all the same (karr #73)
+# ---------------------------------------------------------------------------
+# karr #64 stopped at the body because the check it built was a comparison,
+# and a status line and a header block announce no length to compare against.
+# The head is framed by its terminators instead -- every line ends with CRLF,
+# and the field section ends with an empty line that RFC 9112 section 2.1
+# requires even when there are no fields -- so "the stream ended where the
+# terminator belongs" decides it with nothing to compare, which is the test
+# _assert_chunk_header already makes one level down.
+#
+# Why it was worth making fatal. A cut head is not merely a bogus status: the
+# body is then read with whichever headers arrived, and a cut landing before
+# Content-Length and Transfer-Encoding leaves neither -- the close-delimited
+# branch, where an EOF is the legitimate end and nothing looks wrong. The cuts
+# that were caught before this were caught by accident one level lower,
+# whenever the half-arrived header happened to be one of those two.
+subtest 'a status line cut in half' => sub {
+  my ($err) = over_pair('HTTP/1.1 20',
+    sub { $client->_read_response($_[0], 'GET', {}) });
+
+  truncated_ok $err,
+    phase    => 'status-line',
+    partial  => '',
+    expected => undef,
+    received => undef,
+    message  => qr/inside the status line, after 11 bytes of one/;
+};
+
+subtest 'a status line that is complete but unterminated' => sub {
+  # The one that reads as perfectly good: split on whitespace it yields 200
+  # and 'OK', and only the missing CRLF says the daemon never finished it.
+  my ($err) = over_pair('HTTP/1.1 200 OK',
+    sub { $client->_read_response($_[0], 'GET', {}) });
+
+  truncated_ok $err,
+    phase    => 'status-line',
+    partial  => '',
+    expected => undef,
+    received => undef,
+    message  => qr/inside the status line, after 15 bytes of one/;
+};
+
+subtest 'the header block stops inside a header line' => sub {
+  my ($err) = over_pair(
+    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Half",
+    sub { $client->_read_response($_[0], 'GET', {}) });
+
+  truncated_ok $err,
+    phase    => 'header-block',
+    partial  => '',
+    expected => undef,
+    received => undef,
+    message  => qr/inside a header line, after 6 bytes of one/;
+};
+
+subtest 'the header block is never closed, after some headers' => sub {
+  # The silent one. Neither Content-Length nor Transfer-Encoding arrived, so
+  # before this check the response came back as a 200 with one header and an
+  # empty body -- indistinguishable from an attach that produced nothing.
+  my ($err) = over_pair(
+    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n",
+    sub { $client->_read_response($_[0], 'GET', {}) });
+
+  truncated_ok $err,
+    phase    => 'header-block',
+    partial  => '',
+    expected => undef,
+    received => undef,
+    message  => qr/where a header line belongs, with no blank line/;
+};
+
+subtest 'the header block is never closed, with no headers at all' => sub {
+  # The case worth checking against real engines before making it fatal: a
+  # complete status line, nothing after it, and no blank line. It is a cut
+  # head rather than a terse one -- RFC 9112 section 2.1 requires the empty
+  # line with zero fields as much as with twenty -- and it was measured on
+  # both engines before being made fatal here. Neither ever omits it: not on
+  # 200, 204, 304, HEAD or chunked, and not on the two heads an engine writes
+  # by hand rather than through its HTTP server, attach and /exec/{id}/start,
+  # which send one Content-Type line and then the blank line on Docker 29.7.2
+  # and rootless Podman 5.8.4 alike.
+  my ($err) = over_pair("HTTP/1.1 204 No Content\r\n",
+    sub { $client->_read_response($_[0], 'GET', {}) });
+
+  truncated_ok $err,
+    phase    => 'header-block',
+    partial  => '',
+    expected => undef,
+    received => undef,
+    message  => qr/where a header line belongs, with no blank line/;
+};
+
+subtest 'a daemon that answered nothing at all still says so' => sub {
+  # Not folded into the phases above. This one was never silent -- it has
+  # croaked since the transport was written -- and it is a plain string a
+  # caller may well be matching on, so karr #73 left it exactly as it was
+  # rather than restating it as an object for symmetry.
+  my ($err) = over_pair('',
+    sub { $client->_read_response($_[0], 'GET', {}) });
+
+  ok $err, 'an empty response raises';
+  ok !(ref $err && $err->isa('API::Docker::Error::Truncated')),
+    'and not as a truncation';
+  like "$err", qr/No response from Docker daemon/, 'the string is unchanged';
+};
+
+# ---------------------------------------------------------------------------
 # End to end through _request, which is where the return shapes are
 # ---------------------------------------------------------------------------
 {
@@ -209,6 +325,42 @@ sub sized {
     . 'Content-Type: ' . ($args{type} // 'application/json') . "\r\n"
     . 'Content-Length: ' . $len . "\r\n\r\n" . $body;
 }
+
+# The head again, now through _request -- where the silence was actually felt,
+# because that is the layer with a return shape to hand a caller.
+subtest 'a cut head is fatal end to end, not just in the reader' => sub {
+  # This used to hand back a 200 whose decoded body was undef.
+  my $c = client_for("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n");
+  my $got = eval { $c->get('/containers/json') };
+  my $err = $@;
+  isa_ok $err, 'API::Docker::Error::Truncated';
+  is ref $err && $err->phase, 'header-block', 'phase: header-block';
+  is $got, undef, 'and nothing is returned in its place';
+  close $c->peer;
+};
+
+subtest 'a head that is complete is untouched, down to the minimal one'
+  => sub {
+  # The boundary next to the subtest above: the same status line, plus the
+  # two bytes that end the field section. Also the smallest head there is --
+  # no fields at all -- so the check cannot be reading "no headers" as the
+  # defect.
+  my $c = client_for("HTTP/1.1 204 No Content\r\n\r\n");
+  my $got = eval { $c->post('/containers/abc/stop') };
+  is $@, '', 'a status line and a blank line raise nothing'
+    or diag "raised: $@";
+  is $got, undef, 'and the 204 comes back as undef';
+  close $c->peer;
+
+  # The head both engines send for attach and /exec/{id}/start, written by
+  # hand rather than by their HTTP server: one field, then the blank line.
+  my $h = client_for("HTTP/1.1 200 OK\r\n"
+    . "Content-Type: application/vnd.docker.raw-stream\r\n\r\nhi");
+  my $hgot = eval { $h->get('/containers/abc/attach', raw => 1) };
+  is $@, '', 'the measured hijack head raises nothing' or diag "raised: $@";
+  is $hgot, 'hi', 'and its close-delimited body still comes back';
+  close $h->peer;
+};
 
 # The case the ticket calls the worst of them: raw promises the response bytes
 # and a caller has no way to tell 700 of them from 2048.
