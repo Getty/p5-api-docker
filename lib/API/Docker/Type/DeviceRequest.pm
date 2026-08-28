@@ -13,7 +13,7 @@ docker driver => Str;
 
 =attr driver
 
-Undocumented upstream; C<"nvidia"> in the swagger's example.
+Undocumented upstream. The swagger's example is C<"nvidia">.
 
 =cut
 
@@ -21,7 +21,7 @@ docker count => Int;
 
 =attr count
 
-Undocumented upstream; C<-1> in the swagger's example.
+Undocumented upstream. The swagger's example is C<-1>.
 
 =cut
 
@@ -40,9 +40,9 @@ docker capabilities => [[Str]];
 
 =attr capabilities
 
-A list of capabilities; an OR list of AND lists of capabilities, so an
-ArrayRef of ArrayRefs of strings. C<< [["gpu", "nvidia", "compute"]] >>
-asks for a device that has all three.
+A list of capabilities; an OR list of AND lists of capabilities. An ArrayRef
+of ArrayRefs of strings: C<< [["gpu", "nvidia", "compute"]] >> asks for a
+device that has all three.
 
 =cut
 
@@ -50,8 +50,9 @@ docker options => { Str, Str };
 
 =attr options
 
-Driver-specific options as key/value pairs, passed straight to the driver.
-B<The keys are the caller's data> and are never translated.
+Driver-specific options, specified as a key/value pairs. These options are
+passed directly to the driver. B<The keys are the caller's data> and are
+never translated.
 
 =cut
 

@@ -5,9 +5,8 @@ use API::Docker::Type;
 
 =head1 DESCRIPTION
 
-Generated from the C<Port> definition of Docker's swagger, checked in as
-C<spec/v1.51.yaml>. One entry of the C<Ports> array a container list
-answers with.
+Generated from the C<Port> definition of C<spec/v1.51.yaml>. One entry of
+the C<Ports> array a container list answers with.
 
 =cut
 
@@ -15,9 +14,8 @@ docker ip => Str, wire => 'IP';
 
 =attr ip
 
-Host IP address that the container's port is mapped to. Serialised as
-C<IP> -- spelled out, because deriving it from the Perl name would produce
-C<Ip>.
+Host IP address that the container's port is mapped to. Serialised as C<IP>
+-- spelled out, because deriving it from the Perl name would produce C<Ip>.
 
 =cut
 
@@ -43,9 +41,9 @@ docker type => Str, required => 1, enum => [qw( tcp udp sctp )];
 
 =attr type
 
-One of C<tcp>, C<udp> or C<sctp>. Undocumented upstream: the swagger gives
-this field an enumeration but no description. Required per the swagger, not
-enforced here.
+Undocumented upstream. The swagger enumerates C<tcp>, C<udp> and C<sctp>.
+The swagger lists this field as required; nothing here enforces that, see
+L<API::Docker::Type/C<since> is documentation>.
 
 =cut
 

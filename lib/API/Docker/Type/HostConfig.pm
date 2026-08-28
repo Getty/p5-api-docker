@@ -23,18 +23,18 @@ docker binds => [Str];
 
 =attr binds
 
-A list of volume bindings for this container. Each binding is a string in
-one of these forms:
+A list of volume bindings for this container. Each volume binding is a
+string in one of these forms:
 
 =over 4
 
 =item * C<host-src:container-dest[:options]> to bind-mount a host path into
-the container. Both C<host-src> and C<container-dest> must be absolute
-paths.
+the container. Both C<host-src>, and C<container-dest> must be an
+I<absolute> path.
 
 =item * C<volume-name:container-dest[:options]> to bind-mount a volume
 managed by a volume driver into the container. C<container-dest> must be an
-absolute path.
+I<absolute> path.
 
 =back
 
@@ -43,25 +43,30 @@ C<options> is an optional, comma-delimited list of:
 =over 4
 
 =item * C<nocopy> disables automatic copying of data from the container path
-to the volume. It only applies to named volumes.
+to the volume. The C<nocopy> flag only applies to named volumes.
 
-=item * C<ro> or C<rw> mounts the volume read-only or read-write. If omitted
-or set to C<rw>, volumes are mounted read-write.
+=item * C<[ro|rw]> mounts a volume read-only or read-write, respectively. If
+omitted or set to C<rw>, volumes are mounted read-write.
 
-=item * C<z> or C<Z> applies SELinux labels to allow or deny multiple
-containers to read and write to the same volume. C<z> applies a shared
-content label, so several containers can share the volume's content for
-both reading and writing; C<Z> applies a private unshared label, so only the
-current container can use the volume. Labeling systems such as SELinux
-require proper labels on volume content mounted into a container -- without
-one the security system can stop the container's processes from using it,
-and the labels the host set are not modified by default.
+=item * C<[z|Z]> applies SELinux labels to allow or deny multiple containers
+to read and write to the same volume. C<z>: a I<shared> content label is
+applied to the content. This label indicates that multiple containers can
+share the volume content, for both reading and writing. C<Z>: a I<private
+unshared> label is applied to the content. This label indicates that only
+the current container can use a private volume. Labeling systems such as
+SELinux require proper labels to be placed on volume content that is mounted
+into a container. Without a label, the security system can prevent a
+container's processes from using the content. By default, the labels set by
+the host operating system are not modified.
 
-=item * C<[r]shared>, C<[r]slave> or C<[r]private> specifies mount
-propagation behaviour. This applies to bind-mounted volumes only, not to
-internal or named volumes, and requires the source mount point on the host
-to have the matching propagation properties: C<shared> for shared volumes,
-either C<shared> or C<slave> for slave volumes.
+=item * C<[[r]shared|[r]slave|[r]private]> specifies mount L<propagation
+behavior|https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt>.
+This only applies to bind-mounted volumes, not internal volumes or named
+volumes. Mount propagation requires the source mount point (the location
+where the source directory is mounted in the host operating system) to have
+the correct propagation properties. For shared volumes, the source mount
+point must be set to C<shared>. For slave volumes, the mount must be set to
+either C<shared> or C<slave>.
 
 =back
 
@@ -90,9 +95,10 @@ docker network_mode => Str;
 
 =attr network_mode
 
-Network mode to use for this container. The standard values are C<bridge>,
-C<host>, C<none> and C<< container:<name|id> >>; any other value is taken as
-the name of a custom network to connect to.
+Network mode to use for this container. Supported standard values are:
+C<bridge>, C<host>, C<none>, and C<< container:<name|id> >>. Any other value
+is taken as a custom network's name to which this container should connect
+to.
 
 =cut
 
@@ -100,17 +106,17 @@ docker port_bindings => { Str, [ 'PortBinding' ] };
 
 =attr port_bindings
 
-The mapping of container ports to host ports. In the swagger this is a
-C<$ref> to C<PortMap>, a definition that is nothing but
-C<additionalProperties>, so it becomes a hash here rather than a class of
-its own.
+PortMap describes the mapping of container ports to host ports, using the
+container's port-number and protocol as key in the format C<<
+<port>/<protocol> >>, for example, C<80/udp>.
 
-B<The keys are the caller's data> and are never translated: they are the
-container's port number and protocol in the form C<< <port>/<protocol> >>,
-C<80/tcp> or C<53/udp>. Where a container's port is mapped for several
-protocols, each gets its own entry. The values are ArrayRefs of
-L<API::Docker::Type::PortBinding>, and the daemon does answer with C<null>
-for a port that is exposed but not published.
+If a container's port is mapped for multiple protocols, separate entries are
+added to the mapping table. In the swagger this is a C<$ref> to C<PortMap>,
+a definition that is nothing but C<additionalProperties>, so it becomes a
+hash here rather than a class of its own, and the daemon does answer with
+C<null> for a port that is exposed but not published. See
+L<API::Docker::Type::PortBinding>. B<The keys are the caller's data> and are
+never translated.
 
 =cut
 
@@ -127,8 +133,8 @@ docker auto_remove => Bool;
 
 =attr auto_remove
 
-Automatically remove the container when its process exits. This has no
-effect if L</restart_policy> is set.
+Automatically remove the container when the container's process exits. This
+has no effect if C<RestartPolicy> is set.
 
 =cut
 
@@ -144,8 +150,8 @@ docker volumes_from => [Str];
 
 =attr volumes_from
 
-A list of volumes to inherit from another container, in the form C<<
-<container name>[:<ro|rw>] >>.
+A list of volumes to inherit from another container, specified in the form
+C<< <container name>[:<ro|rw>] >>.
 
 =cut
 
@@ -162,8 +168,7 @@ docker console_size => [Int];
 
 =attr console_size
 
-Initial console size as a C<[height, width]> array -- exactly two
-non-negative integers.
+Initial console size, as an C<[height, width]> array.
 
 =cut
 
@@ -171,9 +176,9 @@ docker annotations => { Str, Str }, since => '1.44';
 
 =attr annotations
 
-Arbitrary non-identifying metadata attached to the container and handed to
-the runtime when the container is started. B<The keys are the caller's
-data> and are never translated.
+Arbitrary non-identifying metadata attached to container and provided to the
+runtime when the container is started. B<The keys are the caller's data> and
+are never translated.
 
 =cut
 
@@ -181,8 +186,8 @@ docker cap_add => [Str];
 
 =attr cap_add
 
-A list of kernel capabilities to add to the container. Conflicts with the
-C<Capabilities> option.
+A list of kernel capabilities to add to the container. Conflicts with option
+'Capabilities'.
 
 =cut
 
@@ -191,7 +196,7 @@ docker cap_drop => [Str];
 =attr cap_drop
 
 A list of kernel capabilities to drop from the container. Conflicts with
-the C<Capabilities> option.
+option 'Capabilities'.
 
 =cut
 
@@ -199,18 +204,19 @@ docker cgroupns_mode => Str, enum => [qw( private host )];
 
 =attr cgroupns_mode
 
-cgroup namespace mode for the container:
+Cgroup namespace mode for the container. Possible values are:
 
 =over 4
 
-=item * C<private> the container runs in its own private cgroup namespace
+=item * C<"private">: the container runs in its own private cgroup namespace
 
-=item * C<host> use the host system's cgroup namespace
+=item * C<"host">: use the host system's cgroup namespace
 
 =back
 
-If not specified the daemon default is used, which is either of the two
-depending on daemon version, kernel support and configuration.
+If not specified, the daemon default is used, which can either be
+C<"private"> or C<"host">, depending on daemon version, kernel support and
+configuration.
 
 =cut
 
@@ -242,8 +248,8 @@ docker extra_hosts => [Str];
 
 =attr extra_hosts
 
-A list of hostname/IP mappings to add to the container's C</etc/hosts>
-file, in the form C<["hostname:IP"]>.
+A list of hostnames/IP mappings to add to the container's C</etc/hosts>
+file. Specified in the form C<["hostname:IP"]>.
 
 =cut
 
@@ -259,26 +265,26 @@ docker ipc_mode => Str;
 
 =attr ipc_mode
 
-IPC sharing mode for the container:
+IPC sharing mode for the container. Possible values are:
 
 =over 4
 
-=item * C<none> own private IPC namespace, with /dev/shm not mounted
+=item * C<"none">: own private IPC namespace, with /dev/shm not mounted
 
-=item * C<private> own private IPC namespace
+=item * C<"private">: own private IPC namespace
 
-=item * C<shareable> own private IPC namespace, with a possibility to share
-it with other containers
+=item * C<"shareable">: own private IPC namespace, with a possibility to
+share it with other containers
 
-=item * C<< container:<name|id> >> join another (shareable) container's IPC
-namespace
+=item * C<< "container:<name|id>" >>: join another (shareable) container's
+IPC namespace
 
-=item * C<host> use the host system's IPC namespace
+=item * C<"host">: use the host system's IPC namespace
 
 =back
 
-If not specified the daemon default is used, which is either C<private> or
-C<shareable> depending on daemon version and configuration.
+If not specified, daemon default is used, which can either be C<"private">
+or C<"shareable">, depending on daemon version and configuration.
 
 =cut
 
@@ -294,7 +300,7 @@ docker links => [Str];
 
 =attr links
 
-A list of links for the container, in the form C<container_name:alias>.
+A list of links for the container in the form C<container_name:alias>.
 
 =cut
 
@@ -311,9 +317,16 @@ docker pid_mode => Str;
 
 =attr pid_mode
 
-Set the PID (process) namespace mode for the container. It can be either
-C<< container:<name|id> >>, which joins another container's PID namespace,
-or C<host>, which uses the host's PID namespace inside the container.
+Set the PID (Process) Namespace mode for the container. It can be either:
+
+=over 4
+
+=item * C<< "container:<name|id>" >>: joins another container's PID
+namespace
+
+=item * C<"host">: use the host's PID namespace inside the container
+
+=back
 
 =cut
 
@@ -331,10 +344,13 @@ docker publish_all_ports => Bool;
 
 Allocates an ephemeral host port for all of a container's exposed ports.
 
-Ports are de-allocated when the container stops and allocated when it
-starts, and the allocated port might change when the container is
-restarted. The port is selected from the ephemeral port range the kernel
-defines -- on Linux, C</proc/sys/net/ipv4/ip_local_port_range>.
+Ports are de-allocated when the container stops and allocated when the
+container starts. The allocated port might be changed when restarting the
+container.
+
+The port is selected from the ephemeral port range that depends on the
+kernel. For example, on Linux the range is defined by
+C</proc/sys/net/ipv4/ip_local_port_range>.
 
 =cut
 
@@ -350,7 +366,7 @@ docker security_opt => [Str];
 
 =attr security_opt
 
-A list of string values to customize labels for MLS systems such as
+A list of string values to customize labels for MLS systems, such as
 SELinux.
 
 =cut
@@ -359,8 +375,8 @@ docker storage_opt => { Str, Str };
 
 =attr storage_opt
 
-Storage driver options for this container, in the form C<< {"size": "120G"}
->>. B<The keys are the caller's data> and are never translated.
+Storage driver options for this container, in the form C<{"size": "120G"}>.
+B<The keys are the caller's data> and are never translated.
 
 =cut
 
@@ -368,10 +384,12 @@ docker tmpfs => { Str, Str };
 
 =attr tmpfs
 
-A map of container directories which should be replaced by tmpfs mounts,
-and their corresponding mount options -- C<< { "/run":
-"rw,noexec,nosuid,size=65536k" } >>. B<The keys are the caller's data>:
-they are mount paths, and are never translated.
+A map of container directories which should be replaced by tmpfs mounts, and
+their corresponding mount options. For example:
+
+    { "/run": "rw,noexec,nosuid,size=65536k" }
+
+B<The keys are the caller's data> and are never translated.
 
 =cut
 
@@ -388,8 +406,8 @@ docker userns_mode => Str;
 
 =attr userns_mode
 
-Sets the user namespace mode for the container when the user namespace
-remapping option is enabled.
+Sets the usernamespace mode for the container when usernamespace remapping
+option is enabled.
 
 =cut
 
@@ -397,7 +415,7 @@ docker shm_size => Int;
 
 =attr shm_size
 
-Size of C</dev/shm> in bytes. If omitted, the daemon uses 64MB.
+Size of C</dev/shm> in bytes. If omitted, the system uses 64MB.
 
 =cut
 
@@ -405,10 +423,11 @@ docker sysctls => { Str, Str };
 
 =attr sysctls
 
-A list of kernel parameters (sysctls) to set in the container, C<<
-{"net.ipv4.ip_forward": "1"} >>. Omitted if not set. B<The keys are the
-caller's data>: they are dotted kernel parameter names, and are never
-translated.
+A list of kernel parameters (sysctls) to set in the container.
+
+This field is omitted if not set. The swagger's example is C<<
+{"net.ipv4.ip_forward": "1"} >>. B<The keys are the caller's data> and are
+never translated.
 
 =cut
 
@@ -424,8 +443,8 @@ docker isolation => Str, enum => [ 'default', 'process', 'hyperv', '' ];
 
 =attr isolation
 
-Isolation technology of the container (Windows only): C<default>,
-C<process>, C<hyperv>, or the empty string.
+Isolation technology of the container. (Windows only). The swagger
+enumerates C<default>, C<process>, C<hyperv> and the empty string.
 
 =cut
 
@@ -433,8 +452,8 @@ docker masked_paths => [Str];
 
 =attr masked_paths
 
-The list of paths to be masked inside the container. Setting this overrides
-the daemon's default set of paths.
+The list of paths to be masked inside the container (this overrides the
+default set of paths).
 
 =cut
 
@@ -442,8 +461,8 @@ docker readonly_paths => [Str];
 
 =attr readonly_paths
 
-The list of paths to be set as read-only inside the container. Setting this
-overrides the daemon's default set of paths.
+The list of paths to be set as read-only inside the container (this
+overrides the default set of paths).
 
 =cut
 

@@ -11,12 +11,33 @@
 # classes, which are scalars/arrays/maps, how `allOf` resolves, and what a
 # field's type must be. Only the entries below cannot be derived.
 
-# An inline object inside an ARRAY becomes a class named for one element,
-# and making a plural singular is a judgement call, not a derivation. Keyed
-# by the dotted schema path; everything not listed follows the mechanical
-# rule (Mount.BindOptions -> API::Docker::Type::Mount::BindOptions).
+# An inline object inside an ARRAY becomes a class named for one element, and
+# making a plural singular is a judgement call, not a derivation. So is a
+# property the swagger spells in lower case, which would otherwise give Perl a
+# lower-case class name. Keyed by the dotted schema path; the generator
+# refuses to write either shape unless it is named here, and every other
+# inline class follows the mechanical rule (Mount.BindOptions ->
+# API::Docker::Type::Mount::BindOptions).
+#
+# Entries whose name is unchanged are not redundant: they record that somebody
+# looked and found the property name already right for a single element.
 inline_class_names:
-  Resources.Ulimits: API::Docker::Type::Resources::Ulimit
+  ClusterVolume.PublishStatus:          API::Docker::Type::ClusterVolume::PublishStatus
+  ClusterVolumeSpec.AccessMode.Secrets: API::Docker::Type::ClusterVolumeSpec::AccessMode::Secret
+  EngineDescription.Plugins:            API::Docker::Type::EngineDescription::Plugin
+  # `rootfs` is the only lower-case one. RootFS, to match ImageInspect.RootFS
+  # and the root_fs already in maint/spec-to-type-names.yaml.
+  Plugin.Config.rootfs:                 API::Docker::Type::Plugin::Config::RootFS
+  Resources.BlkioWeightDevice:          API::Docker::Type::Resources::BlkioWeightDevice
+  Resources.Ulimits:                    API::Docker::Type::Resources::Ulimit
+  Service.Endpoint.VirtualIPs:          API::Docker::Type::Service::Endpoint::VirtualIP
+  SwarmSpec.CAConfig.ExternalCAs:       API::Docker::Type::SwarmSpec::CAConfig::ExternalCA
+  SystemInfo.DefaultAddressPools:       API::Docker::Type::SystemInfo::DefaultAddressPool
+  SystemVersion.Components:             API::Docker::Type::SystemVersion::Component
+  TaskSpec.ContainerSpec.Configs:       API::Docker::Type::TaskSpec::ContainerSpec::Config
+  TaskSpec.ContainerSpec.Secrets:       API::Docker::Type::TaskSpec::ContainerSpec::Secret
+  TaskSpec.ContainerSpec.Ulimits:       API::Docker::Type::TaskSpec::ContainerSpec::Ulimit
+  TaskSpec.Placement.Preferences:       API::Docker::Type::TaskSpec::Placement::Preference
 
 # Classes the spec calls for that are deliberately not shipped. Matched as a
 # literal prefix of the class name.

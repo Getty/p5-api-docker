@@ -9,8 +9,8 @@ use API::Docker::Type::Mount::VolumeOptions;
 
 =head1 DESCRIPTION
 
-Generated from the C<Mount> definition of C<spec/v1.51.yaml>, which gives
-the definition itself no description. It is the element type of
+Generated from the C<Mount> definition of C<spec/v1.51.yaml>, which the
+swagger leaves undescribed. It is the element type of
 L<API::Docker::Type::HostConfig/mounts>.
 
 The four C<*Options> fields are objects the swagger writes inline rather
@@ -34,44 +34,45 @@ docker source => Str;
 
 =attr source
 
-Mount source: a volume name, a host path. The source cannot be specified
-when using C<Type=tmpfs>. For C<Type=bind> the source path must either
-exist, or C<create_mountpoint> must be set on L</bind_options> so the daemon
-creates it on the host. For C<Type=npipe> the pipe must exist before the
-container is created.
+Mount source (e.g. a volume name, a host path). The source cannot be
+specified when using C<Type=tmpfs>. For C<Type=bind>, the source path must
+either exist, or the C<CreateMountpoint> must be set to C<true> to create
+the source path on the host if missing.
+
+For C<Type=npipe>, the pipe must exist prior to creating the container.
 
 =cut
 
-docker type => Str,
-  enum => [qw( bind cluster image npipe tmpfs volume )];
+docker type => Str, enum => [qw( bind cluster image npipe tmpfs volume )];
 
 =attr type
 
-The mount type. In the swagger this field is an C<allOf> around a single
-C<$ref> to C<MountType>, which is swagger's way of hanging a description on
-a reference; C<MountType> is a string with six values, so this is a plain
-string here and not an object reference.
+The mount type. Available types:
 
 =over 4
 
-=item * C<bind> mounts a file or directory from the host into the
-container. The source must exist before the container is created.
+=item * C<bind> Mounts a file or directory from the host into the container.
+The C<Source> must exist prior to creating the container.
 
-=item * C<cluster> a Swarm cluster volume.
+=item * C<cluster> a Swarm cluster volume
 
-=item * C<image> mounts an image.
+=item * C<image> Mounts an image.
 
-=item * C<npipe> mounts a named pipe from the host into the container. The
-source must exist before the container is created.
+=item * C<npipe> Mounts a named pipe from the host into the container. The
+C<Source> must exist prior to creating the container.
 
-=item * C<tmpfs> creates a tmpfs with the given options. The source cannot
-be specified.
+=item * C<tmpfs> Create a tmpfs with the given options. The mount C<Source>
+cannot be specified for tmpfs.
 
-=item * C<volume> creates a volume with the given name and options, or uses
-a pre-existing volume with the same name and options. These are B<not>
+=item * C<volume> Creates a volume with the given name and options (or uses
+a pre-existing volume with the same name and options). These are B<not>
 removed when the container is removed.
 
 =back
+
+The swagger types this field as an C<allOf> around a single C<$ref> to
+C<MountType>, which is a string and not an object, so it is a plain Str
+here.
 
 =cut
 
@@ -88,7 +89,7 @@ docker consistency => Str;
 =attr consistency
 
 The consistency requirement for the mount: C<default>, C<consistent>,
-C<cached> or C<delegated>.
+C<cached>, or C<delegated>.
 
 =cut
 

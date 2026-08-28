@@ -1,0 +1,104 @@
+# The Perl attribute name for every swagger field whose name carries a run of
+# two or more capitals. Read by maint/spec-to-type.pl.
+#
+# WHY THIS IS A FILE AND NOT AN ALGORITHM
+#
+# The generator derives a Perl name from a wire name mechanically -- insert an
+# underscore before each capital that follows a lower-case letter or digit,
+# lower-case the lot -- and that is right for the 568 of 638 field names that
+# have no run of capitals in them. For the 70 listed here it is not, and the
+# usual guard does not catch it: the round-trip test (derive back, compare)
+# passes for `DeviceIDs -> device_i_ds` and `BlkioDeviceReadIOps ->
+# blkio_device_read_i_ops`, which are both nonsense a reader would have to
+# decode. Where a run of capitals ends and the next word begins is knowledge
+# about English and about Docker, not about the string.
+#
+# So: a field name containing [A-Z]{2} that is NOT listed here makes the
+# generator STOP, with the name in the message. Guessing quietly is exactly
+# how `device_i_ds` would end up in a hundred and thirty classes at once.
+#
+# Keyed by the wire name, globally rather than per class, so one spelling
+# means one Perl name everywhere in the model. The swagger is not consistent
+# with itself -- `CPUShares` and `CpuShares`, `NanoCPUs` and `NanoCpus` are
+# each two spellings of one field in two definitions -- and mapping both to
+# the same Perl name is deliberate: the registry stores each class's own wire
+# spelling verbatim, so nothing is lost on the wire and the Perl surface stops
+# being a lottery.
+#
+# The generator emits an explicit `wire => '...'` on its own, for every name
+# whose Perl form does not derive back to it. That part is mechanical and is
+# not configured here.
+
+BlkioDeviceReadIOps:    blkio_device_read_iops
+BlkioDeviceWriteIOps:   blkio_device_write_iops
+CACert:                 ca_cert
+CAConfig:               ca_config
+CDISpecDirs:            cdi_spec_dirs
+CPUSet:                 cpu_set
+CPUShares:              cpu_shares
+ConfigID:               config_id
+ContainerID:            container_id
+ContainerIDFile:        container_id_file
+DNSConfig:              dns_config
+DNSNames:               dns_names
+DeviceIDs:              device_ids
+EnableIPv4:             enable_ipv4
+EnableIPv6:             enable_ipv6
+EndpointID:             endpoint_id
+ExecIDs:                exec_ids
+ExternalCAs:            external_cas
+GID:                    gid
+GlobalIPv6Address:      global_ipv6_address
+GlobalIPv6PrefixLen:    global_ipv6_prefix_len
+ID:                     id
+IOMaximumBandwidth:     io_maximum_bandwidth
+IOMaximumIOps:          io_maximum_iops
+IP:                     ip
+IPAM:                   ipam
+IPAMConfig:             ipam_config
+IPAddress:              ip_address
+IPPrefixLen:            ip_prefix_len
+IPRange:                ip_range
+IPv4Address:            ipv4_address
+IPv4Forwarding:         ipv4_forwarding
+IPv6Address:            ipv6_address
+IPv6Gateway:            ipv6_gateway
+ImageID:                image_id
+InsecureRegistryCIDRs:  insecure_registry_cidrs
+KernelMemoryTCP:        kernel_memory_tcp
+LinkLocalIPs:           link_local_ips
+LinkLocalIPv6Address:   link_local_ipv6_address
+LinkLocalIPv6PrefixLen: link_local_ipv6_prefix_len
+MinAPIVersion:          min_api_version
+# The four N-prefixed counters of SystemInfo are spelled as one family:
+# NCPU/NFd/NEventsListener/NGoroutines all mean "number of", so all four take
+# the n_ prefix rather than ncpu/nfd next to n_goroutines.
+NCPU:                   n_cpu
+NEventsListener:        n_events_listener
+NFd:                    n_fd
+NGoroutines:            n_goroutines
+NanoCPUs:               nano_cpus
+NetworkID:              network_id
+NodeID:                 node_id
+OOMKilled:              oom_killed
+OS:                     os
+OSType:                 os_type
+OSVersion:              os_version
+PID:                    pid
+RW:                     rw
+RootFS:                 root_fs
+SELinuxContext:         selinux_context
+SandboxID:              sandbox_id
+SecondaryIPAddresses:   secondary_ip_addresses
+SecondaryIPv6Addresses: secondary_ipv6_addresses
+SecretID:               secret_id
+ServiceID:              service_id
+SigningCACert:          signing_ca_cert
+SigningCAKey:           signing_ca_key
+TLSInfo:                tls_info
+TTY:                    tty
+UID:                    uid
+URL:                    url
+UTSMode:                uts_mode
+VirtualIPs:             virtual_ips
+VolumeID:               volume_id

@@ -1,0 +1,215 @@
+# Prose a human wrote that the swagger does not contain, read by
+# maint/spec-to-type.pl.
+#
+# The generator derives everything it honestly can: the provenance sentence,
+# the ABSTRACT from the definition's own description, each =attr block from
+# the field's description converted out of Markdown, the notes about an
+# explicit wire spelling, an enumeration, caller-data keys, `required`, and a
+# field that is an allOf around a scalar $ref. What it cannot derive is
+# anything the swagger does not say -- what a type is FOR, what it is the
+# element of, why a field's name had to be chosen by hand.
+#
+# That is what this file holds, and holding it in a file rather than only in
+# the .pm is the point: it is the record of what curation a class has already
+# had. Per class:
+#
+#   abstract:           the # ABSTRACT line. REQUIRED where the swagger gives
+#                       the definition no description of its own -- the
+#                       generator refuses to invent one.
+#   description_append: sentences joined onto the provenance paragraph of the
+#                       =head1 DESCRIPTION.
+#   description_extra:  further paragraphs after it.
+#   attr:
+#     <perl_name>:
+#       extra:          sentences appended to the field's description
+#       replace:        the whole =attr block, where merging is hopeless
+#
+# Every entry below was written while the sixteen hand-written classes were,
+# and is the reason `--verify` can reproduce them byte for byte. A newly
+# generated class has no entry here at all; adding one is the curation step
+# that follows generation.
+
+API::Docker::Type::Port:
+  description_append:
+    - One entry of the C<Ports> array a container list answers with.
+  attr:
+    private_port:
+      extra:
+        - A C<uint16>.
+    public_port:
+      extra:
+        - A C<uint16>.
+
+API::Docker::Type::PortBinding:
+  description_append:
+    - >-
+      These are the values of a C<PortMap>, whose keys -- C<"80/tcp"> and the
+      like -- are the caller's data and are never translated; see
+      L<API::Docker::Type::HostConfig/port_bindings>.
+  attr:
+    host_ip:
+      extra:
+        - The swagger's example is C<127.0.0.1>.
+    host_port:
+      extra:
+        - The swagger's example is C<"4443">. A string on the wire, not a number.
+
+API::Docker::Type::ThrottleDevice:
+  abstract: A per-device block IO rate limit
+  description_append:
+    - >-
+      It is the element type of C<BlkioDeviceReadBps>, C<BlkioDeviceWriteBps>,
+      C<BlkioDeviceReadIOps> and C<BlkioDeviceWriteIOps> on
+      L<API::Docker::Type::Resources>.
+  attr:
+    rate:
+      extra:
+        - >-
+          What it counts depends on the field this device sits in: bytes per
+          second under C<blkio_device_read_bps> and C<blkio_device_write_bps>,
+          IO operations per second under C<blkio_device_read_iops> and
+          C<blkio_device_write_iops>.
+
+API::Docker::Type::DeviceMapping:
+  description_append:
+    - >-
+      None of its three fields carries a description upstream; the example the
+      swagger gives is C<< { PathOnHost: "/dev/deviceName", PathInContainer:
+      "/dev/deviceName", CgroupPermissions: "mrw" } >>.
+  attr:
+    path_on_host:
+      extra:
+        - The device's path on the host, per the swagger's example.
+    path_in_container:
+      extra:
+        - The path the device is to appear under inside the container, per the
+          swagger's example.
+    cgroup_permissions:
+      extra:
+        - The cgroup device permissions, C<"mrw"> in the swagger's example.
+
+API::Docker::Type::DeviceRequest:
+  attr:
+    driver:
+      extra:
+        - The swagger's example is C<"nvidia">.
+    count:
+      extra:
+        - The swagger's example is C<-1>.
+    device_ids:
+      extra:
+        - The swagger's example is C<< ["0", "1",
+          "GPU-fef8089b-4820-abfc-e83e-94318197576e"] >>.
+    capabilities:
+      extra:
+        - >-
+          An ArrayRef of ArrayRefs of strings: C<< [["gpu", "nvidia",
+          "compute"]] >> asks for a device that has all three.
+
+API::Docker::Type::Mount:
+  abstract: One entry of a container's Mounts specification
+  description_append:
+    - It is the element type of L<API::Docker::Type::HostConfig/mounts>.
+  description_extra:
+    - >-
+      The four C<*Options> fields are objects the swagger writes inline rather
+      than referencing, so each becomes a class named after this one:
+      L<API::Docker::Type::Mount::BindOptions>,
+      L<API::Docker::Type::Mount::VolumeOptions>,
+      L<API::Docker::Type::Mount::ImageOptions> and
+      L<API::Docker::Type::Mount::TmpfsOptions>.
+
+API::Docker::Type::Mount::BindOptions:
+  description_append:
+    - >-
+      Upstream it has no name of its own -- it is an object written straight
+      into C<Mount>, and the class is named after the definition that declares
+      it.
+
+API::Docker::Type::Mount::VolumeOptions:
+  attr:
+    labels:
+      extra:
+        - A label named C<com.example.Some-Label> reaches the daemon spelled
+          exactly that way.
+    driver_config:
+      replace: >-
+        The volume driver to create the volume with, and its options. The
+        swagger's description of this field, "Map of driver specific options",
+        describes the driver's own options map rather than the object. See
+        L<API::Docker::Type::Mount::VolumeOptions::DriverConfig>.
+
+API::Docker::Type::Mount::VolumeOptions::DriverConfig:
+  abstract: The volume driver a mount's volume is to be created with
+  description_append:
+    - >-
+      where its description reads "Map of driver specific options" -- which
+      describes L</options>, not the object, whose two fields are a driver
+      name and that map.
+
+API::Docker::Type::Mount::TmpfsOptions:
+  attr:
+    options:
+      extra:
+        - 'For example: C<< [["noexec"], ["size", "64m"]] >>.'
+
+API::Docker::Type::Mount::ImageOptions:
+  description_append:
+    - The whole schema is newer than v1.44.
+
+API::Docker::Type::Resources:
+  description_extra:
+    - >-
+      L<API::Docker::Type::HostConfig> is C<allOf [ $ref Resources, ... ]> in
+      the swagger and therefore inherits from this class, which is why every
+      field below is also a field of a C<HostConfig>. C<TaskSpec> references
+      the definition directly.
+
+API::Docker::Type::Resources::BlkioWeightDevice:
+  abstract: A per-device block IO weight
+  description_append:
+    - >-
+      Neither the schema nor its two fields carry a description upstream; the
+      form the swagger shows for the enclosing field is C<< [{"Path":
+      "device_path", "Weight": weight}] >>.
+  attr:
+    path:
+      extra:
+        - The device path, per the swagger's example form.
+    weight:
+      extra:
+        - >-
+          The relative weight for that device; the swagger constrains it to 0
+          or above and nothing else.
+
+API::Docker::Type::Resources::Ulimit:
+  abstract: One resource limit to set in a container
+  description_append:
+    - >-
+      Upstream the schema has no name at all: the class name is this one place
+      where the model does not follow from the spec mechanically, because
+      C<Ulimits> had to be made singular by hand. The mapping is recorded in
+      C<maint/spec-drift-exceptions.yaml>.
+  attr:
+    name:
+      extra:
+        - C<nofile> for instance.
+
+API::Docker::Type::HostConfig:
+  attr:
+    port_bindings:
+      extra:
+        - >-
+          In the swagger this is a C<$ref> to C<PortMap>, a definition that is
+          nothing but C<additionalProperties>, so it becomes a hash here
+          rather than a class of its own, and the daemon does answer with
+          C<null> for a port that is exposed but not published.
+    sysctls:
+      extra:
+        - 'The swagger''s example is C<< {"net.ipv4.ip_forward": "1"} >>.'
+
+API::Docker::Type::HostConfig::LogConfig:
+  attr:
+    config:
+      extra:
+        - 'The swagger''s example is C<< {"max-file": "5", "max-size": "10m"} >>.'

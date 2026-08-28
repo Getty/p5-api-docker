@@ -2,9 +2,41 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - New `maint/spec-to-type.pl`, which writes a class under
+    `API::Docker::Type::*` out of `spec/v1.51.yaml`. Its acceptance is that
+    it reproduces the seventeen hand-written classes byte for byte, and
+    `t/spec_to_type.t` keeps it that way. **It is not a class updater**: it
+    creates a file that does not exist, refuses to overwrite one that does,
+    and has no code path that opens a file under `lib/` for writing at all
+    -- output goes to a staging directory a human copies from. There is no
+    `--force` and no bulk refresh, because a generated class is one somebody
+    has since read, corrected and documented, and a re-run would throw that
+    away. When a newer spec lands the drift checker reports it and a person
+    decides field by field.
+  - What the generator cannot derive lives in files, not in heuristics.
+    `maint/spec-to-type-names.yaml` carries the Perl name for each of the 70
+    swagger fields whose name has a run of capitals; an unlisted one stops
+    the run, because the derivation turns `DeviceIDs` into `device_i_ds`,
+    which passes every check there is and still reads wrong. The fourteen
+    inline classes whose name is a judgement rather than a derivation -- one
+    element of an array named for the whole array, and the one property the
+    swagger spells in lower case -- stay in
+    `maint/spec-drift-exceptions.yaml`, the same file the drift checker
+    reads, and the generator refuses to write any of those shapes unnamed. `maint/spec-to-type-prose.yaml` holds the sentences a human wrote
+    that the swagger does not contain. A class the swagger describes
+    nowhere, or one whose name would be lower-case, is reported and not
+    written -- nothing is invented.
+  - Reading the spec is now shared between the generator and the drift
+    checker (`maint/spec-common.pl`), so the two cannot disagree about which
+    definitions are classes, what a field's type is, or what order the
+    fields come in. Field order is not in the parsed structure at all --
+    libyaml returns plain hashes -- so it comes from a scan of the text
+    which is then checked against the parser, path by path and name by name,
+    and refuses to answer if the two disagree.
+
   - New `API::Docker::Type`: the DSL, attribute registry and two-way
     serialisation the generated object model is built on, plus the first
-    sixteen classes under `API::Docker::Type::*` -- Port, Mount with its
+    seventeen classes under `API::Docker::Type::*` -- Port, Mount with its
     four inline options classes, Resources, HostConfig and the leaf types
     they reference. The classes are generated from Docker's published
     swagger, which is now checked into `spec/` verbatim (v1.41, v1.44 and

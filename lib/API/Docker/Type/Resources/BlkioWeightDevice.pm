@@ -6,9 +6,10 @@ use API::Docker::Type;
 =head1 DESCRIPTION
 
 Generated from the inline C<items> schema of C<Resources.BlkioWeightDevice>
-in C<spec/v1.51.yaml>. Neither the schema nor its two fields carry a
-description upstream; the form the swagger shows for the enclosing field is
-C<< [{"Path": "device_path", "Weight": weight}] >>.
+in C<spec/v1.51.yaml>, which the swagger leaves undescribed. Neither the
+schema nor its two fields carry a description upstream; the form the swagger
+shows for the enclosing field is C<< [{"Path": "device_path", "Weight":
+weight}] >>.
 
 =cut
 

@@ -1,5 +1,5 @@
 package API::Docker::Type::Mount::ImageOptions;
-# ABSTRACT: Optional configuration for an image mount
+# ABSTRACT: Optional configuration for the C<image> type
 our $VERSION = '0.004';
 use API::Docker::Type;
 
@@ -14,8 +14,7 @@ docker subpath => Str, since => '1.51';
 
 =attr subpath
 
-Source path inside the image. Must be relative, without any back
-traversals.
+Source path inside the image. Must be relative without any back traversals.
 
 =cut
 

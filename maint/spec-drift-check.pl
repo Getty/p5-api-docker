@@ -40,7 +40,9 @@
 #     field actually appears in.
 #
 # No network access: the specs are in the repository, exactly as Docker
-# publishes them (curl the URL in spec/README and diff if you doubt it).
+# publishes them (curl the URL in spec/README.md and diff if you doubt it).
+# The generator that writes classes out of the same specs is
+# maint/spec-to-type.pl, and the two share maint/spec-common.pl.
 use strict;
 use warnings;
 use v5.10;
@@ -50,17 +52,13 @@ use File::Spec;
 use Getopt::Long qw( GetOptions );
 use JSON::PP;
 
-# YAML::XS, not YAML::PP, and not by preference: Docker's published swagger
-# is not YAML that YAML::PP 0.41 will parse. Its `example:` blocks are
-# multi-line flow maps whose closing brace is indented less than the key
-# that opens them (spec/v1.51.yaml line 1364, ContainerConfig.ExposedPorts,
-# and eleven more places), which YAML::PP rejects with
-#   Bad indendation in FLOWMAP ... Line: 1367, Column: 9
-# while libyaml accepts it. Switching this back to the purer YAML::PP kills
-# the checker on a file Docker ships as it is -- and the specs stay
-# byte-identical to what Docker publishes, so the parser is what has to
-# give. Both are develop-only dependencies; nothing under lib/ loads YAML.
-use YAML::XS ();
+# Reading the spec -- parsing it, working out which definitions are classes,
+# what a field's type is, what an inline object's class is called and in what
+# order the fields appear -- is shared with maint/spec-to-type.pl. It has to
+# be: a checker and a generator that disagreed about any of that would each
+# look right on its own.
+require File::Spec->catfile($FindBin::Bin, 'spec-common.pl');
+my $SPEC = 'API::Docker::Maint::Spec';
 
 my $DIST_ROOT = File::Spec->rel2abs(File::Spec->catdir($FindBin::Bin, '..'));
 my $PREFIX    = 'API::Docker::Type::';
@@ -123,185 +121,13 @@ sub parse_args {
 
 sub load_spec {
   my ($path) = @_;
-  die "spec-drift-check: no such spec: $path\n" unless -f $path;
-  local $YAML::XS::Boolean = 'JSON::PP';
-  my $spec = YAML::XS::LoadFile($path);
-  my $defs = $spec->{definitions}
-    or die "spec-drift-check: no 'definitions' key in $path\n";
-  my $label = File::Spec->abs2rel($path, $DIST_ROOT);
-  return ($defs, $label);
+  my $spec = $SPEC->can('load')->($path);
+  return ($spec, File::Spec->abs2rel($path, $DIST_ROOT));
 }
 
-sub strip_ref { my ($r) = @_; $r =~ s{\A\#/definitions/}{}; return $r }
-
-# The definition a schema is nothing but a wrapper around: a bare $ref, or an
-# allOf holding exactly one $ref and nothing else. The second form is
-# swagger's way of hanging a description onto a $ref -- Mount.Type and
-# MountPoint.Type both do it, and neither is an object reference.
-sub single_ref {
-  my ($schema) = @_;
-  return strip_ref($schema->{'$ref'}) if $schema->{'$ref'};
-  my $all = $schema->{allOf} or return undef;
-  return @$all == 1 && $all->[0]{'$ref'} ? strip_ref($all->[0]{'$ref'}) : undef;
-}
-
-# A definition is class-shaped when it has properties of its own, or is an
-# allOf that composes something with an inline schema. Everything else --
-# a string with an enum, an array, a bare additionalProperties map -- is not
-# a class and must never become one.
-sub is_class_schema {
-  my ($schema) = @_;
-  return 0 unless ref $schema eq 'HASH';
-  return 1 if $schema->{properties};
-  my $all = $schema->{allOf} or return 0;
-  return 0 if @$all == 1 && $all->[0]{'$ref'};
-  return 1;
-}
-
-# Dotted schema path -> class name. Mount.VolumeOptions.DriverConfig becomes
-# API::Docker::Type::Mount::VolumeOptions::DriverConfig. The exceptions file
-# overrides the one case this does not get right on its own: an array of
-# inline objects, where the class is named for a single element and
-# Resources.Ulimits has to become Resources::Ulimit.
-sub class_for_path {
-  my ($path, $exc) = @_;
-  return $exc->{inline_class_names}{$path} if $exc->{inline_class_names}{$path};
-  (my $class = $path) =~ s/\./::/g;
-  return $PREFIX . $class;
-}
-
-# The type descriptor string a property's schema calls for, in the same
-# vocabulary API::Docker::Type::describe_type produces from the registry.
-sub spec_type {
-  my ($schema, $path, $defs, $exc) = @_;
-  return 'any' unless ref $schema eq 'HASH';
-  if (defined(my $ref = single_ref($schema))) {
-    my $target = $defs->{$ref} // {};
-    return 'object<' . $PREFIX . $ref . '>' if is_class_schema($target);
-    return spec_type($target, $ref, $defs, $exc);
-  }
-  my $type = $schema->{type} // '';
-  return 'array<' . spec_type($schema->{items} // {}, $path, $defs, $exc) . '>'
-    if $type eq 'array';
-  if ($type eq 'object') {
-    my $ap = $schema->{additionalProperties};
-    return 'hash<' . spec_type($ap, $path, $defs, $exc) . '>' if ref $ap eq 'HASH';
-    return 'object<' . class_for_path($path, $exc) . '>' if $schema->{properties};
-    return 'any';
-  }
-  return 'str'  if $type eq 'string';
-  return 'int'  if $type eq 'integer';
-  return 'num'  if $type eq 'number';
-  return 'bool' if $type eq 'boolean';
-  return 'any';
-}
-
-# The schema that becomes an inline class for this property, if any: the
-# property's own schema when it is an object with properties, or its items
-# when it is an array of such objects.
-sub inline_object_schema {
-  my ($schema) = @_;
-  return undef unless ref $schema eq 'HASH';
-  return undef if single_ref($schema);
-  return $schema if ($schema->{type} // '') eq 'object' && $schema->{properties};
-  return $schema if !$schema->{type} && $schema->{properties};
-  if (($schema->{type} // '') eq 'array') {
-    my $items = $schema->{items};
-    return inline_object_schema($items) if ref $items eq 'HASH';
-  }
-  return undef;
-}
-
-# Every class the spec calls for, keyed by class name:
-#   { path, extends => [class, ...], props => { Wire => { schema, path } } }
-# props is the FLATTENED set -- an allOf's $ref contributes its fields too,
-# so a class is compared against everything it must be able to carry.
-sub expected_model {
-  my ($defs, $exc) = @_;
-  my %model;
-
-  my $add_inline;
-  $add_inline = sub {
-    my ($class, $path, $props) = @_;
-    for my $name (sort keys %$props) {
-      my $inner = inline_object_schema($props->{$name}) or next;
-      my $inner_path  = "$path.$name";
-      my $inner_class = class_for_path($inner_path, $exc);
-      $model{$inner_class} //= { path => $inner_path, extends => [], props => {} };
-      $model{$inner_class}{props}{$_} = { schema => $inner->{properties}{$_}, path => $inner_path }
-        for keys %{ $inner->{properties} // {} };
-      $add_inline->($inner_class, $inner_path, $inner->{properties} // {});
-    }
-  };
-
-  # Own (non-inherited) properties of a definition, with the path each was
-  # declared at -- an inherited Ulimits keeps the path Resources.Ulimits, so
-  # it still resolves to Resources::Ulimit and not HostConfig::Ulimit.
-  my (%own, %parents);
-  for my $name (sort keys %$defs) {
-    next unless is_class_schema($defs->{$name});
-    my $schema = $defs->{$name};
-    my (@refs, @inline);
-    if (my $all = $schema->{allOf}) {
-      for my $part (@$all) {
-        if ($part->{'$ref'}) { push @refs, strip_ref($part->{'$ref'}) }
-        else                 { push @inline, $part }
-      }
-    }
-    else { @inline = ($schema) }
-    my %props;
-    for my $part (@inline) {
-      $props{$_} = { schema => $part->{properties}{$_}, path => $name }
-        for keys %{ $part->{properties} // {} };
-    }
-    $own{$name}     = \%props;
-    $parents{$name} = \@refs;
-  }
-
-  my %flat;
-  my $flatten;
-  $flatten = sub {
-    my ($name, $seen) = @_;
-    return $flat{$name} if $flat{$name};
-    die "spec-drift-check: allOf cycle at $name\n" if $seen->{$name}++;
-    my %props;
-    for my $parent (@{ $parents{$name} // [] }) {
-      next unless $own{$parent};
-      my $up = $flatten->($parent, $seen);
-      $props{$_} = $up->{$_} for keys %$up;
-    }
-    my $mine = $own{$name};
-    $props{$_} = $mine->{$_} for keys %$mine;
-    return $flat{$name} = \%props;
-  };
-
-  for my $name (sort keys %own) {
-    my $class = $PREFIX . $name;
-    $model{$class} = {
-      path    => $name,
-      extends => [ map { $PREFIX . $_ } grep { $own{$_} } @{ $parents{$name} } ],
-      props   => $flatten->($name, {}),
-    };
-  }
-  # Inline classes are named for the definition that DECLARES them, so they
-  # are collected from the own properties, never from the flattened set.
-  for my $name (sort keys %own) {
-    $add_inline->($PREFIX . $name, $name,
-      { map { ($_ => $own{$name}{$_}{schema}) } keys %{ $own{$name} } });
-  }
-  return \%model;
-}
-
-# Definitions that are deliberately not classes, for the report's benefit.
-sub non_class_definitions {
-  my ($defs) = @_;
-  my %out;
-  for my $name (sort keys %$defs) {
-    next if is_class_schema($defs->{$name});
-    $out{$name} = $defs->{$name}{type} // 'allOf-of-one-$ref';
-  }
-  return \%out;
-}
+sub spec_type            { return $SPEC->can('spec_type')->(@_) }
+sub expected_model       { return $SPEC->can('expected_model')->(@_) }
+sub non_class_definitions{ return $SPEC->can('non_class_definitions')->(@_) }
 
 # ---------------------------------------------------------------------------
 # The shipped model
@@ -334,20 +160,7 @@ sub load_model {
 # Exceptions file
 # ---------------------------------------------------------------------------
 
-sub load_exceptions {
-  my ($path) = @_;
-  die "spec-drift-check: exceptions file not found: $path\n" unless -f $path;
-  local $YAML::XS::Boolean = 'JSON::PP';
-  my $data = YAML::XS::LoadFile($path) // {};
-  $data->{inline_class_names}   //= {};
-  $data->{ignore_missing_classes} //= [];
-  $data->{ignore_missing_fields}  //= [];
-  $data->{ignore_extra_fields}    //= [];
-  $data->{ignore_type_mismatch}   //= [];
-  $data->{ignore_since}           //= [];
-  $data->{perl_only}              //= [];
-  return $data;
-}
+sub load_exceptions { return $SPEC->can('load_exceptions')->(@_) }
 
 sub prefix_match {
   my ($name, $entries) = @_;
@@ -381,9 +194,9 @@ sub build_since_index {
   return undef unless @{ $opt->{baseline} };
   my @sources;
   for my $path (@{ $opt->{baseline} }, $opt->{spec}) {
-    my ($defs, $label) = load_spec($path);
+    my ($spec, $label) = load_spec($path);
     my $version = $label =~ m{v(\d+\.\d+)\.yaml\z} ? $1 : $label;
-    push @sources, [ $version, expected_model($defs, $exc) ];
+    push @sources, [ $version, expected_model($spec, $exc) ];
   }
   my %first;    # class -> wire -> version
   for my $source (@sources) {
@@ -401,9 +214,10 @@ sub build_since_index {
 sub run_coverage_mode {
   my ($opt) = @_;
   my $exc = load_exceptions($opt->{exceptions});
-  my ($defs, $label) = load_spec($opt->{spec});
-  my $expected  = expected_model($defs, $exc);
-  my $non_class = non_class_definitions($defs);
+  my ($spec, $label) = load_spec($opt->{spec});
+  my $defs      = $spec->{definitions};
+  my $expected  = expected_model($spec, $exc);
+  my $non_class = non_class_definitions($spec);
   my $shipped   = load_model($opt->{lib});
   my $since_idx = build_since_index($opt, $exc);
   my $only      = defined $opt->{only} ? qr/$opt->{only}/ : undef;
@@ -560,10 +374,12 @@ sub render_coverage_report {
 sub run_compare_mode {
   my ($opt) = @_;
   my $exc = load_exceptions($opt->{exceptions});
-  my ($defs_a, $label_a) = load_spec($opt->{from});
-  my ($defs_b, $label_b) = load_spec($opt->{to});
-  my $model_a = expected_model($defs_a, $exc);
-  my $model_b = expected_model($defs_b, $exc);
+  my ($spec_a, $label_a) = load_spec($opt->{from});
+  my ($spec_b, $label_b) = load_spec($opt->{to});
+  my $defs_a  = $spec_a->{definitions};
+  my $defs_b  = $spec_b->{definitions};
+  my $model_a = expected_model($spec_a, $exc);
+  my $model_b = expected_model($spec_b, $exc);
 
   my (@new_def, @removed_def, @new_field, @removed_field,
       @required_change, @type_change, @description_change);

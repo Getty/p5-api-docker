@@ -1,5 +1,5 @@
 package API::Docker::Type::RestartPolicy;
-# ABSTRACT: The behavior to apply when a container exits
+# ABSTRACT: The behavior to apply when the container exits
 our $VERSION = '0.004';
 use API::Docker::Type;
 
@@ -7,9 +7,10 @@ use API::Docker::Type;
 
 Generated from the C<RestartPolicy> definition of C<spec/v1.51.yaml>.
 
-The default is not to restart. An ever increasing delay -- double the
-previous one, starting at 100ms -- is added before each restart to keep a
-crash-looping container from flooding the daemon.
+The default is not to restart.
+
+An ever increasing delay (double the previous delay, starting at 100ms) is
+added before each restart to prevent flooding the server.
 
 =cut
 
@@ -20,16 +21,16 @@ docker name => Str,
 
 =over 4
 
-=item * the empty string means not to restart
+=item * Empty string means not to restart
 
-=item * C<no> do not automatically restart
+=item * C<no> Do not automatically restart
 
-=item * C<always> always restart
+=item * C<always> Always restart
 
-=item * C<unless-stopped> restart always, except when the user has manually
+=item * C<unless-stopped> Restart always except when the user has manually
 stopped the container
 
-=item * C<on-failure> restart only when the container exit code is non-zero
+=item * C<on-failure> Restart only when the container exit code is non-zero
 
 =back
 

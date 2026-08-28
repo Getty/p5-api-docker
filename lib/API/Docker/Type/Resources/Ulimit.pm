@@ -6,10 +6,11 @@ use API::Docker::Type;
 =head1 DESCRIPTION
 
 Generated from the inline C<items> schema of C<Resources.Ulimits> in
-C<spec/v1.51.yaml>. Upstream the schema has no name at all: the class name
-is this one place where the model does not follow from the spec
-mechanically, because C<Ulimits> had to be made singular by hand. The
-mapping is recorded in C<maint/spec-drift-exceptions.yaml>.
+C<spec/v1.51.yaml>, which the swagger leaves undescribed. Upstream the
+schema has no name at all: the class name is this one place where the model
+does not follow from the spec mechanically, because C<Ulimits> had to be
+made singular by hand. The mapping is recorded in
+C<maint/spec-drift-exceptions.yaml>.
 
 =cut
 
@@ -17,7 +18,7 @@ docker name => Str;
 
 =attr name
 
-Name of the ulimit, C<nofile> for instance.
+Name of ulimit. C<nofile> for instance.
 
 =cut
 

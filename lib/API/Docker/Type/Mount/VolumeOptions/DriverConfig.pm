@@ -6,7 +6,7 @@ use API::Docker::Type;
 =head1 DESCRIPTION
 
 Generated from the inline C<DriverConfig> schema of C<Mount.VolumeOptions>
-in C<spec/v1.51.yaml>, where its description reads "Map of driver specific
+in C<spec/v1.51.yaml>. where its description reads "Map of driver specific
 options" -- which describes L</options>, not the object, whose two fields
 are a driver name and that map.
 
