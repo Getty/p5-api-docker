@@ -14,8 +14,10 @@ docker nano_cpus => Int, wire => 'NanoCPUs';
 
 =attr nano_cpus
 
-Undocumented upstream. Serialised as C<NanoCPUs> -- spelled out, because
-deriving it from the Perl name would produce C<NanoCpus>.
+Undocumented upstream. The same units and the same example as
+L<API::Docker::Type::Limit/nano_cpus>: C<4000000000> is four whole CPUs.
+Serialised as C<NanoCPUs> -- spelled out, because deriving it from the Perl
+name would produce C<NanoCpus>.
 
 =cut
 
@@ -23,7 +25,8 @@ docker memory_bytes => Int;
 
 =attr memory_bytes
 
-Undocumented upstream.
+Undocumented upstream. Bytes, and the same example as
+L<API::Docker::Type::Limit/memory_bytes>.
 
 =cut
 

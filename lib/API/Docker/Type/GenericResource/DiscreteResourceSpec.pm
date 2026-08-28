@@ -16,7 +16,7 @@ docker kind => Str;
 
 =attr kind
 
-Undocumented upstream.
+Undocumented upstream. The resource's name, C<SSD> in that example.
 
 =cut
 
@@ -24,7 +24,7 @@ docker value => Int;
 
 =attr value
 
-Undocumented upstream.
+Undocumented upstream. How many there are, C<3> in that example.
 
 =cut
 

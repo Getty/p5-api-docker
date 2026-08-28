@@ -16,7 +16,10 @@ docker segments => { Str, Str }, since => '1.44';
 
 =attr segments
 
-Undocumented upstream. B<The keys are the caller's data> and are never
+Undocumented upstream. The map itself -- topological domains for keys,
+topological segments for values, which is what the definition above says the
+object is. The swagger sends you to the CSI specification's own Topology
+object for what those are. B<The keys are the caller's data> and are never
 translated.
 
 =cut

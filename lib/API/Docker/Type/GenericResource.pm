@@ -15,8 +15,9 @@ docker named_resource_spec => 'GenericResource::NamedResourceSpec';
 
 =attr named_resource_spec
 
-Undocumented upstream. See
-L<API::Docker::Type::GenericResource::NamedResourceSpec>.
+Undocumented upstream. The pair when the resource is named, which the
+enclosing C<GenericResources> calls a String resource: C<GPU=UUID1> in its
+example. See L<API::Docker::Type::GenericResource::NamedResourceSpec>.
 
 =cut
 
@@ -24,7 +25,9 @@ docker discrete_resource_spec => 'GenericResource::DiscreteResourceSpec';
 
 =attr discrete_resource_spec
 
-Undocumented upstream. See
+Undocumented upstream. The C<Kind>/C<Value> pair when the resource counts,
+which the enclosing C<GenericResources> calls an Integer resource: C<SSD=3>
+in its example. See
 L<API::Docker::Type::GenericResource::DiscreteResourceSpec>.
 
 =cut

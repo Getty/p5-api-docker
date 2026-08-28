@@ -342,11 +342,29 @@ API::Docker::Type::GenericResource::DiscreteResourceSpec:
   description_append:
     - The C<Kind>/C<Value> pair for a countable resource, C<SSD=3> in the
       swagger's example.
+  attr:
+    kind:
+      extra:
+        - The resource's name, C<SSD> in that example.
+    value:
+      extra:
+        - How many there are, C<3> in that example.
 API::Docker::Type::GenericResource::NamedResourceSpec:
   abstract: A string-valued user-defined resource
   description_append:
     - The C<Kind>/C<Value> pair for a named resource, C<GPU=UUID1> in the
       swagger's example.
+  attr:
+    kind:
+      extra:
+        - The resource's name, C<GPU> in that example.
+    value:
+      extra:
+        - >-
+          The name of the one unit, C<UUID1> in that example. The example
+          carries two such objects, C<UUID1> and C<UUID2>, rather than one
+          object listing both -- a node advertising two GPUs advertises two
+          entries.
 API::Docker::Type::ImageManifestSummary::Size:
   abstract: The sizes of one manifest of an image
   description_append:
@@ -1121,3 +1139,138 @@ API::Docker::Type::PluginPrivilege:
         - >-
           What is being asked for, one string each: C<< ["host"] >> beside
           that C<network> in the swagger's example.
+
+API::Docker::Type::GenericResource:
+  attr:
+    discrete_resource_spec:
+      extra:
+        - >-
+          The C<Kind>/C<Value> pair when the resource counts, which the
+          enclosing C<GenericResources> calls an Integer resource: C<SSD=3> in
+          its example.
+    named_resource_spec:
+      extra:
+        - >-
+          The pair when the resource is named, which the enclosing
+          C<GenericResources> calls a String resource: C<GPU=UUID1> in its
+          example.
+
+API::Docker::Type::ObjectVersion:
+  attr:
+    index:
+      extra:
+        - >-
+          The version number itself, the one the definition above says must
+          travel back with a modified specification so that two updates from
+          the same base version cannot overwrite each other. The swagger's
+          example is C<373531>; the C<GET /secrets> capture in
+          F<t/fixtures/secrets_list.json>, from Podman 5.4.2 (API 1.41), has
+          C<1> on both secrets. L<API::Docker::Role::Entity::Secret> and
+          L<API::Docker::Role::Entity::Config> read it out as
+          C<version_index>.
+
+API::Docker::Type::Secret:
+  attr:
+    id:
+      extra:
+        - >-
+          The secret's ID. The swagger's example is a 25-character Swarm ID,
+          C<blt1owaxmitz71s9v5zh81zun>; the C<GET /secrets> capture in
+          F<t/fixtures/secrets_list.json>, from Podman 5.4.2 (API 1.41),
+          answers 25 hex characters instead.
+    created_at:
+      extra:
+        - >-
+          RFC 3339 with nanoseconds, C<2017-07-20T13:55:28.678958722Z> in the
+          swagger's example.
+    updated_at:
+      extra:
+        - >-
+          The same format as L</created_at>, and identical to it on a secret
+          that has never been updated -- both captured secrets in
+          F<t/fixtures/secrets_list.json> carry the same instant in both
+          fields.
+    spec:
+      extra:
+        - >-
+          The secret's name, driver and labels. Not its value: the daemon
+          hands that to containers and never back over C</secrets>, so
+          C<< $secret->spec->data >> reads C<undef> on anything an engine
+          sent; L<API::Docker::Role::Entity::Secret> says why.
+
+API::Docker::Type::Config:
+  description_append:
+    - >-
+      The same four fields and the same C<Version> a secret carries, and the
+      swagger gives an example for none of them; L<API::Docker::Type::Secret>
+      is where the shapes are written down.
+  attr:
+    id:
+      extra:
+        - The config's ID, as L<API::Docker::Type::Secret/id> is a secret's.
+    created_at:
+      extra:
+        - RFC 3339, as L<API::Docker::Type::Secret/created_at> is.
+    updated_at:
+      extra:
+        - The same format as L</created_at>.
+    spec:
+      extra:
+        - >-
+          The config's name, labels, templating and -- unlike a secret's --
+          its actual data, which the daemon does hand back.
+          L<API::Docker::Role::Entity::Config/decoded_data> is the accessor
+          that base64-decodes it.
+
+API::Docker::Type::ClusterVolume:
+  attr:
+    created_at:
+      extra:
+        - >-
+          A C<dateTime>, with no example given. Cluster volumes are Swarm
+          objects, which is what L</id> says makes them carry an ID where a
+          plain volume does not, and it is why they carry these two
+          timestamps as well.
+    updated_at:
+      extra:
+        - The same, for the last change.
+
+API::Docker::Type::Limit:
+  attr:
+    nano_cpus:
+      extra:
+        - >-
+          A CPU quota in units of 10^-9 CPUs, which is how the
+          swagger describes the same measure under
+          L<API::Docker::Type::Resources/nano_cpus>. The example
+          C<4000000000> is four whole CPUs.
+    memory_bytes:
+      extra:
+        - >-
+          A memory limit in bytes, the measure the swagger describes under
+          L<API::Docker::Type::Resources/memory>. The example C<8272408576>
+          is roughly 7.7 GiB.
+
+API::Docker::Type::ResourceObject:
+  attr:
+    nano_cpus:
+      extra:
+        - >-
+          The same units and the same example as
+          L<API::Docker::Type::Limit/nano_cpus>: C<4000000000> is four whole
+          CPUs.
+    memory_bytes:
+      extra:
+        - >-
+          Bytes, and the same example as
+          L<API::Docker::Type::Limit/memory_bytes>.
+
+API::Docker::Type::Topology:
+  attr:
+    segments:
+      extra:
+        - >-
+          The map itself -- topological domains for keys, topological
+          segments for values, which is what the definition above says the
+          object is. The swagger sends you to the CSI specification's own
+          Topology object for what those are.

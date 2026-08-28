@@ -13,8 +13,11 @@ docker nano_cpus => Int, wire => 'NanoCPUs';
 
 =attr nano_cpus
 
-Undocumented upstream. Serialised as C<NanoCPUs> -- spelled out, because
-deriving it from the Perl name would produce C<NanoCpus>.
+Undocumented upstream. A CPU quota in units of 10^-9 CPUs, which is how the
+swagger describes the same measure under
+L<API::Docker::Type::Resources/nano_cpus>. The example C<4000000000> is four
+whole CPUs. Serialised as C<NanoCPUs> -- spelled out, because deriving it
+from the Perl name would produce C<NanoCpus>.
 
 =cut
 
@@ -22,7 +25,9 @@ docker memory_bytes => Int;
 
 =attr memory_bytes
 
-Undocumented upstream.
+Undocumented upstream. A memory limit in bytes, the measure the swagger
+describes under L<API::Docker::Type::Resources/memory>. The example
+C<8272408576> is roughly 7.7 GiB.
 
 =cut
 

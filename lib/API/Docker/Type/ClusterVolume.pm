@@ -37,7 +37,10 @@ docker created_at => Str, since => '1.44';
 
 =attr created_at
 
-Undocumented upstream.
+Undocumented upstream. A C<dateTime>, with no example given. Cluster volumes
+are Swarm objects, which is what L</id> says makes them carry an ID where a
+plain volume does not, and it is why they carry these two timestamps as
+well.
 
 =cut
 
@@ -45,7 +48,7 @@ docker updated_at => Str, since => '1.44';
 
 =attr updated_at
 
-Undocumented upstream.
+Undocumented upstream. The same, for the last change.
 
 =cut
 

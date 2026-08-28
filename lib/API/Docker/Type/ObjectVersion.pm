@@ -23,7 +23,13 @@ docker index => Int;
 
 =attr index
 
-Undocumented upstream.
+Undocumented upstream. The version number itself, the one the definition
+above says must travel back with a modified specification so that two
+updates from the same base version cannot overwrite each other. The
+swagger's example is C<373531>; the C<GET /secrets> capture in
+F<t/fixtures/secrets_list.json>, from Podman 5.4.2 (API 1.41), has C<1> on
+both secrets. L<API::Docker::Role::Entity::Secret> and
+L<API::Docker::Role::Entity::Config> read it out as C<version_index>.
 
 =cut
 

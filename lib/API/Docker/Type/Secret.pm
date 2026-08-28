@@ -18,8 +18,11 @@ docker id => Str, wire => 'ID';
 
 =attr id
 
-Undocumented upstream. Serialised as C<ID> -- spelled out, because deriving
-it from the Perl name would produce C<Id>.
+Undocumented upstream. The secret's ID. The swagger's example is a
+25-character Swarm ID, C<blt1owaxmitz71s9v5zh81zun>; the C<GET /secrets>
+capture in F<t/fixtures/secrets_list.json>, from Podman 5.4.2 (API 1.41),
+answers 25 hex characters instead. Serialised as C<ID> -- spelled out,
+because deriving it from the Perl name would produce C<Id>.
 
 =cut
 
@@ -36,7 +39,8 @@ docker created_at => Str;
 
 =attr created_at
 
-Undocumented upstream.
+Undocumented upstream. RFC 3339 with nanoseconds,
+C<2017-07-20T13:55:28.678958722Z> in the swagger's example.
 
 =cut
 
@@ -44,7 +48,9 @@ docker updated_at => Str;
 
 =attr updated_at
 
-Undocumented upstream.
+Undocumented upstream. The same format as L</created_at>, and identical to
+it on a secret that has never been updated -- both captured secrets in
+F<t/fixtures/secrets_list.json> carry the same instant in both fields.
 
 =cut
 
@@ -52,7 +58,11 @@ docker spec => 'SecretSpec';
 
 =attr spec
 
-Undocumented upstream. See L<API::Docker::Type::SecretSpec>.
+Undocumented upstream. The secret's name, driver and labels. Not its value:
+the daemon hands that to containers and never back over C</secrets>, so C<<
+$secret->spec->data >> reads C<undef> on anything an engine sent;
+L<API::Docker::Role::Entity::Secret> says why. See
+L<API::Docker::Type::SecretSpec>.
 
 =cut
 

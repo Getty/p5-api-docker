@@ -16,7 +16,7 @@ docker kind => Str;
 
 =attr kind
 
-Undocumented upstream.
+Undocumented upstream. The resource's name, C<GPU> in that example.
 
 =cut
 
@@ -24,7 +24,9 @@ docker value => Str;
 
 =attr value
 
-Undocumented upstream.
+Undocumented upstream. The name of the one unit, C<UUID1> in that example.
+The example carries two such objects, C<UUID1> and C<UUID2>, rather than one
+object listing both -- a node advertising two GPUs advertises two entries.
 
 =cut
 
