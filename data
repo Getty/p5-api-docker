@@ -1,0 +1,42 @@
+---
+claimed_at: 2026-08-28T14:28:20Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:28:20Z
+created: 2026-08-28T04:24:32Z
+id: 82
+priority: medium
+started: 2026-08-28T11:17:34Z
+status: done
+tags:
+- types
+- cleanup
+title: Role::Type has no namespace::clean, so croak and blessed are methods on all
+  201 type classes
+updated: 2026-08-28T14:28:20Z
+---
+
+Found 2026-08-28 while building k79 step 6 for containers.
+
+Measured:
+
+  perl -Ilib -MAPI::Docker::Type::ContainerSummary \
+    -e 'print API::Docker::Type::ContainerSummary->can("croak") ? "leaks" : "no"'
+  -> leaks
+
+API::Docker::Role::Type does `use Moo::Role; use Carp qw( croak ); use
+Scalar::Util qw( blessed );` and never `use namespace::clean;`. Everything
+imported after `use Moo::Role` is composed into the consumer as a method, so
+every generated class answers ->croak and ->blessed. Not harmful today; it is
+two names in a namespace that is otherwise exactly the daemon's fields plus a
+documented handful, and the next collision is silent.
+
+The other two roles in this distribution get it right:
+API::Docker::Role::Filters and API::Docker::Role::Using both close with
+`use namespace::clean;` on the line after their imports.
+
+The fix is that one line. It changes the method surface of 201 classes
+(removing two accidental entries), so it wants its own commit and a run of
+prove -lr t/ rather than being folded into something else.
+
+Done in 3dfc6ae, alone as the ticket asked. Verified independently after: ->croak and ->blessed are gone from a generated class, while BUILDARGS still files an unknown key into unknown_fields and the from_data croak still fires -- namespace::clean took nothing the role needs. The agent measured each internal site rather than trusting the mechanism, including the collision croak in _entity_attribute_index that no test covers, and mutation-checked its own assertion by removing the line again. Nothing in the repo called either method, so a green run alone would not have settled it -- which is why the ticket was right to ask.
