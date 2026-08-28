@@ -1,0 +1,42 @@
+---
+claimed_at: 2026-08-28T14:28:57Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:28:57Z
+created: 2026-08-28T11:39:51Z
+id: 89
+priority: low
+started: 2026-08-28T11:40:43Z
+status: done
+tags:
+- cleanup
+- types
+title: API::Docker::Type has no namespace::clean, so it answers ->blessed
+updated: 2026-08-28T14:28:57Z
+---
+
+Found while doing k87, reported rather than touched because the DSL is the
+shared seam and two agents were live in the tree.
+
+  perl -Ilib -MAPI::Docker::Type -e 'print API::Docker::Type->can("blessed")'
+  -> true
+
+lib/API/Docker/Type.pm imports blessed at line 11 and genuinely uses it at
+line 255 in _is_type_tiny, so the import stays. What is missing is the
+`use namespace::clean;` that closes the namespace afterwards.
+
+This is the same shape as k82, one module over. Every role in the tree has
+the line -- checked, all of them, including the six Role::Entity ones -- and
+the DSL module does not.
+
+Lower stakes than k82 was: API::Docker::Type is imported, not composed, so
+the name sits on the DSL package itself rather than on 201 generated classes.
+It is still a name in a namespace that should hold the keywords and nothing
+else.
+
+Same discipline as k82 asked for: check that nothing reaches it before
+removing the leak, and check that namespace::clean does not take away
+something the module's own subs still need -- _is_type_tiny calls blessed
+after the clean would run.
+
+Done in 36b0f68, one line. Verified after: API::Docker::Type answers neither ->blessed nor ->croak, while _is_type_tiny still calls blessed, all twelve croak sites still fire, use_module still loads lazily in both places, _isa_for still builds and rejects every shape, and both keywords plus the type vocabulary still arrive in a target package. The package went from 25 CODE symbols to 13 -- exactly the subs the file writes. Independently re-measured here: from_data with a nested field, a caller-data key untouched through TO_JSON, and the ambiguous-constructor croak all still work. No Changes entry: the names sat on the imported DSL package, never on a composed or inherited surface.
