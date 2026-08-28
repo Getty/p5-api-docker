@@ -4,6 +4,7 @@ use Test::More;
 use File::Find;
 use File::Spec;
 use FindBin;
+use B ();
 use Package::Stash;
 
 # Every class of the generated type model, loaded and asked what it
@@ -130,6 +131,36 @@ subtest 'a generated class holds its fields and the documented roster' => sub {
     'no generated class answers to a name outside its fields and the roster';
   is_deeply \%absent, {},
     'every generated class answers to the whole roster';
+};
+
+subtest 'the DSL package holds nothing it did not compile itself' => sub {
+  # API::Docker::Type is imported from, never composed or inherited, so
+  # nothing it holds reaches the generated classes -- but it is still a
+  # namespace that should be its own subs and no one else's. Without
+  # `use namespace::clean` after its imports it answers to ->blessed,
+  # ->croak, ->use_module and the nine Types::Standard names (karr k89).
+  #
+  # Asked as an origin and not as a list of names it must not have, for the
+  # reason the subtest above exists: a forbidden name stops proving anything
+  # the day the import behind it is dropped, and says so to nobody. Every sub
+  # Perl compiled in this file reports API::Docker::Type as its stash; an
+  # imported one reports where it was written. That stays true through a
+  # rename, a new helper and an import nobody has thought of yet.
+  require API::Docker::Type;
+  my $stash = Package::Stash->new('API::Docker::Type');
+  my @subs  = sort $stash->list_all_symbols('CODE');
+  my @foreign;
+  for my $name (@subs) {
+    my $gv = B::svref_2object($stash->get_symbol("&$name"))->GV;
+    my $from = ref($gv) eq 'B::SPECIAL' ? '(unknown)' : $gv->STASH->NAME;
+    push @foreign, "$name (compiled in $from)"
+      unless $from eq 'API::Docker::Type';
+  }
+  is_deeply \@foreign, [], 'every sub in API::Docker::Type was written there';
+  # So that an empty or renamed package cannot pass the assertion above by
+  # having nothing to check. The DSL has 13 subs; the bound is loose because
+  # the count is not the claim.
+  cmp_ok scalar @subs, '>=', 10, 'and there were subs there to check';
 };
 
 done_testing;

@@ -12,6 +12,7 @@ use Scalar::Util qw( blessed );
 use Types::Standard qw( Any ArrayRef Bool HashRef InstanceOf Int Maybe Num Str );
 use API::Docker::Role::Type ();
 use JSON::MaybeXS ();
+use namespace::clean;
 
 =head1 SYNOPSIS
 
