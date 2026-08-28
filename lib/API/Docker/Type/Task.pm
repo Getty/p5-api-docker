@@ -38,7 +38,8 @@ docker created_at => Str;
 
 =attr created_at
 
-Undocumented upstream.
+Undocumented upstream. RFC 3339 with nanoseconds,
+C<2016-06-07T21:07:31.171892745Z> in the swagger's example.
 
 =cut
 
@@ -46,7 +47,8 @@ docker updated_at => Str;
 
 =attr updated_at
 
-Undocumented upstream.
+Undocumented upstream. The same format, two hundred milliseconds later in
+that example -- the task was created and then reported running.
 
 =cut
 
@@ -89,7 +91,10 @@ docker slot => Int;
 
 =attr slot
 
-Undocumented upstream.
+Undocumented upstream. C<1> in the swagger's example, whose C<ServiceID> is
+the same C<9mnpnzenvg8p8tdbtq4wvbkcz> the C<Service> example carries, and
+that service asks for one replica. Read it as which replica of the service
+this task is.
 
 =cut
 
@@ -128,10 +133,12 @@ docker desired_state => Str,
 
 =attr desired_state
 
-Undocumented upstream. The swagger enumerates C<new>, C<allocated>,
-C<pending>, C<assigned>, C<accepted>, C<preparing>, C<ready>, C<starting>,
-C<running>, C<complete>, C<shutdown>, C<failed>, C<rejected>, C<remove> and
-C<orphaned>.
+Undocumented upstream. Where the orchestrator wants the task, against
+L<API::Docker::Type::TaskStatus/state> which is where it actually is. Both
+are C<running> in the swagger's example. The swagger enumerates C<new>,
+C<allocated>, C<pending>, C<assigned>, C<accepted>, C<preparing>, C<ready>,
+C<starting>, C<running>, C<complete>, C<shutdown>, C<failed>, C<rejected>,
+C<remove> and C<orphaned>.
 
 =cut
 

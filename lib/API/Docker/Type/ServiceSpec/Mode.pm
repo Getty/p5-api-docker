@@ -16,8 +16,11 @@ docker replicated => 'ServiceSpec::Mode::Replicated';
 
 =attr replicated
 
-Undocumented upstream. See
-L<API::Docker::Type::ServiceSpec::Mode::Replicated>.
+Undocumented upstream. The mode for a service with a fixed number of tasks;
+the count is L<API::Docker::Type::ServiceSpec::Mode::Replicated/replicas>,
+and the swagger's C<Service> example carries C<< {"Replicated": {"Replicas":
+1}} >>. Of the four modes only C<ReplicatedJob> and C<GlobalJob> are
+described upstream. See L<API::Docker::Type::ServiceSpec::Mode::Replicated>.
 
 =cut
 
@@ -25,7 +28,10 @@ docker global => Any;
 
 =attr global
 
-Undocumented upstream.
+Undocumented upstream. One task on every valid node: the same reach the
+swagger gives C<GlobalJob>, which it describes as running a task to the
+completed state on each valid node, without the running-to-completion part.
+An empty object -- naming the mode is the whole of it.
 
 =cut
 

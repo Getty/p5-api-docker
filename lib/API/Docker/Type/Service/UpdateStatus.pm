@@ -14,8 +14,9 @@ docker state => Str, enum => [qw( updating paused completed )];
 
 =attr state
 
-Undocumented upstream. The swagger enumerates C<updating>, C<paused> and
-C<completed>.
+Undocumented upstream. How far the rolling update has got. L</started_at>
+and L</completed_at> bracket it in time and L</message> says in words what
+it is doing. The swagger enumerates C<updating>, C<paused> and C<completed>.
 
 =cut
 
@@ -23,7 +24,7 @@ docker started_at => Str;
 
 =attr started_at
 
-Undocumented upstream.
+Undocumented upstream. RFC 3339, with no example given.
 
 =cut
 
@@ -31,7 +32,7 @@ docker completed_at => Str;
 
 =attr completed_at
 
-Undocumented upstream.
+Undocumented upstream. The other end of L</started_at>, in the same format.
 
 =cut
 
@@ -39,7 +40,8 @@ docker message => Str;
 
 =attr message
 
-Undocumented upstream.
+Undocumented upstream. Free text about the update, the human-readable half
+of L</state>.
 
 =cut
 

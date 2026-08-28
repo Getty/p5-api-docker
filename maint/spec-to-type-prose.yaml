@@ -451,8 +451,28 @@ API::Docker::Type::Service::Endpoint:
     - >-
       The specification a service was asked for, alongside the ports and
       virtual IPs the swarm actually gave it.
+  attr:
+    ports:
+      extra:
+        - >-
+          The ports as published. In the swagger's C<Service> example they are
+          the very entry C<Spec.Ports> asked for -- C<tcp>, target C<6379>,
+          published C<30001>.
+    virtual_ips:
+      extra:
+        - >-
+          One entry per virtual IP the routing mesh gave the service. The
+          swagger's C<Service> example carries two, C<10.255.0.2/16> and
+          C<10.255.0.3/16>, both on the same network.
 API::Docker::Type::ServiceSpec::Mode::Replicated:
   abstract: The replicated mode of a service, and its replica count
+  attr:
+    replicas:
+      extra:
+        - >-
+          How many tasks the service should be running; C<1> in the swagger's
+          C<Service> example, whose one task carries
+          L<API::Docker::Type::Task/slot> C<1>.
 API::Docker::Type::SystemVersion::Platform:
   abstract: The name of the platform the daemon reports itself as
   attr:
@@ -472,6 +492,16 @@ API::Docker::Type::TaskSpec::Placement:
       and a cap on how many replicas one node may take.
 API::Docker::Type::TaskSpec::Placement::Preference:
   abstract: One scheduling preference of a task
+  attr:
+    spread:
+      extra:
+        - >-
+          The only kind of preference the swagger defines, and the only field
+          of this object. Its own C<SpreadDescriptor> is described upstream as
+          a label descriptor; the example under
+          L<API::Docker::Type::TaskSpec::Placement/preferences> spreads over
+          C<node.labels.datacenter> first and C<node.labels.rack> second,
+          preferences being listed from highest precedence to lowest.
 API::Docker::Type::TaskSpec::Placement::Preference::Spread:
   abstract: The node attribute a task is spread over
 
@@ -1274,3 +1304,319 @@ API::Docker::Type::Topology:
           segments for values, which is what the definition above says the
           object is. The swagger sends you to the CSI specification's own
           Topology object for what those are.
+
+API::Docker::Type::Node:
+  attr:
+    id:
+      extra:
+        - >-
+          The node's ID in the swarm, C<24ifsmvkjbyhk> in the swagger's
+          example, and what the C</nodes/{id}> endpoints take in their path.
+    spec:
+      extra:
+        - >-
+          The name, role, availability and labels an operator set on the node
+          -- C<< {"Name": "node-name", "Role": "manager", "Availability":
+          "active", "Labels": {"foo": "bar"}} >> in that definition's own
+          example. L</description> is what the node itself reports back
+          instead.
+
+API::Docker::Type::NodeDescription:
+  attr:
+    hostname:
+      extra:
+        - >-
+          The node's hostname, C<bf3067039e47> in the swagger's example. As
+          the definition above says, it is what the agent reports, not what a
+          manager was told.
+
+API::Docker::Type::NodeStatus:
+  attr:
+    message:
+      extra:
+        - >-
+          Free text about the node from the manager that watches it -- the
+          human-readable half of L</state>. The swagger's example is the empty
+          string.
+
+API::Docker::Type::ManagerStatus:
+  attr:
+    leader:
+      extra:
+        - >-
+          Of the manager component this class describes: whether it is the one
+          leading. Defaulted to C<false> upstream and C<true> in the example.
+
+API::Docker::Type::EngineDescription:
+  attr:
+    engine_version:
+      extra:
+        - >-
+          The engine's version as the node's agent reports it, C<17.06.0> in
+          the swagger's example -- the value C<GET /version> answers as
+          L<API::Docker::Type::SystemVersion/version>.
+    labels:
+      extra:
+        - >-
+          The engine's own labels, C<< {"foo": "bar"} >> in the swagger's
+          example. These are the C<engine.labels> a task placement constraint
+          can match on; see
+          L<API::Docker::Type::TaskSpec::Placement/constraints>.
+    plugins:
+      extra:
+        - >-
+          One entry per plugin the engine has. The swagger's example lists
+          seventeen -- eight C<Log>, six C<Network> and three C<Volume>.
+          C<GET /info> reports the same ground in a different shape, as
+          L<API::Docker::Type::PluginsInfo>.
+
+API::Docker::Type::EngineDescription::Plugin:
+  attr:
+    type:
+      extra:
+        - >-
+          What the plugin plugs into: C<Log>, C<Network> and C<Volume> are the
+          three the swagger's example uses.
+    name:
+      extra:
+        - >-
+          Its name -- a bare word for the built-in drivers (C<json-file>,
+          C<overlay>, C<local>), and a full image reference for an installed
+          one: C<localhost:5000/vieux/sshfs:latest> in the same example.
+
+API::Docker::Type::SwarmInfo:
+  attr:
+    control_available:
+      extra:
+        - >-
+          A boolean, defaulted to C<false> upstream and C<true> in the
+          example, standing beside L</local_node_state> and L</managers>.
+          Measured against Podman 5.8.4 (API 1.44), C<GET /info> answers a
+          complete C<Swarm> block -- C<ControlAvailable> C<false>,
+          C<LocalNodeState> C<inactive> -- on an engine running no swarm at
+          all.
+    error:
+      extra:
+        - >-
+          Defaulted to the empty string upstream, which is also what that same
+          Podman 5.8.4 measurement answers.
+
+API::Docker::Type::ContainerStatus:
+  attr:
+    container_id:
+      extra:
+        - >-
+          The container a swarm task is running in -- the object hangs off
+          L<API::Docker::Type::TaskStatus/container_status> -- and an ordinary
+          container ID that C<GET /containers/{id}/json> will take. The
+          swagger's C<Task> example carries a 64-character hex digest.
+    pid:
+      extra:
+        - >-
+          Its process ID, the measure the swagger describes under
+          L<API::Docker::Type::ContainerState/pid>. C<677> in the swagger's
+          C<Task> example.
+    exit_code:
+      extra:
+        - >-
+          Its last exit code, the measure the swagger describes under
+          L<API::Docker::Type::ContainerState/exit_code>. Absent from the
+          C<Task> example, whose container is still running.
+
+API::Docker::Type::EndpointPortConfig:
+  attr:
+    protocol:
+      extra:
+        - >-
+          The transport protocol of the published port, C<tcp> in the
+          swagger's C<Service> example. The same enumeration appears on a
+          container's own port list as L<API::Docker::Type::Port/type>.
+
+API::Docker::Type::PortStatus:
+  attr:
+    ports:
+      extra:
+        - >-
+          The published ports themselves, the same entries a service carries
+          under L<API::Docker::Type::Service::Endpoint/ports>.
+
+API::Docker::Type::Service:
+  attr:
+    id:
+      extra:
+        - >-
+          The service's ID, C<9mnpnzenvg8p8tdbtq4wvbkcz> in the swagger's
+          example -- the value that example's companion C<Task> repeats as its
+          C<ServiceID>.
+    created_at:
+      extra:
+        - >-
+          RFC 3339 with nanoseconds, C<2016-06-07T21:05:51.880065305Z> in the
+          swagger's example.
+    updated_at:
+      extra:
+        - >-
+          The same format, and in that example some ninety-eight seconds
+          later than L</created_at>.
+    endpoint:
+      extra:
+        - >-
+          The ports and virtual IPs the swarm actually gave the service. What
+          was asked for is the C<EndpointSpec> inside L</spec>, and the
+          endpoint repeats it as its own C<Spec> -- in the swagger's example
+          all three copies of the port entry agree.
+
+API::Docker::Type::Service::Endpoint::VirtualIP:
+  attr:
+    network_id:
+      extra:
+        - >-
+          The network the address is on, C<4qvuz4ko70xaltuqbt8956gd1> on both
+          entries of the swagger's C<Service> example.
+    addr:
+      extra:
+        - >-
+          The address with its prefix length, C<10.255.0.2/16> in that
+          example -- CIDR, the way
+          L<API::Docker::Type::NetworkContainer/ipv4_address> is and
+          L<API::Docker::Type::EndpointSettings/ip_address> is not.
+
+API::Docker::Type::Service::UpdateStatus:
+  attr:
+    state:
+      extra:
+        - >-
+          How far the rolling update has got. L</started_at> and
+          L</completed_at> bracket it in time and L</message> says in words
+          what it is doing.
+    started_at:
+      extra:
+        - RFC 3339, with no example given.
+    completed_at:
+      extra:
+        - The other end of L</started_at>, in the same format.
+    message:
+      extra:
+        - Free text about the update, the human-readable half of L</state>.
+
+API::Docker::Type::ServiceSpec::Mode:
+  attr:
+    replicated:
+      extra:
+        - >-
+          The mode for a service with a fixed number of tasks; the count is
+          L<API::Docker::Type::ServiceSpec::Mode::Replicated/replicas>, and
+          the swagger's C<Service> example carries C<< {"Replicated":
+          {"Replicas": 1}} >>. Of the four modes only C<ReplicatedJob> and
+          C<GlobalJob> are described upstream.
+    global:
+      extra:
+        - >-
+          One task on every valid node: the same reach the swagger gives
+          C<GlobalJob>, which it describes as running a task to the completed
+          state on each valid node, without the running-to-completion part. An
+          empty object -- naming the mode is the whole of it.
+
+API::Docker::Type::Task:
+  attr:
+    created_at:
+      extra:
+        - >-
+          RFC 3339 with nanoseconds, C<2016-06-07T21:07:31.171892745Z> in the
+          swagger's example.
+    updated_at:
+      extra:
+        - >-
+          The same format, two hundred milliseconds later in that example --
+          the task was created and then reported running.
+    slot:
+      extra:
+        - >-
+          C<1> in the swagger's example, whose C<ServiceID> is the same
+          C<9mnpnzenvg8p8tdbtq4wvbkcz> the C<Service> example carries, and
+          that service asks for one replica. Read it as which replica of the
+          service this task is.
+    desired_state:
+      extra:
+        - >-
+          Where the orchestrator wants the task, against
+          L<API::Docker::Type::TaskStatus/state> which is where it actually
+          is. Both are C<running> in the swagger's example.
+
+API::Docker::Type::TaskStatus:
+  attr:
+    timestamp:
+      extra:
+        - >-
+          When L</state> was observed: C<2016-06-07T21:07:31.290032978Z> in
+          the swagger's C<Task> example,
+          between that task's L<API::Docker::Type::Task/created_at> and its
+          L<API::Docker::Type::Task/updated_at>.
+    state:
+      extra:
+        - >-
+          Where the task actually is, against the
+          L<API::Docker::Type::Task/desired_state> the orchestrator wants.
+          Both are C<running> in the swagger's example.
+    message:
+      extra:
+        - >-
+          Free text about that state, C<"started"> in the swagger's C<Task>
+          example.
+    err:
+      extra:
+        - >-
+          The failure, as text. The swagger's C<Task> example shows a task
+          that started and carries no C<Err> at all, only L</message>.
+
+API::Docker::Type::TaskSpec:
+  attr:
+    placement:
+      extra:
+        - >-
+          Empty (C<{}>) in both the C<Service> and the C<Task> example, which
+          restrict nothing.
+
+API::Docker::Type::TaskSpec::ContainerSpec::Privileges::AppArmor:
+  attr:
+    mode:
+      extra:
+        - >-
+          The whole of what this object configures: AppArmor left at the
+          engine's default, or turned off.
+
+API::Docker::Type::TaskSpec::ContainerSpec::Privileges::Seccomp:
+  attr:
+    mode:
+      extra:
+        - >-
+          Which of the three the container gets. C<custom> is the one that
+          gives L</profile> a job -- the swagger describes that field as the
+          custom seccomp profile, as a JSON object.
+
+API::Docker::Type::TaskSpec::LogDriver:
+  attr:
+    name:
+      extra:
+        - >-
+          The driver, named the way
+          L<API::Docker::Type::HostConfig::LogConfig/type> names it for a
+          container. The field holding this object says an absent log driver
+          falls back to the swarm's default and then to the engine's.
+    options:
+      extra:
+        - >-
+          Driver-specific options, the same shape
+          L<API::Docker::Type::HostConfig::LogConfig/config> takes for a
+          container, whose example is C<< {"max-file": "5", "max-size": "10m"}
+          >>.
+
+API::Docker::Type::TaskSpec::PluginSpec:
+  attr:
+    plugin_privilege:
+      extra:
+        - >-
+          The permissions installing the plugin requires the user to accept,
+          one entry per permission. The other three fields of this spec --
+          C<Name>, C<Remote> and C<Disabled> -- are described upstream; this
+          one is not.

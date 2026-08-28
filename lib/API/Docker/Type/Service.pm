@@ -22,8 +22,10 @@ docker id => Str, wire => 'ID';
 
 =attr id
 
-Undocumented upstream. Serialised as C<ID> -- spelled out, because deriving
-it from the Perl name would produce C<Id>.
+Undocumented upstream. The service's ID, C<9mnpnzenvg8p8tdbtq4wvbkcz> in the
+swagger's example -- the value that example's companion C<Task> repeats as
+its C<ServiceID>. Serialised as C<ID> -- spelled out, because deriving it
+from the Perl name would produce C<Id>.
 
 =cut
 
@@ -40,7 +42,8 @@ docker created_at => Str;
 
 =attr created_at
 
-Undocumented upstream.
+Undocumented upstream. RFC 3339 with nanoseconds,
+C<2016-06-07T21:05:51.880065305Z> in the swagger's example.
 
 =cut
 
@@ -48,7 +51,8 @@ docker updated_at => Str;
 
 =attr updated_at
 
-Undocumented upstream.
+Undocumented upstream. The same format, and in that example some
+ninety-eight seconds later than L</created_at>.
 
 =cut
 
@@ -65,7 +69,10 @@ docker endpoint => 'Service::Endpoint';
 
 =attr endpoint
 
-Undocumented upstream. See L<API::Docker::Type::Service::Endpoint>.
+Undocumented upstream. The ports and virtual IPs the swarm actually gave the
+service. What was asked for is the C<EndpointSpec> inside L</spec>, and the
+endpoint repeats it as its own C<Spec> -- in the swagger's example all three
+copies of the port entry agree. See L<API::Docker::Type::Service::Endpoint>.
 
 =cut
 

@@ -44,7 +44,11 @@ docker control_available => Bool;
 
 =attr control_available
 
-Undocumented upstream. The daemon defaults it to false.
+Undocumented upstream. A boolean, defaulted to C<false> upstream and C<true>
+in the example, standing beside L</local_node_state> and L</managers>.
+Measured against Podman 5.8.4 (API 1.44), C<GET /info> answers a complete
+C<Swarm> block -- C<ControlAvailable> C<false>, C<LocalNodeState>
+C<inactive> -- on an engine running no swarm at all.
 
 =cut
 
@@ -52,7 +56,8 @@ docker error => Str;
 
 =attr error
 
-Undocumented upstream. The daemon defaults it to .
+Undocumented upstream. Defaulted to the empty string upstream, which is also
+what that same Podman 5.8.4 measurement answers.
 
 =cut
 

@@ -28,7 +28,9 @@ docker ports => [ 'EndpointPortConfig' ];
 
 =attr ports
 
-Undocumented upstream. See L<API::Docker::Type::EndpointPortConfig>.
+Undocumented upstream. The ports as published. In the swagger's C<Service>
+example they are the very entry C<Spec.Ports> asked for -- C<tcp>, target
+C<6379>, published C<30001>. See L<API::Docker::Type::EndpointPortConfig>.
 
 =cut
 
@@ -37,7 +39,9 @@ docker virtual_ips => [ 'Service::Endpoint::VirtualIP' ],
 
 =attr virtual_ips
 
-Undocumented upstream. See
+Undocumented upstream. One entry per virtual IP the routing mesh gave the
+service. The swagger's C<Service> example carries two, C<10.255.0.2/16> and
+C<10.255.0.3/16>, both on the same network. See
 L<API::Docker::Type::Service::Endpoint::VirtualIP>. Serialised as
 C<VirtualIPs> -- spelled out, because deriving it from the Perl name would
 produce C<VirtualIps>.

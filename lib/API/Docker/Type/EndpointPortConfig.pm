@@ -24,7 +24,10 @@ docker protocol => Str, enum => [qw( tcp udp sctp )];
 
 =attr protocol
 
-Undocumented upstream. The swagger enumerates C<tcp>, C<udp> and C<sctp>.
+Undocumented upstream. The transport protocol of the published port, C<tcp>
+in the swagger's C<Service> example. The same enumeration appears on a
+container's own port list as L<API::Docker::Type::Port/type>. The swagger
+enumerates C<tcp>, C<udp> and C<sctp>.
 
 =cut
 

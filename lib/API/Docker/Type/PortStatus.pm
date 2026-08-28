@@ -14,7 +14,9 @@ docker ports => [ 'EndpointPortConfig' ], since => '1.44';
 
 =attr ports
 
-Undocumented upstream. See L<API::Docker::Type::EndpointPortConfig>.
+Undocumented upstream. The published ports themselves, the same entries a
+service carries under L<API::Docker::Type::Service::Endpoint/ports>. See
+L<API::Docker::Type::EndpointPortConfig>.
 
 =cut
 

@@ -14,7 +14,9 @@ docker replicas => Int;
 
 =attr replicas
 
-Undocumented upstream.
+Undocumented upstream. How many tasks the service should be running; C<1> in
+the swagger's C<Service> example, whose one task carries
+L<API::Docker::Type::Task/slot> C<1>.
 
 =cut
 

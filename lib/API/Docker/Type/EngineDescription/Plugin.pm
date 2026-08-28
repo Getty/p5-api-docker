@@ -14,7 +14,8 @@ docker type => Str;
 
 =attr type
 
-Undocumented upstream.
+Undocumented upstream. What the plugin plugs into: C<Log>, C<Network> and
+C<Volume> are the three the swagger's example uses.
 
 =cut
 
@@ -22,7 +23,9 @@ docker name => Str;
 
 =attr name
 
-Undocumented upstream.
+Undocumented upstream. Its name -- a bare word for the built-in drivers
+(C<json-file>, C<overlay>, C<local>), and a full image reference for an
+installed one: C<localhost:5000/vieux/sshfs:latest> in the same example.
 
 =cut
 

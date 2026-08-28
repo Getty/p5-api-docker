@@ -17,7 +17,9 @@ docker hostname => Str;
 
 =attr hostname
 
-Undocumented upstream.
+Undocumented upstream. The node's hostname, C<bf3067039e47> in the swagger's
+example. As the definition above says, it is what the agent reports, not
+what a manager was told.
 
 =cut
 

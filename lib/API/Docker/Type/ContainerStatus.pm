@@ -13,8 +13,12 @@ docker container_id => Str, wire => 'ContainerID', since => '1.44';
 
 =attr container_id
 
-Undocumented upstream. Serialised as C<ContainerID> -- spelled out, because
-deriving it from the Perl name would produce C<ContainerId>.
+Undocumented upstream. The container a swarm task is running in -- the
+object hangs off L<API::Docker::Type::TaskStatus/container_status> -- and an
+ordinary container ID that C<GET /containers/{id}/json> will take. The
+swagger's C<Task> example carries a 64-character hex digest. Serialised as
+C<ContainerID> -- spelled out, because deriving it from the Perl name would
+produce C<ContainerId>.
 
 =cut
 
@@ -22,8 +26,10 @@ docker pid => Int, wire => 'PID', since => '1.44';
 
 =attr pid
 
-Undocumented upstream. Serialised as C<PID> -- spelled out, because deriving
-it from the Perl name would produce C<Pid>.
+Undocumented upstream. Its process ID, the measure the swagger describes
+under L<API::Docker::Type::ContainerState/pid>. C<677> in the swagger's
+C<Task> example. Serialised as C<PID> -- spelled out, because deriving it
+from the Perl name would produce C<Pid>.
 
 =cut
 
@@ -31,7 +37,9 @@ docker exit_code => Int, since => '1.44';
 
 =attr exit_code
 
-Undocumented upstream.
+Undocumented upstream. Its last exit code, the measure the swagger describes
+under L<API::Docker::Type::ContainerState/exit_code>. Absent from the
+C<Task> example, whose container is still running.
 
 =cut
 

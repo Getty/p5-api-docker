@@ -15,8 +15,10 @@ docker mode => Str,
 
 =attr mode
 
-Undocumented upstream. The swagger enumerates C<default>, C<unconfined> and
-C<custom>.
+Undocumented upstream. Which of the three the container gets. C<custom> is
+the one that gives L</profile> a job -- the swagger describes that field as
+the custom seccomp profile, as a JSON object. The swagger enumerates
+C<default>, C<unconfined> and C<custom>.
 
 =cut
 

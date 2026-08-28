@@ -14,7 +14,9 @@ docker mode => Str, since => '1.44', enum => [qw( default disabled )];
 
 =attr mode
 
-Undocumented upstream. The swagger enumerates C<default> and C<disabled>.
+Undocumented upstream. The whole of what this object configures: AppArmor
+left at the engine's default, or turned off. The swagger enumerates
+C<default> and C<disabled>.
 
 =cut
 

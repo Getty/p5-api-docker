@@ -16,7 +16,9 @@ docker leader => Bool;
 
 =attr leader
 
-Undocumented upstream. The daemon defaults it to false.
+Undocumented upstream. Of the manager component this class describes:
+whether it is the one leading. Defaulted to C<false> upstream and C<true> in
+the example.
 
 =cut
 

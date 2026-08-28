@@ -24,7 +24,9 @@ docker message => Str;
 
 =attr message
 
-Undocumented upstream.
+Undocumented upstream. Free text about the node from the manager that
+watches it -- the human-readable half of L</state>. The swagger's example is
+the empty string.
 
 =cut
 

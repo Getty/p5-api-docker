@@ -17,7 +17,10 @@ docker name => Str;
 
 =attr name
 
-Undocumented upstream.
+Undocumented upstream. The driver, named the way
+L<API::Docker::Type::HostConfig::LogConfig/type> names it for a container.
+The field holding this object says an absent log driver falls back to the
+swarm's default and then to the engine's.
 
 =cut
 
@@ -25,8 +28,10 @@ docker options => { Str, Str };
 
 =attr options
 
-Undocumented upstream. B<The keys are the caller's data> and are never
-translated.
+Undocumented upstream. Driver-specific options, the same shape
+L<API::Docker::Type::HostConfig::LogConfig/config> takes for a container,
+whose example is C<< {"max-file": "5", "max-size": "10m"} >>. B<The keys are
+the caller's data> and are never translated.
 
 =cut
 

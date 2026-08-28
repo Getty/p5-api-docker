@@ -46,7 +46,10 @@ docker plugin_privilege => [ 'PluginPrivilege' ];
 
 =attr plugin_privilege
 
-Undocumented upstream. See L<API::Docker::Type::PluginPrivilege>.
+Undocumented upstream. The permissions installing the plugin requires the
+user to accept, one entry per permission. The other three fields of this
+spec -- C<Name>, C<Remote> and C<Disabled> -- are described upstream; this
+one is not. See L<API::Docker::Type::PluginPrivilege>.
 
 =cut
 

@@ -79,7 +79,9 @@ docker placement => 'TaskSpec::Placement';
 
 =attr placement
 
-Undocumented upstream. See L<API::Docker::Type::TaskSpec::Placement>.
+Undocumented upstream. Empty (C<{}>) in both the C<Service> and the C<Task>
+example, which restrict nothing. See
+L<API::Docker::Type::TaskSpec::Placement>.
 
 =cut
 

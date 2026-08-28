@@ -21,8 +21,10 @@ docker id => Str, wire => 'ID';
 
 =attr id
 
-Undocumented upstream. Serialised as C<ID> -- spelled out, because deriving
-it from the Perl name would produce C<Id>.
+Undocumented upstream. The node's ID in the swarm, C<24ifsmvkjbyhk> in the
+swagger's example, and what the C</nodes/{id}> endpoints take in their path.
+Serialised as C<ID> -- spelled out, because deriving it from the Perl name
+would produce C<Id>.
 
 =cut
 
@@ -57,7 +59,11 @@ docker spec => 'NodeSpec';
 
 =attr spec
 
-Undocumented upstream. See L<API::Docker::Type::NodeSpec>.
+Undocumented upstream. The name, role, availability and labels an operator
+set on the node -- C<< {"Name": "node-name", "Role": "manager",
+"Availability": "active", "Labels": {"foo": "bar"}} >> in that definition's
+own example. L</description> is what the node itself reports back instead.
+See L<API::Docker::Type::NodeSpec>.
 
 =cut
 
