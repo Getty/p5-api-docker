@@ -34,8 +34,12 @@ Revision history for API-Docker
     same wire name described under another definition, a property's
     `example`, the example response of the path that answers it -- or a
     read-only measurement, named with the engine and version it was taken
-    on. The remaining 7 keep the admission: an invented sentence would read
-    exactly like a measured one.
+    on. Where the two disagree both stay on the page: an
+    `ImageHistoryResponseItem`'s `Id` is a bare digest in the swagger's
+    example, and `sha256:<missing>` on nine of the ten layers a real engine
+    answers with -- a marker, not something to look an image up by. The
+    remaining 7 keep the admission: an invented sentence would read exactly
+    like a measured one.
   - A daemon value that disagrees with the swagger costs its own field rather
     than the whole response. `from_data` leaves the typed attribute unset,
     keeps the raw value in `unknown_fields` under its wire name and names it

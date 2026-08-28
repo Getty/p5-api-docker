@@ -7,7 +7,12 @@ use API::Docker::Type::Plugin::Settings;
 
 =head1 DESCRIPTION
 
-Generated from the C<Plugin> definition of C<spec/v1.51.yaml>.
+Generated from the C<Plugin> definition of C<spec/v1.51.yaml>. Nothing in
+this class or in the ones hanging off it is backed by a measurement.
+Rootless Podman serves no plugin route at all, so on the engine this
+distribution measures against there is nothing here to observe; see
+L<API::Docker::API::Plugins/"Not available on Podman">. Everything below is
+read off the swagger's own examples.
 
 =cut
 
