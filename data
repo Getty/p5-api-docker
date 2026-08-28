@@ -1,0 +1,46 @@
+---
+claimed_at: 2026-08-28T14:28:15Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:28:15Z
+created: 2026-08-28T04:08:03Z
+id: 81
+priority: medium
+started: 2026-08-28T09:56:07Z
+status: done
+tags:
+- types
+- tests
+title: 'Regression: the model must never drop a field a real engine sends'
+updated: 2026-08-28T14:28:15Z
+---
+
+Measured 2026-08-28 while checking #79's model against the captured
+fixtures, and it deserves a test of its own because it is the passthrough
+invariant proving itself against reality rather than against a test the
+same author wrote.
+
+Every fixture in t/fixtures/ was fed through its generated class:
+
+  ContainerInspectResponse   1 object    no unknown fields
+  ContainerSummary           2 objects   no unknown fields
+  Network / Volume           2 each      no unknown fields
+  SystemInfo / SystemVersion 1 each      no unknown fields
+  ImageSummary               2 objects   unknown: VirtualSize
+
+VirtualSize is in spec/v1.41.yaml and gone from spec/v1.44.yaml onward --
+Docker removed it from the swagger, and the engine that produced the
+fixture still sends it. The model forwarded it verbatim instead of
+dropping it, which is exactly invariant 2 of the type model.
+
+The test: run every t/fixtures/*.json through the class its endpoint
+returns and assert the round trip loses nothing -- TO_JSON of the
+inflated object must contain every key the fixture had. It fails the day
+someone makes the model tidy by discarding what it does not recognise,
+which is the change that would quietly cost this distribution the
+property that a newer (or older) engine works on day one.
+
+Note the fixtures are the only real daemon output in the default suite;
+no live access needed.
+
+Done in 327bcd7 as t/type_fixture_passthrough.t: every t/fixtures/*.json fed through the generated class its endpoint returns, asserting no fixture key goes missing from TO_JSON, with a dedicated subtest pinning ImageSummary's VirtualSize -- in spec/v1.41.yaml, gone from v1.44 onward, still served by the engine. The test-writer reproduced the defect (deleting the key before TO_JSON) before trusting it. Fixture-only. It now runs through from_data, following k85's split of the two entry points.
