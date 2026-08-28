@@ -4,7 +4,8 @@ Revision history for API-Docker
 
   - The remaining six resources return generated type objects too, the way
     containers already did, and the seven hand-written entity classes are
-    gone. `images->list` hands back an `API::Docker::Type::ImageSummary` per
+    gone -- what still ships under those names is the stubs below.
+    `images->list` hands back an `API::Docker::Type::ImageSummary` per
     entry and `images->inspect` an `API::Docker::Type::ImageInspect`;
     networks, volumes, plugins, secrets and configs answer list and inspect
     with one class each -- `Network`, `Volume`, `Plugin`, `Secret`, `Config`
@@ -23,6 +24,16 @@ Revision history for API-Docker
     `from_data` rather than `new`, so a key the swagger does not know keeps
     its own spelling and a value it cannot use costs its own field instead of
     the whole response (karr k84).
+  - The seven names those classes had still ship, as stubs that refuse.
+    `API::Docker::Container`, `::Image`, `::Network`, `::Volume`, `::Plugin`,
+    `::Secret` and `::Config` croak on load and on every method call, naming
+    the `API::Docker::Type::*` class that answers for them now and the
+    `API::Docker::Role::Entity::*` role their convenience methods moved to.
+    They hold no working code and ship only so that installing this release
+    overwrites the copy an earlier install left on disk: deleting a file from
+    a distribution does not delete it from the machines it went out to, so
+    dropping them would have left 0.003's working `API::Docker::Image` in
+    place and still loading (karr k92).
   - `$plugin->enabled` is a plain Perl 1/0 where `API::Docker::Plugin`'s
     `Enabled` was the decoded JSON boolean the daemon sent: the generated
     class declares the field as `Bool` and normalises it on the way in.
