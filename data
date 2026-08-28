@@ -1,0 +1,99 @@
+---
+claimed_at: 2026-08-28T14:28:36Z
+claimed_by: main-agent
+class: standard
+completed: 2026-08-28T14:28:36Z
+created: 2026-08-28T09:09:39Z
+id: 85
+priority: high
+started: 2026-08-28T09:55:40Z
+status: done
+tags:
+- types
+- correctness
+title: The model rewrites a daemon key that looks like a Perl name, and an ambiguous
+  constructor is a coin toss
+updated: 2026-08-28T14:28:36Z
+---
+
+Found 2026-08-28 by an independent cross-check (Codex, read-only) of the
+k79 type model, reproduced by the orchestrating agent before filing. Three
+defects and one under-tested claim, all in lib/API/Docker/Role/Type.pm and
+lib/API/Docker/Type.pm.
+
+1. BUILDARGS RESOLVES THE PERL NAME FIRST, WHICH BREAKS INVARIANT 2.
+
+   ContainerInspectResponse->from_data({ id => "lowercase-new-field" })->TO_JSON
+   -> {"Id":"lowercase-new-field"}          measured
+      unknown_fields                        {}
+
+   The model has never heard of a wire field `id`, but reads it as the Perl
+   spelling of the known wire field `Id` and rewrites the key. The invariant
+   says an unrecognised field goes in and comes out unchanged.
+
+   from_data's own POD already says the right thing -- "matched against the
+   registry's wire names first and the Perl attribute names second" -- and the
+   shared BUILDARGS does the opposite. The POD is right, the code is wrong.
+
+   Reach, measured over all 201 classes: 955 attributes have a Perl name that
+   differs from their wire name, so 955 keys would be rewritten if a daemon
+   sent them in that spelling. Real collisions today (a Perl name that is
+   another field's wire name in the same class): ZERO. But the swagger mixes
+   cases freely -- 114 fields have a lowercase wire name, BuildInfo.id among
+   them -- so a lowercase daemon key is normal, not exotic.
+
+   Fix shape (Codex's, and it is better than treating both the same): the two
+   entry points have different jobs. `from_data` inflates an engine RESPONSE
+   and resolves wire-first, preserving what it does not know. `new` builds a
+   REQUEST from caller-authored data and may keep Perl-first with wire
+   aliases. Today from_data is a thin wrapper around new, which makes the
+   distinction impossible.
+
+2. AN AMBIGUOUS CONSTRUCTOR PICKS NONDETERMINISTICALLY.
+
+   HostConfig->new(privileged => 0, Privileged => 1)
+
+   Both spellings land on the same attribute and hash order decides. Measured
+   over 20 constructions in one process: 0 came out 9 times, 1 came out 11.
+   It should be rejected as ambiguous, even when both values agree.
+
+   t/type.t:245 cannot catch it -- it builds one object per spelling and never
+   passes both together.
+
+3. THE DSL DOES NOT REJECT A DUPLICATE `wire` VALUE.
+
+   _docker rejects a duplicate Perl attribute name but not a duplicate wire
+   name, and _docker_wire_index is last-one-wins. Two fields declared with
+   wire => 'CPUShares' would make one unreachable on inflation and let
+   TO_JSON write both to one key in attribute order. Nothing in the 201
+   generated classes does this today; the generator could produce it tomorrow.
+   A guard belongs where the Perl-name guard already is.
+
+4. UNKNOWN_FIELDS LOSES TO A KNOWN FIELD, SILENTLY.
+
+   HostConfig->new(unknown_fields => { Privileged => "engine-value" },
+                   privileged => 0)->TO_JSON
+   -> {"Privileged":false}                  measured, the raw value is gone
+
+   Defensible as long as unknown_fields only ever holds names the registry
+   does not know. It stops being defensible under k83 option (b), which would
+   deliberately put a KNOWN wire name in there after a type mismatch -- the
+   preserved engine value would then be overwritten by the empty typed one,
+   and "nothing is lost" would be false. Decide the precedence when k83 is
+   decided, or give rejected values their own store.
+
+5. TEST GAPS in t/type.t (the tests hold for what they cover; the claim is
+   broader than the coverage):
+     - the caller-data-key invariant names ten fields and exercises six.
+       ExposedPorts, Volumes, DriverOpts and Options are not pinned, so a
+       generator regression that misdeclares one of those four passes.
+     - no test constructs both spellings of one field together (defect 2).
+     - no test pins two-pass BUILDARGS idempotence with unknown_fields
+       already populated (the allOf shape composes the role into both
+       classes, so the modifier runs twice).
+
+Lane: api-docker-type-writer. Defect 1 interacts with k83 -- decide k83
+first or together, since both turn on what from_data does with a value it
+cannot use.
+
+Defects 1, 2, 3 and 5 fixed in dc59680, each reproduced red first. Defect 4 answered rather than fixed: no collision can arise out of from_data, because a value lands in unknown_fields under a known wire name only when the typed attribute is unset, and TO_JSON skips unset attributes -- and defect 3's new guard makes wire-name uniqueness structural rather than incidental. Pinned by round-trip assertions instead of a precedence rule. Verified independently: prove 39/455 PASS, live against Podman 39/434 PASS, --verify 201 identical, drift 0 in all seven tiers, sibling repo 16/103 PASS with PERL5LIB pointed at this working tree.
