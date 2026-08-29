@@ -1,0 +1,18 @@
+---
+class: standard
+created: 2026-08-29T15:20:44Z
+depends_on:
+- 110
+id: 112
+priority: medium
+status: backlog
+tags:
+- type-model
+- spec
+title: Migrate the generated type model to Docker API v1.55
+updated: 2026-08-29T18:34:57Z
+---
+
+Follow-up to k110: spec/v1.55.yaml is checked in, the model is still generated against v1.51. Migrating the ceiling to v1.55 is a deliberate field-by-field job across three lanes, not a regeneration -- maint/spec-to-type.pl only ever writes NEW classes and never overwrites, so the bulk of the delta sits on existing classes and in the worker lanes. Run 'maint/spec-drift-check.pl --from spec/v1.51.yaml --to spec/v1.55.yaml' for the full list. Delta v1.51->v1.55: 31 new definitions, 4 removed, 8 new fields, 29 removed fields, 2 type changes. The structural parts, by lane: (type-writer) 28 new classes incl. the signature/attestation block (SignerIdentity 17 fields, AttestationStatement, PullIdentity/BuildIdentity) and the DiskUsage split (Images/Containers/Volumes/BuildCacheDiskUsage) -- maintainer to decide which of these even enter the model while no resource API references them; (worker) the Network definition splits into NetworkSummary (list) and NetworkInspect (inspect, carrying Containers/Services and the new Status->NetworkStatus->IPAMStatus), which changes what API::Docker::API::Networks + Role::Entity::Network return -- today both go through the one Type::Network; Port->PortSummary with a TYPE CHANGE on ContainerSummary::Ports; VolumeCreateOptions renamed VolumeCreateRequest, touching the create body in API::Docker::API::Volumes; (plumbing) the ceiling bump couples spec-common.pl, the drift-checker defaults, t/spec_to_type.t and spec/README.md. Also 29 dropped fields incl. the flat IP fields on NetworkSettings and email on AuthConfig. Not a 0.004 blocker: the two fields measured live (ImageInspect.Identity, the Network Status) land in unknown_fields with rejected_fields empty, so v1.51 degrades gracefully.
+
+ANALYSIS (session 2026-08-29, then deferred by maintainer per ADR 0001, additive approach). The tooling does NOT support additive field addition: spec-to-type.pl and spec-drift-check.pl build one spec model, t/spec_to_type.t verifies byte-for-byte against v1.51 (hardcoded), and spec-drift-exceptions.yaml can only suppress or rename, never ADD a v1.55 field to a v1.51 class. So the clean additive path is a NEW overlay subsystem in maint/spec-common.pl (expected_model) that grafts named v1.55 properties + their transitive new classes onto the v1.51 base, read consistently by both scripts and the byte test -- a real generator extension, not a config change. First additive step, conflict-free: Network gains a typed 'status' accessor (from v1.55 NetworkInspect.Status) + new classes NetworkStatus/IPAMStatus/SubnetStatus (all new, none on the exclusion list). Blocked/deferred: ImageInspect.Identity CANNOT be typed additively -- a typed 'identity' accessor pulls in use ...::Identity, which transitively requires the excluded signature/attestation cluster (SignatureIdentity/PullIdentity/BuildIdentity/...); it stays in unknown_fields (reachable, untyped) unless that cluster is allowed in. NOT a 0.004 blocker: every new v1.55 field is already reachable via unknown_fields (measured k110, rejected_fields empty). Recommended when picked up: build the overlay, do Network.status only first; decide the signature-cluster question before Identity.
