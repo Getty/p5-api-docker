@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-29T16:21:00Z
+created: 2026-08-28T16:43:39Z
+id: 98
+priority: low
+started: 2026-08-29T16:21:00Z
+status: done
+tags:
+- packaging
+- dist-ini
+title: spec/ and maint/ ship in the CPAN tarball with no MANIFEST.SKIP
+updated: 2026-08-29T16:21:00Z
+---
+
+No MANIFEST.SKIP in the repo, so Git::GatherDir ships everything tracked. dzil build confirms: spec/ (1.3M, Docker's raw swagger YAML) and maint/ (168K, generator/drift-check scripts) both land in the built distribution -- new this cycle (not present in the 0.003 tarball, which was 112K; 0.004's build dir is 4.0M, tarball ~788K). Nothing under lib/ loads a YAML parser or needs spec/ at runtime (confirmed via api-docker-core skill and grep) -- these are maintainer/generator-only inputs. Worth a maintainer call: exclude via MANIFEST.SKIP or dist.ini [PruneFiles] to keep the CPAN package to what installers need, or leave as-is if shipping the generator alongside the model is intentional (e.g. for reproducibility). .claude/ (156K: agent configs + skill markdown) ships too but that's unchanged since 0.003, not new.
