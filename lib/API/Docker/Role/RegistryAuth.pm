@@ -16,20 +16,28 @@ use namespace::clean;
     # The header form: X-Registry-Auth on a registry-facing request
     my $header = $self->_registry_auth_header($opts{auth});
 
+    # The map-header form: X-Registry-Config on /build, hostname -> AuthConfig
+    my $cfg_header = $self->_registry_config_header($opts{registry_config});
+
     # The body form: the same credentials as a plain HashRef
     my $config = $self->_registry_auth_config($opts{auth});
 
 =head1 DESCRIPTION
 
-One AuthConfig, two carriers. The Docker Engine takes registry credentials
+One AuthConfig, three carriers. The Docker Engine takes registry credentials
 as a JSON object with the keys C<username>, C<password>, C<serveraddress>,
-C<identitytoken> and C<email>, and moves it around in two shapes:
+C<identitytoken> and C<email>, and moves it around in three shapes:
 
 =over
 
 =item * base64url-encoded in the C<X-Registry-Auth> request header, for
 C<< POST /images/{name}/push >>, C<< POST /images/create >>,
 C<< GET /distribution/{name}/json >> and the C</plugins> family
+
+=item * as a base64url-encoded B<map> of registry hostname to AuthConfig in
+the C<X-Registry-Config> request header, for C<< POST /build >> -- one build
+may pull base images from several registries, so it carries a set of
+credentials rather than one
 
 =item * as the plain JSON request body of C<< POST /auth >>
 
@@ -60,19 +68,40 @@ characters and one pad.
 
 sub _registry_auth_header {
   my ($self, $auth) = @_;
+  return $self->_registry_b64url($auth);
+}
+
+sub _registry_config_header {
+  my ($self, $config) = @_;
+  return $self->_registry_b64url($config);
+}
+
+# The single encoding both header shapes share: X-Registry-Auth carries one
+# AuthConfig, X-Registry-Config a map of registry hostname to AuthConfig, but
+# each is nothing more than a JSON value in padded base64url. Keeping it in one
+# place is the whole reason this role exists -- two copies of a base64 routine
+# are what drifted apart before it.
+sub _registry_b64url {
+  my ($self, $value) = @_;
 
   my $payload;
-  if (!defined $auth) {
+  if (!defined $value) {
     $payload = '{}';
   }
-  elsif (ref $auth eq 'HASH') {
-    $payload = encode_json($auth);
+  elsif (ref $value eq 'HASH') {
+    $payload = encode_json($value);
   }
   else {
-    # Already pre-built JSON or pre-encoded string. If it looks base64-like
-    # (no braces), pass through; otherwise encode as-is.
-    return $auth if $auth =~ /^[A-Za-z0-9+\/=_\-]+$/;
-    $payload = $auth;
+    # Already pre-built JSON or a pre-encoded string. A base64-looking one
+    # (no braces) passes through -- but respelled into the URL-safe alphabet
+    # first, because the engine decodes with Go's base64.URLEncoding and a
+    # '+' or '/' left over from standard base64 makes it fail. This is the
+    # inverse of the tr{-_}{+/} in _registry_auth_config below.
+    if ($value =~ /^[A-Za-z0-9+\/=_\-]+$/) {
+      $value =~ tr{+/}{-_};
+      return $value;
+    }
+    $payload = $value;
   }
 
   # Padded base64url, and the padding is not optional -- see above.
@@ -110,13 +139,21 @@ sub _registry_auth_config {
 
 =head1 METHODS
 
-Both are private and composed into the resource classes; they are documented
-here because the two shapes are one decision, not two.
+These are private and composed into the resource classes; they are documented
+here because the shapes are one decision, not several.
 
 C<_registry_auth_header($auth)> returns the padded base64url value for
 C<X-Registry-Auth>. C<undef> gives the anonymous encoding C<e30=>, a HashRef
 is JSON-encoded, and a string that already looks base64-encoded is passed
-through untouched.
+through -- but respelled into the URL-safe alphabet, so a value pre-encoded in
+standard base64 (with C<+> or C</>) reaches the wire as the C<->/C<_> the
+engine's C<base64.URLEncoding> decoder expects rather than failing there.
+
+C<_registry_config_header($map)> is the same encoding for C<X-Registry-Config>
+on C<< POST /build >>. It takes the same shapes, but the HashRef it JSON-encodes
+is a B<map> of registry hostname to AuthConfig
+(C<< { 'registry.example:5000' => { username => ..., password => ... } } >>),
+not a single AuthConfig.
 
 C<_registry_auth_config($auth)> returns the same credentials as a plain
 HashRef for a JSON request body. C<undef> gives C<undef> -- whether that is

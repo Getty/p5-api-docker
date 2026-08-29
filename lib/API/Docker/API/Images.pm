@@ -229,12 +229,22 @@ sub build {
 
   my $raw = ref $context eq 'SCALAR' ? $$context : $context;
 
+  # A build's registry credentials ride in X-Registry-Config, not
+  # X-Registry-Auth: the map lets `FROM private.registry/...` authenticate,
+  # and a build may draw base images from several registries at once. Sent
+  # only when given -- an anonymous build needs no header.
+  my %headers;
+  $headers{'X-Registry-Config'} =
+    $self->_registry_config_header($opts{registry_config})
+    if defined $opts{registry_config};
+
   # exists, not truth: an unset callback is a caller bug, and falling back to
   # the buffered path for it would hand a long build back as silence.
   return $self->client->_request('POST', '/build',
     raw_body     => $raw,
     content_type => 'application/x-tar',
     params       => \%params,
+    %headers ? ( headers => \%headers ) : (),
     %{ $self->_request_options },
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
@@ -334,6 +344,16 @@ Options:
 
 =item * C<target> - Multi-stage build target
 
+=item * C<registry_config> - Registry credentials for the base images the build
+pulls, sent as C<X-Registry-Config>. A HashRef mapping each registry hostname
+to its AuthConfig --
+C<< { 'registry.example:5000' => { username => 'me', password => 'secret' } } >>
+-- so a C<FROM private.registry/...> can authenticate, and a build drawing from
+several registries can carry all of them at once. A pre-encoded base64 string
+is also accepted. Sent only when given. This is B<not> C<auth>/C<X-Registry-Auth>,
+which carries a single AuthConfig; C</build> uses the map form. See
+L<API::Docker::Role::RegistryAuth>
+
 =item * C<on_event> - CodeRef called with each build event as it arrives,
 instead of the ArrayRef being collected and returned; see below
 
@@ -418,6 +438,17 @@ sub _reference_has_tag_or_digest {
   return $last_segment =~ /:/ ? 1 : 0;
 }
 
+# Only when credentials were given: an anonymous pull needs no header, and the
+# engine reads X-Registry-Auth off /images/create only to reach a private
+# registry. This is the plugins/distribution policy, not push's always-send --
+# push must send even the anonymous {} because the engine rejects a push with
+# no header at all.
+sub _auth_headers {
+  my ($self, $opts) = @_;
+  return () unless defined $opts->{auth};
+  return (headers => { 'X-Registry-Auth' => $self->_registry_auth_header($opts->{auth}) });
+}
+
 sub pull {
   my ($self, %opts) = @_;
   croak "fromImage required" unless $opts{fromImage};
@@ -431,6 +462,7 @@ sub pull {
   }
   return $self->client->post('/images/create', undef,
     params => \%params,
+    $self->_auth_headers(\%opts),
     %{ $self->_request_options },
     exists $opts{on_event} ? ( on_event => $opts{on_event} ) : ( ndjson => 1 ),
   );
@@ -491,6 +523,13 @@ Options:
 
 =item * C<tag> - Tag to pull. Defaulted to C<latest> only when C<fromImage>
 carries no tag or digest of its own; see above
+
+=item * C<auth> - Registry credentials for pulling from a private registry,
+sent as C<X-Registry-Auth>. A HashRef of the usual keys (C<username>,
+C<password>, C<serveraddress>, or C<identitytoken>) or a pre-encoded base64
+string, exactly as L</push> takes it. Unlike C<push>, the header is sent
+B<only> when C<auth> is given -- an anonymous pull carries none, which the
+engine reads as the anonymous case. See L<API::Docker::Role::RegistryAuth>
 
 =item * C<on_event> - CodeRef called with each progress event as it arrives,
 instead of the ArrayRef being collected and returned. The return value is then

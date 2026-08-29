@@ -2,6 +2,22 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - Registry credentials now reach `images->pull` and `images->build`.
+    `pull` takes an `auth` option and sends it as `X-Registry-Auth` (the
+    single-AuthConfig header the engine reads off `/images/create` to pull
+    from a private registry); `build` takes a `registry_config` option and
+    sends it as `X-Registry-Config`, the base64url map of registry hostname
+    to AuthConfig that lets a `FROM private.registry/...` authenticate,
+    possibly against several registries in one build. Both headers are sent
+    only when credentials are given -- an anonymous pull or build carries
+    neither.
+  - Fix a real wire error in the `X-Registry-Auth`/`X-Registry-Config`
+    encoder: an auth value handed in already base64-encoded in the *standard*
+    alphabet passed through untouched, leaving `+` or `/` on the wire. The
+    engine decodes with Go's `base64.URLEncoding`, which rejects those with
+    `failed to parse "X-Registry-Auth" header ... unexpected EOF`. Such a
+    string is now respelled into the URL-safe `-`/`_` alphabet before it is
+    sent -- the inverse of the read-back path, which was already correct.
   - Close a request-line injection through the request path. A container
     name or image reference is spliced into the request line unescaped
     (`/containers/$id/json`), and a name holding CR/LF, a space, `?` or `#`
