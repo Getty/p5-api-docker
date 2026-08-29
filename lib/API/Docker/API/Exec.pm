@@ -2,7 +2,7 @@ package API::Docker::API::Exec;
 # ABSTRACT: Docker Engine Exec API
 our $VERSION = '0.004';
 use Moo;
-with 'API::Docker::Role::Using';
+with 'API::Docker::Role::Using', 'API::Docker::Role::JSONBody';
 use Carp qw( croak );
 use namespace::clean;
 
@@ -50,10 +50,18 @@ Reference to L<API::Docker> client. Weak reference to avoid circular dependencie
 
 =cut
 
+# The ExecConfig booleans of spec/v1.51.yaml. The engine rejects a number for
+# any of them, so 1/0 is normalised to a JSON boolean on the way out; a caller
+# may still pass 1/0 (or a JSON boolean) and it goes out correctly either way.
+my @EXEC_CONFIG_BOOLS = qw(
+  AttachStdin AttachStdout AttachStderr Tty Privileged
+);
+
 sub create {
   my ($self, $container_id, %config) = @_;
   croak "Container ID required" unless $container_id;
   croak "Cmd required" unless $config{Cmd};
+  $self->_json_bools(\%config, @EXEC_CONFIG_BOOLS);
   return $self->client->post("/containers/$container_id/exec", \%config);
 }
 
@@ -72,6 +80,12 @@ Required config: C<Cmd> (ArrayRef of command and arguments).
 
 Common config keys: C<AttachStdin>, C<AttachStdout>, C<AttachStderr>, C<Tty>,
 C<Env>, C<User>, C<WorkingDir>.
+
+The boolean flags (C<AttachStdin>, C<AttachStdout>, C<AttachStderr>, C<Tty>,
+C<Privileged>) may be given as a Perl C<1>/C<0> or as a JSON boolean; either
+goes out as a real JSON C<true>/C<false>, which the engine's body type-check
+requires. Passing C<1> where the daemon wants a boolean would otherwise be
+rejected.
 
 =cut
 

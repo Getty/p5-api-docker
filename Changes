@@ -2,6 +2,18 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - JSON request bodies now send booleans as real JSON `true`/`false`
+    instead of the Perl `1`/`0` a caller passes. The engine type-checks
+    the body and rejects a number for a boolean field: measured
+    non-mutating, `POST /containers/no-such/exec` with
+    `{"Cmd":["true"],"AttachStdout":1}` answered 400 on Docker 29.7.2 and
+    500 on Podman 5.8.4 with Go's `cannot unmarshal number into ... of
+    type bool`, while `true` was accepted (404, no such container). The
+    boolean keys of `containers->create` (its top-level flags and the
+    nested `HostConfig`), `containers->update`, `networks->create`,
+    `networks->disconnect`, and `exec->create` are normalised on the way
+    out; a caller may pass `1`/`0` or a JSON boolean and either goes out
+    correctly. `exec->start` already did this.
   - The type model is complete: 201 classes under `API::Docker::Type::*`,
     one per definition and one per inline schema of `spec/v1.51.yaml`, all
     of them written by `maint/spec-to-type.pl`.

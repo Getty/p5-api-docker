@@ -2,7 +2,8 @@ package API::Docker::API::Networks;
 # ABSTRACT: Docker Engine Networks API
 our $VERSION = '0.004';
 use Moo;
-with 'API::Docker::Role::Filters', 'API::Docker::Role::Using';
+with 'API::Docker::Role::Filters', 'API::Docker::Role::Using',
+  'API::Docker::Role::JSONBody';
 use API::Docker::Role::Entity::Network;
 use API::Docker::Type::Network;
 use Carp qw( croak );
@@ -137,9 +138,17 @@ swagger describes a network one way.
 
 =cut
 
+# The NetworkCreateRequest booleans of spec/v1.51.yaml. The engine rejects a
+# number for any of them, so 1/0 is normalised to a JSON boolean on the way
+# out; a caller may still pass 1/0 or a JSON boolean and it goes out correctly.
+my @NETWORK_CREATE_BOOLS = qw(
+  Attachable ConfigOnly EnableIPv4 EnableIPv6 Ingress Internal
+);
+
 sub create {
   my ($self, %config) = @_;
   croak "Network name required" unless $config{Name};
+  $self->_json_bools(\%config, @NETWORK_CREATE_BOOLS);
   my $result = $self->client->post('/networks/create', \%config);
   return $result;
 }
@@ -152,6 +161,11 @@ sub create {
     );
 
 Create a network. Returns hashref with C<Id> and C<Warning>.
+
+Boolean flags (C<Internal>, C<Attachable>, C<Ingress>, C<ConfigOnly>,
+C<EnableIPv4>, C<EnableIPv6>) may be given as a Perl C<1>/C<0> or as a JSON
+boolean; either goes out as a real JSON C<true>/C<false>, which the engine's
+body type-check requires.
 
 =cut
 
@@ -190,6 +204,7 @@ sub disconnect {
   my ($self, $id, %opts) = @_;
   croak "Network ID required" unless $id;
   croak "Container required" unless $opts{Container};
+  $self->_json_bools(\%opts, 'Force');
   return $self->client->post("/networks/$id/disconnect", \%opts);
 }
 
@@ -197,7 +212,9 @@ sub disconnect {
 
     $networks->disconnect($network_id, Container => $container_id, Force => 1);
 
-Disconnect a container from a network. Optional C<Force> parameter.
+Disconnect a container from a network. Optional C<Force> parameter, given as a
+Perl C<1>/C<0> or a JSON boolean; it goes out as a real JSON C<true>/C<false>,
+which the engine's body type-check requires.
 
 =cut
 

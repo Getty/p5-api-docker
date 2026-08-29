@@ -2,7 +2,8 @@ package API::Docker::API::Containers;
 # ABSTRACT: Docker Engine Containers API
 our $VERSION = '0.004';
 use Moo;
-with 'API::Docker::Role::Filters', 'API::Docker::Role::Using';
+with 'API::Docker::Role::Filters', 'API::Docker::Role::Using',
+  'API::Docker::Role::JSONBody';
 use API::Docker::Error::HTTP;
 use API::Docker::Role::Entity::Container;
 use API::Docker::Type::ContainerInspectResponse;
@@ -243,10 +244,32 @@ normalised by L<API::Docker::Role::Filters>
 
 =cut
 
+# The booleans of the container create body, from spec/v1.51.yaml: the
+# ContainerConfig flags at the top level, and the HostConfig flags in the
+# nested `HostConfig` object (its own plus the ones it inherits from
+# Resources). The engine rejects a number for any of them, so 1/0 is
+# normalised to a JSON boolean on the way out; a caller may still pass 1/0 or a
+# JSON boolean and it goes out correctly either way.
+my @CONTAINER_CONFIG_BOOLS = qw(
+  ArgsEscaped AttachStderr AttachStdin AttachStdout NetworkDisabled
+  OpenStdin StdinOnce Tty
+);
+my @HOST_CONFIG_BOOLS = qw(
+  AutoRemove Init OomKillDisable Privileged PublishAllPorts ReadonlyRootfs
+);
+
 sub create {
   my ($self, %config) = @_;
   my %params;
   $params{name} = delete $config{name} if defined $config{name};
+  $self->_json_bools(\%config, @CONTAINER_CONFIG_BOOLS);
+  # Copy the nested HostConfig before touching it -- _json_bools mutates, and
+  # the sub-object is still the caller's until this copy replaces it.
+  if (ref $config{HostConfig} eq 'HASH') {
+    my %host_config = %{ $config{HostConfig} };
+    $self->_json_bools(\%host_config, @HOST_CONFIG_BOOLS);
+    $config{HostConfig} = \%host_config;
+  }
   my $result = $self->client->post('/containers/create', \%config, params => \%params);
   return $result;
 }
@@ -266,6 +289,14 @@ The C<name> parameter is extracted and passed as query parameter. All other
 parameters are Docker container configuration (see Docker API documentation).
 
 Common config keys: C<Image>, C<Cmd>, C<Env>, C<ExposedPorts>, C<HostConfig>.
+
+Boolean flags may be given as a Perl C<1>/C<0> or as a JSON boolean; either
+goes out as a real JSON C<true>/C<false>, which the engine's body type-check
+requires. This applies to the top-level flags (C<Tty>, C<OpenStdin>,
+C<AttachStdin>, C<AttachStdout>, C<AttachStderr>, C<StdinOnce>,
+C<NetworkDisabled>, C<ArgsEscaped>) and to the C<HostConfig> flags
+(C<Privileged>, C<PublishAllPorts>, C<ReadonlyRootfs>, C<AutoRemove>, C<Init>,
+C<OomKillDisable>).
 
 =cut
 
@@ -1564,9 +1595,14 @@ Rename a container.
 
 =cut
 
+# The update body is Resources + RestartPolicy; the booleans are the two
+# Resources flags. Normalised on the way out, as for create.
+my @UPDATE_BOOLS = qw( Init OomKillDisable );
+
 sub update {
   my ($self, $id, %config) = @_;
   croak "Container ID required" unless $id;
+  $self->_json_bools(\%config, @UPDATE_BOOLS);
   return $self->client->post("/containers/$id/update", \%config);
 }
 
@@ -1575,6 +1611,10 @@ sub update {
     $containers->update($id, Memory => 314572800);
 
 Update container resource limits and configuration.
+
+The boolean flags (C<Init>, C<OomKillDisable>) may be given as a Perl C<1>/C<0>
+or as a JSON boolean; either goes out as a real JSON C<true>/C<false>, which
+the engine's body type-check requires.
 
 =cut
 
