@@ -1,0 +1,14 @@
+---
+class: standard
+completed: 2026-08-29T16:01:17Z
+created: 2026-08-28T16:55:36Z
+id: 107
+priority: medium
+started: 2026-08-29T16:01:17Z
+status: done
+title: 'Chunk-size line is hex()''d unvalidated: a non-hex chunk header reads as the
+  terminating chunk and a 200 returns undef with only a Perl warning'
+updated: 2026-08-29T16:01:17Z
+---
+
+lib/API/Docker/Role/HTTP.pm:1611 (buffered) and :1410 (streaming). Measured: chunk header 'ZZZ\r\n' -> 'Illegal hexadecimal digit Z ignored', hex returns 0, the reader takes it as the last chunk, _request returns undef for a 200 -- corrupt framing reads as an empty body. A legal chunk extension '5;foo=bar\r\n' works but warns once per chunk. Fix: match /^([0-9A-Fa-f]+)(?:;.*)?\r?\n\z/ and croak Truncated/HTTP-shaped on anything else. Related, lower: Transfer-Encoding compared case-sensitively (:1324, :1405 -- 'Chunked' returns the raw framing); status line and Content-Length not validated (:1046, :1330); 1xx not skipped. t/truncated_response.t has no non-hex chunk-header case. api-docker-worker + api-docker-test-writer. Found in the 0.004 pre-release grill.
