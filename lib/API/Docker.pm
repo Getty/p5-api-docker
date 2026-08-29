@@ -75,8 +75,9 @@ with client certificates (L</tls>, L</cert_path>)
 =item * Automatic API version negotiation
 
 =item * A typed object model generated from Docker's own swagger
-(L<API::Docker::Type>) -- containers today, the remaining resources
-incrementally; see L</Architecture> below
+(L<API::Docker::Type>) -- complete across all seven resources: C<list> and
+C<inspect> return these generated classes, not hashrefs; see
+L</Architecture> below
 
 =item * Comprehensive logging via L<Log::Any>
 

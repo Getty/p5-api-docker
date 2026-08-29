@@ -75,8 +75,9 @@ volumes without the overhead of heavy HTTP client libraries.
   with client certificates (see `tls`, `cert_path` below)
 - **Automatic API version negotiation** with Docker daemon
 - **A typed object model generated from Docker's own swagger**
-  (`API::Docker::Type::*`) -- containers today, the remaining resources
-  incrementally; see [Typed object model](#typed-object-model) below
+  (`API::Docker::Type::*`) -- complete across all seven resources: `list`
+  and `inspect` return these generated classes, not hashrefs; see
+  [Typed object model](#typed-object-model) below
 - **HTTP/1.1 implementation** with chunked transfer encoding, including
   incremental delivery of a streaming response through a per-request
   callback (`on_event`/`on_frame`/`on_chunk`) for endpoints that never
