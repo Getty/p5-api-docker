@@ -1,0 +1,14 @@
+---
+class: standard
+completed: 2026-08-29T15:15:34Z
+created: 2026-08-28T16:55:41Z
+id: 108
+priority: medium
+started: 2026-08-29T15:15:34Z
+status: done
+title: 'No X-Registry-Auth on images->pull and no X-Registry-Config on images->build:
+  private registries unreachable through this client'
+updated: 2026-08-29T15:15:34Z
+---
+
+Images.pm:405-416 pull accepts only fromImage/tag/on_event; spec /images/create declares X-Registry-Auth, moby reads it on pull, Podman via auth.GetCredentials. Role/RegistryAuth.pm:27 even lists POST /images/create as a carrier, but pull never calls _registry_auth_header. Images.pm:203-241 build sends no X-Registry-Config (base64 JSON map of registry -> auth config), so FROM private.registry/... cannot authenticate. Both additive: auth => on pull, registry_config => on build. platform is not exposed on pull either. Consumer ../p5-dist-zilla-plugin-docker-api calls build without either, unaffected. Also from the same review: a pre-encoded auth string in standard base64 (+ or /) passes the regex at RegistryAuth.pm:63 unchanged and the daemon (base64.URLEncoding) cannot decode it -- needs tr{+/}{-_}, the inverse of what :96 already does. api-docker-engine-worker. Found in the 0.004 pre-release grill.
