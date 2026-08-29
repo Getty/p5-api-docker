@@ -1,0 +1,14 @@
+---
+class: standard
+completed: 2026-08-29T15:20:38Z
+created: 2026-08-28T16:55:52Z
+id: 110
+priority: medium
+started: 2026-08-29T15:20:38Z
+status: done
+title: Docker API 1.55 is reachable locally; spec/ tops out at 1.51 -- check whether
+  Docker publishes v1.55.yaml and what compare mode reports
+updated: 2026-08-29T15:20:38Z
+---
+
+The house-docs half of this ticket is done (commit after 1a8799c: CLAUDE.md, rules and agent briefings now say 'check which sockets exist and what GET /version announces' instead of naming an engine). What remains: a Docker Engine announcing API 1.55 is available, and the newest swagger under spec/ is v1.51. Measured read-only against it: ImageInspect gets Identity, Network gets Status, both in unknown_fields, rejected_fields empty. Worth checking whether Docker publishes v1.52-v1.55 swagger, checking one in and running maint/spec-drift-check.pl compare mode to see what the model is missing. api-docker-type-writer.
