@@ -185,6 +185,17 @@ my @STREAM_TYPE = qw( stdin stdout stderr );
 # _assert_header_name.
 my $HEADER_NAME = qr/\A[0-9A-Za-z!#\$%&'*+.^_`|~-]+\z/;
 
+# The request-target path is caller data -- a container name, an image
+# reference -- spliced straight into the request line as /v$version$path, so a
+# byte the line's own grammar reads rewrites the request rather than naming a
+# resource: CR or LF ends the line, a space opens the HTTP-version field, and
+# a ? or # opens the query or fragment. It is held to the RFC 3986 origin-form
+# path character set -- unreserved, the sub-delims, and : @ % / -- and
+# rejected, not sanitised, for the reason a header name is (see
+# _assert_request_path). Query parameters carry the ? and everything after it
+# and are assembled separately below, each element run through _uri_encode.
+my $REQUEST_PATH = qr{\A[A-Za-z0-9\-._~:/\@!\$&'()*+,;=%]*\z};
+
 # The three units a response can be cut into, one option each. A request picks
 # one of them, or none and gets the buffered path; see _stream_handler.
 my @STREAM_OPTION = qw( on_event on_frame on_chunk );
@@ -910,6 +921,12 @@ sub _request {
     if @streaming && ref $opts{$streaming[0]} ne 'CODE';
 
   my $version = $self->api_version;
+
+  # Caller data -- a container name, an image reference -- is spliced straight
+  # into the request line through $path, so it is validated before it can reach
+  # the wire, exactly as a header name is. See _assert_request_path.
+  $self->_assert_request_path($path);
+
   my $url_path = defined $version ? "/v$version$path" : $path;
 
   # Kept before the query string is appended: it names the request in an
@@ -1203,6 +1220,23 @@ sub _assert_header_name {
     . '!#$%&\'*+-.^_`|~). A name is rejected rather than sanitised: unlike a '
     . 'value, there is no benign way for one to carry CR, LF, a space or a '
     . 'colon, and rewriting it would send a header the caller never wrote';
+}
+
+sub _assert_request_path {
+  my ($self, $path) = @_;
+
+  return if defined $path && $path =~ $REQUEST_PATH;
+
+  my $display = defined $path ? $path : '';
+  $display =~ s/([^\x20-\x7E])/sprintf('\\x%02X', ord $1)/ge;
+  croak __PACKAGE__ . '->_request invalid request path "' . $display . '": a '
+    . 'path may hold only request-target characters (letters, digits, -._~ '
+    . 'and :/@!$&\'()*+,;=%). It is spliced straight into the request line, so '
+    . 'a space, CR, LF, ? or # in a container name or image reference would '
+    . 'rewrite the request rather than name a resource. A path is rejected '
+    . 'rather than sanitised: percent-encoding it here cannot tell a path '
+    . 'separator from data -- pass query parameters as `params`, not in the '
+    . 'path';
 }
 
 sub _read_response {
@@ -2138,6 +2172,28 @@ C<< "X-Foo\r\nX-Bar" >> into C<X-FooX-Bar> would put a header on the wire
 under a name nobody asked for. Validating against the token grammar also
 catches the separators that would corrupt the request without injecting
 anything.
+
+=head2 A request path is rejected, not sanitised
+
+The C<$path> given to L</get>, L</post>, L</put>, L</delete_request>, L</head>
+and C<_request> is spliced straight into the request line as
+C<< $method /v$version$path HTTP/1.1 >>, and it carries caller data: the
+resource methods build it by interpolation -- C<< "/containers/$id/json" >>,
+C<< "/images/$name/push" >> -- so a container name or an image reference the
+user typed ends up in the request line unescaped. A byte the line's own
+grammar reads therefore rewrites the request rather than naming a resource: a
+CR or LF ends the line and opens a header of its own, a space starts the
+HTTP-version field, and a C<?> or C<#> opens the query string or fragment.
+
+So the path is checked against the RFC 3986 origin-form character set --
+unreserved, the sub-delims, and C<:> C<@> C<%> C<< / >>, which is the set an
+image reference lives in -- and a path outside it is refused with a croak
+before anything reaches the wire, the same treatment and for the same reason a
+header name gets. Sanitising is not on the table here: percent-encoding the
+path at this layer cannot tell a separator from data, so it would either
+mangle every C<< / >> and C<:> or leave the injection open. Query parameters
+belong in C<params>, which is assembled separately and runs each element
+through C<_uri_encode>.
 
 =cut
 

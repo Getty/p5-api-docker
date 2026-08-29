@@ -348,6 +348,90 @@ subtest '_request: an invalid header name is refused, not rewritten' => sub {
 };
 
 # ---------------------------------------------------------------------------
+# karr k102: $path is caller data (a container name, an image reference)
+# spliced straight into the request line, and unlike a header value it was
+# never checked. Measured through the real _request against a fake socket:
+# containers->inspect("x HTTP/1.1\r\nX-Evil: 1\r\n\r\nGET /y") put
+# 'GET /v1.41/containers/x HTTP/1.1\r\nX-Evil: 1\r\n\r\n...' on the wire -- the
+# name ended the request line and opened a header of its own. A path outside
+# the request-target character set is now refused, not written; see
+# API::Docker::Role::HTTP under "A request path is rejected, not sanitised".
+subtest '_request: a path outside the request-target charset is refused' => sub {
+  my $t = Test::API::Docker::FakeTransport->new(
+    host        => 'unix:///nonexistent.sock',
+    api_version => '1.41',
+  );
+
+  subtest 'the measured injection: CRLF in the path croaks and sends nothing' => sub {
+    my $evil = "x HTTP/1.1\r\nX-Evil: 1\r\n\r\nGET /y";
+    eval { $t->_request('GET', "/containers/$evil/json") };
+    like $@, qr/invalid request path/, 'croaked';
+    like $@, qr/\Qx HTTP\E.*\Q\x0D\x0AX-Evil\E/,
+      'the offending path is shown with its control bytes escaped, so the '
+      . 'message stays on one line and names what was actually passed';
+    my $message = "$@";
+    unlike $message, qr/\r/, 'the croak itself carries no raw CR';
+    $message =~ s/\n\z//;
+    unlike $message, qr/\n/,
+      'and no LF beyond the one Carp ends on -- the escaped path cannot open a '
+      . 'line of its own in whatever logs the failure';
+    is $t->_sink, undef,
+      'no socket was even opened -- the path is checked while the request is '
+      . 'assembled, so nothing reached the daemon';
+  };
+
+  subtest 'each separator that would rewrite the request target' => sub {
+    my %bad = (
+      'a space (opens the HTTP-version field)' => 'na me',
+      'a bare CR'                              => "tail\r",
+      'a bare LF'                              => "tail\n",
+      'a ? (opens the query string)'          => 'na?me',
+      'a # (opens the fragment)'              => 'na#me',
+      'a non-ASCII byte'                      => "caf\xE9",
+      'a NUL byte'                            => "na\x00me",
+    );
+    for my $why (sort keys %bad) {
+      my $t2 = Test::API::Docker::FakeTransport->new(
+        host        => 'unix:///nonexistent.sock',
+        api_version => '1.41',
+      );
+      eval { $t2->_request('GET', "/containers/$bad{$why}/json") };
+      like $@, qr/invalid request path/, "$why is rejected";
+      is $t2->_sink, undef, "$why: nothing reached the wire";
+    }
+  };
+
+  subtest 'a legitimate image reference still assembles verbatim' => sub {
+    # ':' tag, '/' path and '@sha256:...' digest all survive -- the charset
+    # that closes the injection is the one image references live in, so the
+    # check must not be a false positive on any of them.
+    $t->_request('POST', '/images/library/nginx:1.25/push');
+    like $t->written,
+      qr{\APOST /v1\.41/images/library/nginx:1\.25/push HTTP/1\.1\r\n},
+      'a tagged, namespaced reference is written, not rejected';
+
+    my $digest = 'nginx@sha256:' . ('a' x 64);
+    $t->_request('GET', "/images/$digest/json");
+    like $t->written,
+      qr{\AGET /v1\.41/images/nginx\@sha256:@{[ 'a' x 64 ]}/json HTTP/1\.1\r\n},
+      'a digest reference (@ and :) is written verbatim too';
+  };
+
+  subtest 'measured end to end through the resource method' => sub {
+    # Exactly the ticket's measurement: the malicious name arrives through
+    # containers->inspect, which builds /containers/$id/json. The injection is
+    # closed at the transport, whatever resource method assembled the path.
+    my $t3 = Test::API::Docker::FakeTransport->new(
+      host        => 'unix:///nonexistent.sock',
+      api_version => '1.41',
+    );
+    eval { $t3->containers->inspect("x HTTP/1.1\r\nX-Evil: 1\r\n\r\nGET /y") };
+    like $@, qr/invalid request path/, 'refused before it reaches the wire';
+    is $t3->_sink, undef, 'and no socket was opened';
+  };
+};
+
+# ---------------------------------------------------------------------------
 subtest '_request: >= 400 croaks' => sub {
   my $t = Test::API::Docker::FakeTransport->new(
     host        => 'unix:///nonexistent.sock',

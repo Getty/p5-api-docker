@@ -2,6 +2,17 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - Close a request-line injection through the request path. A container
+    name or image reference is spliced into the request line unescaped
+    (`/containers/$id/json`), and a name holding CR/LF, a space, `?` or `#`
+    rewrote the request: measured through the real `_request` against a fake
+    socket, `containers->inspect("x HTTP/1.1\r\nX-Evil: 1\r\n\r\nGET /y")`
+    put `GET /v1.44/containers/x HTTP/1.1\r\nX-Evil: 1\r\n\r\n` on the wire,
+    the name ending the request line and opening a header of its own. A path
+    outside the RFC 3986 origin-form character set is now refused with a
+    croak before anything reaches the daemon, the same treatment a header
+    name already gets; the `:`, `/` and `@` an image reference needs still
+    pass. Query parameters belong in `params`, not in the path.
   - Five of the eight `t/fixtures/*.json` fixtures the test suite claimed
     were captured daemon output were hand-typed instead -- a hex-looking Id
     ending in non-hex characters, a ParentId padded to 64 characters, round
