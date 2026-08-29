@@ -1,0 +1,14 @@
+---
+class: standard
+completed: 2026-08-29T02:53:44Z
+created: 2026-08-28T16:55:09Z
+id: 102
+priority: high
+started: 2026-08-29T02:53:44Z
+status: done
+title: 'Request-line injection: a container/image name with CR/LF, space, ? or # rewrites
+  the HTTP request (Role::HTTP path is never escaped)'
+updated: 2026-08-29T02:53:44Z
+---
+
+lib/API/Docker/Role/HTTP.pm:913 builds $url_path by concatenation and :1010 prints it raw; header values are CR/LF-stripped (:1000) and header names token-checked, the path is not. Measured through the real _request against a fake Unix-socket daemon: containers->inspect("x HTTP/1.1\r\nX-Evil: 1\r\n\r\nGET /y") puts 'GET /v1.44/containers/x HTTP/1.1\r\nX-Evil: 1\r\n\r\n' on the wire -- the caller's name ended the request line and added a header (an injected X-Registry-Auth or Content-Length would be honoured; Connection: close stops a smuggled second request). A space, ? or # in a name likewise rewrites the request-target. Names are caller data (a user-typed image reference). Fix: croak on anything outside the request-target character set in the path, or percent-encode path segments (keep / and :, which references need -- _uri_encode already does that). t/role_http.t 'assembles the request line' only asserts the happy path; add the CRLF-croaks case. api-docker-worker + api-docker-test-writer. Found in the 0.004 pre-release grill.
