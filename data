@@ -1,0 +1,14 @@
+---
+class: standard
+completed: 2026-08-29T16:01:17Z
+created: 2026-08-28T16:55:30Z
+id: 106
+priority: medium
+started: 2026-08-29T16:01:17Z
+status: done
+title: negotiate_version dies with a strict-refs error on a non-object /version body
+  (a proxy answering HTML with 200 does this)
+updated: 2026-08-29T16:01:17Z
+---
+
+lib/API/Docker.pm:523. Measured against a fake daemon: body 'garbage' -> "Can't use string (\"garbage\") as a HASH ref while strict refs"; body [1] -> 'Not a HASH reference'. Also on this path: a body without ApiVersion sets _version_negotiated and sends every later request unversioned (GET /info) -- nowhere in the POD; ApiVersion is copied verbatim with no shape check ('v1.44/../x' -> GET /vv1.44/../x/info). Fix: croak naming the endpoint and the shape when the body is not a hash with a /^\d+\.\d+$/ ApiVersion. t/version.t should hold the non-object case. api-docker-worker + api-docker-test-writer. Found in the 0.004 pre-release grill.
