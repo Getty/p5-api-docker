@@ -8,10 +8,12 @@ check_live_access();
 
 # --- Read Tests (always run) ---
 
-# volumes_list is still hand-rolled, not captured: at recapture time (karr
-# k101) no volume existed on either engine reachable from this machine, and
-# creating one only to capture it was out of bounds for that task. See the
-# header of t/type_fixture_passthrough.t.
+# volumes_list (karr k101 follow-up): a real capture, taken 2026-08-29
+# against Docker 29.7.2 (API 1.55) from a disposable
+# apidocker-fixture-probe-<random> volume created for the purpose and
+# removed again once captured (filtered to that one volume so the fixture
+# stays small and deterministic) -- see the header of
+# t/type_fixture_passthrough.t.
 subtest 'list volumes' => sub {
   my $docker = test_docker(
     'GET /volumes' => load_fixture('volumes_list'),
@@ -26,14 +28,16 @@ subtest 'list volumes' => sub {
   }
 
   unless (is_live()) {
-    is(scalar @$volumes, 2, 'two volumes');
+    is(scalar @$volumes, 1, 'one volume');
 
     my $first = $volumes->[0];
-    is($first->name, 'my-data', 'volume name');
+    is($first->name, 'apidocker-fixture-probe-39a25e34', 'volume name');
     is($first->driver, 'local', 'volume driver');
     is($first->scope, 'local', 'volume scope');
-    is_deeply($first->labels, { project => 'test' }, 'volume labels');
-    like($first->mountpoint, qr{/var/lib/docker/volumes/my-data}, 'mountpoint');
+    is_deeply($first->labels, { 'apidocker-fixture-probe' => '1' },
+      'volume labels');
+    like($first->mountpoint,
+      qr{/var/lib/docker/volumes/apidocker-fixture-probe-39a25e34}, 'mountpoint');
   }
 };
 

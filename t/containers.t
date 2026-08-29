@@ -9,10 +9,17 @@ check_live_access();
 
 # --- Read Tests (always run) ---
 
-# containers_list/container_inspect are still hand-rolled, not captured: at
-# recapture time (karr k101) no container existed on either engine reachable
-# from this machine, and creating one only to capture it was out of bounds
-# for that task. See the header of t/type_fixture_passthrough.t.
+# containers_list/container_inspect (karr k101 follow-up): a real capture,
+# taken 2026-08-29 against Docker 29.7.2 (API 1.55) from a disposable
+# apidocker-fixture-probe-<random> container (alpine:3, running `sleep 300`)
+# created for the purpose and removed again once both endpoints were
+# captured -- see the header of t/type_fixture_passthrough.t. Both fixtures
+# describe the same container, so their Id fields agree; the list endpoint
+# was filtered to that one container so the fixture stays small and
+# deterministic, which is why there is only one to assert on here (a second,
+# non-running container's is_running shape is covered directly, without a
+# fixture, in t/entity_container.t's "is_running reads whichever of the two
+# shapes it is on").
 subtest 'list containers' => sub {
   my $docker = test_docker(
     'GET /containers/json' => load_fixture('containers_list'),
@@ -27,19 +34,17 @@ subtest 'list containers' => sub {
   }
 
   unless (is_live()) {
-    is(scalar @$containers, 2, 'two containers');
+    is(scalar @$containers, 1, 'one container');
 
     my $first = $containers->[0];
-    is($first->id, 'abc123def456', 'container id');
-    is_deeply($first->names, ['/my-container'], 'container names');
-    is($first->image, 'nginx:latest', 'container image');
+    is($first->id,
+      'b20ac7508d80182ba3cd1cbd006ac10c8a15f4f7590fa89c2078d146caf96555',
+      'container id');
+    is_deeply($first->names, ['/apidocker-fixture-probe-39a25e34'],
+      'container names');
+    is($first->image, 'alpine:3', 'container image');
     is($first->state, 'running', 'container state');
     ok($first->is_running, 'is_running returns true for running container');
-
-    my $second = $containers->[1];
-    is($second->id, 'def789ghi012', 'second container id');
-    is($second->state, 'exited', 'second container state');
-    ok(!$second->is_running, 'is_running returns false for exited container');
   }
 };
 

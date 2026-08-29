@@ -164,13 +164,13 @@ the fixture must sit behind `is_live()`; mutating tests behind `can_write()` /
 `skip_unless_write()`, with `register_cleanup` for anything they create.
 
 Fixtures in `t/fixtures/*.json` are captured from a real daemon, so drift stays
-detectable — do not hand-roll them. That was not always true: as of karr k101,
-`containers_list.json`, `container_inspect.json` and `volumes_list.json` are
-still hand-rolled, because at recapture time no container or volume existed on
-either engine reachable from the machine doing the recapture, and creating one
-only to capture it was out of bounds for that task -- see the header of
-`t/type_fixture_passthrough.t` for the open gap and which engine and API
-version backs each of the other five.
+detectable — do not hand-roll them. That was not always true until karr k101
+(and its follow-up): all eight are now real captures -- see the header of
+`t/type_fixture_passthrough.t` for which engine and API version backs each
+one, including `containers_list.json`, `container_inspect.json` and
+`volumes_list.json`, captured from a disposable container and volume created
+and removed for the purpose once an earlier pass found neither engine
+reachable from the recapturing machine holding one to read.
 
 **A test helper that repairs its input cannot see the defect.** The push-auth
 test used to compute and append the missing base64 padding before decoding, so

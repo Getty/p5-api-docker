@@ -44,20 +44,24 @@ subtest 'both container shapes carry the same methods' => sub {
 subtest 'the generated classes are still the model, not a wrapper around it' => sub {
   plan skip_all => 'fixture-only' if is_live();
 
-  # containers_list/container_inspect are still hand-rolled, not captured --
-  # see t/containers.t.
+  # containers_list/container_inspect (karr k101 follow-up): a real
+  # capture -- see t/containers.t.
   my $docker = test_docker(
     'GET /containers/json'          => load_fixture('containers_list'),
-    'GET /containers/abc123def456/json' => load_fixture('container_inspect'),
+    'GET /containers/b20ac7508d80182ba3cd1cbd006ac10c8a15f4f7590fa89c2078d146caf96555/json'
+      => load_fixture('container_inspect'),
   );
 
   my ($c) = @{ $docker->containers->list };
   isa_ok $c, $SUMMARY;
-  is $c->id, 'abc123def456', 'the daemon field is on the object itself';
-  is $c->size_root_fs, 187654321,
-    'including one whose Perl name is not its wire name';
+  is $c->id, 'b20ac7508d80182ba3cd1cbd006ac10c8a15f4f7590fa89c2078d146caf96555',
+    'the daemon field is on the object itself';
+  is $c->image_id,
+    'sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b',
+    'including one whose Perl name is not its wire name (ImageID, not ImageId)';
 
-  my $full = $docker->containers->inspect('abc123def456');
+  my $full = $docker->containers->inspect(
+    'b20ac7508d80182ba3cd1cbd006ac10c8a15f4f7590fa89c2078d146caf96555');
   isa_ok $full, $INSPECT;
   isa_ok $full->state, 'API::Docker::Type::ContainerState',
     'and a nested field is still inflated into its own generated class';

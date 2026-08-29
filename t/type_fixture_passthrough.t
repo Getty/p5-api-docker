@@ -26,17 +26,28 @@ use API::Docker::Type::VolumeListResponse;
 # inflated with empty unknown_fields/rejected_fields because they were
 # written against the open swagger rather than against a socket.
 # images_list.json, networks_list.json, system_info.json and
-# system_version.json are now real captures; the "Measured"/"Captured"
-# comment at each fixture's load_fixture() call site (t/images.t,
+# system_version.json were the first four recaptured; the "Measured"/
+# "Captured" comment at each fixture's load_fixture() call site (t/images.t,
 # t/networks.t, t/system.t, t/version.t) names which engine and API version
 # each came from. containers_list.json, container_inspect.json and
-# volumes_list.json are still hand-rolled: at capture time neither engine
+# volumes_list.json stayed hand-rolled through that pass: neither engine
 # reachable from this machine had a container or a volume to capture from
 # (`containers/json?all=1` and `volumes` both answered empty, on Docker
-# 29.7.2 and on Podman 5.8.4), and creating one only to capture it is outside
-# what this task may do -- read-only endpoints against existing resources
-# only. That gap is open, not closed; see karr k101. secrets_list.json
-# (2d5a50c) was already a real capture and stays as it was.
+# 29.7.2 and on Podman 5.8.4), and creating one only to capture it was
+# outside what that task could do.
+#
+# That gap closed 2026-08-29 (karr k101 follow-up), under explicit
+# maintainer sign-off for a controlled mutation: a disposable container and
+# a disposable volume, both named apidocker-fixture-probe-<random>, created
+# on Docker 29.7.2 (API 1.55) from the alpine:3 image already cached on that
+# engine, captured through `GET /containers/json?all=1`,
+# `GET /containers/{id}/json` and `GET /volumes` (each filtered to the one
+# resource so the fixture stays small and deterministic), then removed --
+# both confirmed gone (404 on inspect, absent from both list endpoints)
+# before the run that captured them ended. See the load_fixture() call
+# sites in t/containers.t and t/volumes.t for the note. secrets_list.json
+# (2d5a50c) was already a real capture and stays as it was. All eight
+# fixtures under t/fixtures/*.json are now real captures.
 #
 # karr k93: at every depth, and with one named exception. The comparison used
 # to be `keys %$item` -- the top level of each object only -- which is why the
@@ -94,7 +105,10 @@ my @CASES = (
 # null rule would look like. Recaptured 2026-08-28 (karr k101) against
 # Docker 29.7.2 (API 1.55) for networks_list/system_info and Podman 5.8.4
 # (compat API 1.44) for images_list -- see the load_fixture() call sites in
-# t/images.t, t/networks.t and t/system.t for detail:
+# t/images.t, t/networks.t and t/system.t for detail. Recaptured
+# 2026-08-29 (karr k101 follow-up) against Docker 29.7.2 (API 1.55) for
+# containers_list/container_inspect/volumes_list -- see t/containers.t and
+# t/volumes.t:
 #   images_list[2..4]/Labels     -- Podman answers Labels: null on a tagged
 #                                    image that carries no label, where
 #                                    Docker answers {}
@@ -111,7 +125,70 @@ my @CASES = (
 #                                 -- this engine has none of the four to
 #                                    report and sends null rather than [] or
 #                                    {} for each
+#   containers_list[0] and container_inspect[0]'s
+#     NetworkSettings/Networks/bridge/
+#     {Aliases,DNSNames,DriverOpts,IPAMConfig,Links}
+#                                 -- the probe container is attached to
+#                                    "bridge" with no non-default network
+#                                    config, so libnetwork answers null on
+#                                    all five per-endpoint fields, on both
+#                                    the summary and the inspect shape
+#   container_inspect[0]/Config/Entrypoint,
+#   container_inspect[0]/Config/Volumes
+#                                 -- alpine:3 sets neither, and the probe
+#                                    container did not override them
+#   container_inspect[0]/ExecIDs -- no `exec` was ever run against it
+#   container_inspect[0]/HostConfig/
+#     {BlkioWeightDevice,BlkioDeviceReadBps,BlkioDeviceWriteBps,
+#      BlkioDeviceReadIOps,BlkioDeviceWriteIOps,CapAdd,CapDrop,Devices,
+#      DeviceCgroupRules,DeviceRequests,Dns,DnsOptions,DnsSearch,
+#      ExtraHosts,GroupAdd,Links,MemorySwappiness,OomKillDisable,
+#      PidsLimit,SecurityOpt,Ulimits,VolumesFrom}
+#                                 -- every optional resource limit and
+#                                    legacy-linking knob the probe container
+#                                    was created without; the engine answers
+#                                    "unset" as null rather than as an empty
+#                                    array or a zero value, for each
+#   volumes_list[0]/Volumes[0]/Options
+#                                 -- the probe volume was created without
+#                                    driver-specific options
+#   volumes_list[0]/Warnings     -- no warnings for this request
 my @EXPECTED_NULL_DROPS = (
+  'container_inspect[0]/Config/Entrypoint',
+  'container_inspect[0]/Config/Volumes',
+  'container_inspect[0]/ExecIDs',
+  'container_inspect[0]/HostConfig/BlkioDeviceReadBps',
+  'container_inspect[0]/HostConfig/BlkioDeviceReadIOps',
+  'container_inspect[0]/HostConfig/BlkioDeviceWriteBps',
+  'container_inspect[0]/HostConfig/BlkioDeviceWriteIOps',
+  'container_inspect[0]/HostConfig/BlkioWeightDevice',
+  'container_inspect[0]/HostConfig/CapAdd',
+  'container_inspect[0]/HostConfig/CapDrop',
+  'container_inspect[0]/HostConfig/DeviceCgroupRules',
+  'container_inspect[0]/HostConfig/DeviceRequests',
+  'container_inspect[0]/HostConfig/Devices',
+  'container_inspect[0]/HostConfig/Dns',
+  'container_inspect[0]/HostConfig/DnsOptions',
+  'container_inspect[0]/HostConfig/DnsSearch',
+  'container_inspect[0]/HostConfig/ExtraHosts',
+  'container_inspect[0]/HostConfig/GroupAdd',
+  'container_inspect[0]/HostConfig/Links',
+  'container_inspect[0]/HostConfig/MemorySwappiness',
+  'container_inspect[0]/HostConfig/OomKillDisable',
+  'container_inspect[0]/HostConfig/PidsLimit',
+  'container_inspect[0]/HostConfig/SecurityOpt',
+  'container_inspect[0]/HostConfig/Ulimits',
+  'container_inspect[0]/HostConfig/VolumesFrom',
+  'container_inspect[0]/NetworkSettings/Networks/bridge/Aliases',
+  'container_inspect[0]/NetworkSettings/Networks/bridge/DNSNames',
+  'container_inspect[0]/NetworkSettings/Networks/bridge/DriverOpts',
+  'container_inspect[0]/NetworkSettings/Networks/bridge/IPAMConfig',
+  'container_inspect[0]/NetworkSettings/Networks/bridge/Links',
+  'containers_list[0]/NetworkSettings/Networks/bridge/Aliases',
+  'containers_list[0]/NetworkSettings/Networks/bridge/DNSNames',
+  'containers_list[0]/NetworkSettings/Networks/bridge/DriverOpts',
+  'containers_list[0]/NetworkSettings/Networks/bridge/IPAMConfig',
+  'containers_list[0]/NetworkSettings/Networks/bridge/Links',
   'images_list[2]/Labels',
   'images_list[3]/Labels',
   'images_list[4]/Labels',
@@ -125,6 +202,8 @@ my @EXPECTED_NULL_DROPS = (
   'system_info[0]/Plugins/Authorization',
   'system_info[0]/Swarm/RemoteManagers',
   'system_info[0]/Warnings',
+  'volumes_list[0]/Volumes[0]/Options',
+  'volumes_list[0]/Warnings',
 );
 
 # --- the comparison ---------------------------------------------------------

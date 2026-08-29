@@ -13,24 +13,29 @@ Revision history for API-Docker
     croak before anything reaches the daemon, the same treatment a header
     name already gets; the `:`, `/` and `@` an image reference needs still
     pass. Query parameters belong in `params`, not in the path.
-  - Five of the eight `t/fixtures/*.json` fixtures the test suite claimed
-    were captured daemon output were hand-typed instead -- a hex-looking Id
-    ending in non-hex characters, a ParentId padded to 64 characters, round
-    timestamps, invented names, and every one of them inflating with empty
-    `unknown_fields`/`rejected_fields` because they were written against the
-    open swagger, not a socket. `images_list.json` and `networks_list.json`
-    are now real captures against Podman 5.8.4 (compat API 1.44) and Docker
-    Engine Community 29.7.2 (API 1.55) respectively; `system_info.json` and
-    `system_version.json` against the same Docker (its `Name` redacted to
-    `docker-host` so a real hostname does not ship). `containers_list.json`,
-    `container_inspect.json` and `volumes_list.json` stay hand-rolled --
-    neither engine had a container or a volume to capture from, and
-    creating one only to capture it was out of bounds for this pass. See
-    the header of `t/type_fixture_passthrough.t` for the open gap and
-    `t/lib/Test/API/Docker/Mock.pm` for a second, adjacent fix this forced:
-    the mock's `api_version` was pinned to `'1.47'` only because the old
-    `system_version.json` happened to say `1.47` too, which is now `1.55`
-    to match the real fixture instead of the other way round.
+  - All eight `t/fixtures/*.json` fixtures the test suite claims are
+    captured daemon output are now that. Five had been hand-typed instead --
+    a hex-looking Id ending in non-hex characters, a ParentId padded to 64
+    characters, round timestamps, invented names, and every one of them
+    inflating with empty `unknown_fields`/`rejected_fields` because they
+    were written against the open swagger, not a socket -- and the
+    remaining three stayed hand-rolled through that same pass because
+    neither engine reachable then had a container or a volume to capture
+    from. `images_list.json` is a real capture against Podman 5.8.4 (compat
+    API 1.44); `networks_list.json`, `system_info.json` and
+    `system_version.json` are real captures against Docker Engine Community
+    29.7.2 (API 1.55), the latter two with `Name` redacted to `docker-host`
+    so a real hostname does not ship. `containers_list.json`,
+    `container_inspect.json` and `volumes_list.json` close the last gap: real
+    captures against that same Docker 29.7.2 (API 1.55), taken from a
+    disposable `apidocker-fixture-probe-<random>` container and volume
+    created for the purpose and removed again once both endpoints were
+    captured. See the header of `t/type_fixture_passthrough.t` for detail on
+    all eight, and `t/lib/Test/API/Docker/Mock.pm` for a second, adjacent fix
+    the first pass forced: the mock's `api_version` was pinned to `'1.47'`
+    only because the old `system_version.json` happened to say `1.47` too,
+    which is now `1.55` to match the real fixture instead of the other way
+    round.
   - `images->pull` no longer defaults `tag` to `latest` onto a reference
     that already carries one. The engine appends the query `tag` to the
     name rather than treating it as a fallback: measured against Docker

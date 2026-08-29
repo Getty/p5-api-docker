@@ -486,7 +486,7 @@ subtest 'every remaining method passes its callback through' => sub {
 subtest 'the entity classes forward the callback too' => sub {
   plan skip_all => 'live mode ignores the route table' if is_live();
 
-  # containers_list is still hand-rolled, not captured -- see t/containers.t.
+  # containers_list (karr k101 follow-up): a real capture -- see t/containers.t.
   my $docker = test_docker(
     'GET /containers/json' => load_fixture('containers_list'),
     'GET /containers/[^/]+/logs' => [
