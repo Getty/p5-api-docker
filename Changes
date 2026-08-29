@@ -2,6 +2,21 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - Declare a minimum Perl of `5.014` in `cpanfile`. The floor is the
+    non-destructive substitution `s///r` in `API::Docker::Role::HTTP`, which
+    needs 5.14 -- higher than the `//` the code also uses; nothing in `lib/`
+    reaches above 5.14.
+  - Stop shipping `spec/` and `maint/` in the built distribution. They are
+    Docker's raw swagger and the generator/drift scripts -- maintainer inputs
+    nothing under `lib/` loads at runtime -- and a `[PruneFiles]` for `^spec/`
+    and `^maint/` takes the archive from roughly 885K to 530K. `.claude/`
+    still ships as before.
+  - Fix three dangling `L</>` POD links that rendered broken on metacpan:
+    `L</_expand_class>` (a private sub) in `API::Docker::Type` becomes
+    `C<_expand_class>`, `L</name>` in the Plugin entity role points to
+    `L<API::Docker::Type::Plugin/name>`, and `L</id>` in the Image entity role
+    to the generated Image types where `id` is documented. podchecker over the
+    woven build now passes clean.
   - `_uri_encode` now UTF-8-encodes a decoded character string before
     percent-escaping it. A string from `use utf8` or a `:utf8` layer was
     escaped a codepoint at a time -- `ü` became `%FC` and `中` `%4E2D`,

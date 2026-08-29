@@ -1,3 +1,5 @@
+requires 'perl', '5.014';
+
 requires 'Carp';
 requires 'Errno';
 requires 'Import::Into';

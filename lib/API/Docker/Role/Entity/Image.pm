@@ -98,8 +98,9 @@ sub tag {
 
     $image->tag(repo => 'myrepo/app', tag => 'v1');
 
-Tag the image. Addresses it by L</id>, so this works on an image with no
-C<repo_tags> at all.
+Tag the image. Addresses it by C<id> (L<API::Docker::Type::ImageSummary/id>
+/ L<API::Docker::Type::ImageInspect/id>, the same field on both), so this
+works on an image with no C<repo_tags> at all.
 
 =cut
 

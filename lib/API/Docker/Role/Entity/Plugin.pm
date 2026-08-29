@@ -152,8 +152,9 @@ sub upgrade {
         privileges => $privileges);
 
 Upgrade the plugin in place. C<privileges> is required, as it is on
-L<API::Docker::API::Plugins/upgrade>, and C<remote> defaults to L</name> --
-which is not what you want for a plugin installed under a local name, hence
+L<API::Docker::API::Plugins/upgrade>, and C<remote> defaults to
+L<API::Docker::Type::Plugin/name> -- which is not what you want for a
+plugin installed under a local name, hence
 C<< ->plugin_reference >>.
 
 =cut

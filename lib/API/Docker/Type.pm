@@ -206,7 +206,7 @@ model keeps working either way.
 A bare class name is short: C<'PortBinding'> is
 C<API::Docker::Type::PortBinding>, C<'Mount::BindOptions'> is
 C<API::Docker::Type::Mount::BindOptions>. The expansion happens in
-L</_expand_class> and nowhere else; a leading C<+> escapes it.
+C<_expand_class> and nowhere else; a leading C<+> escapes it.
 
 =cut
 
