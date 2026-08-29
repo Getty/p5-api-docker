@@ -1,0 +1,14 @@
+---
+class: standard
+completed: 2026-08-29T17:05:26Z
+created: 2026-08-28T16:55:25Z
+id: 105
+priority: medium
+started: 2026-08-29T17:05:26Z
+status: done
+title: 'No namespace::clean on the 201 generated classes or on API::Docker: has/with/extends/docker/Str/Int/Bool/around
+  are callable methods'
+updated: 2026-08-29T17:05:26Z
+---
+
+grep -L namespace::clean lib -r: all of lib/API/Docker/Type/**.pm plus lib/API/Docker.pm (the seven stubs excepted, fine). Measured on a HostConfig instance: can('has'), can('with'), can('extends'), can('docker'), can('docker_extends'), can('Str'), can('Int'), can('Bool'), can('around') all true; $obj->Str returns the Type::Tiny object. API::Docker::Type::_setup_class (Type.pm:200-209) installs the imports and nothing removes them. k82 closed the same hole on Role::Type but not on the classes it is composed onto. The fix has to land in maint/spec-to-type.pl (it emits no use namespace::clean) so that t/spec_to_type.t stays byte-identical -- and it is a 201-file regeneration, so decide whether that is this release or the next. A test in t/type_model.t asserting !$obj->can('has') for every class keeps it closed. api-docker-type-writer. Found in the 0.004 pre-release grill.
