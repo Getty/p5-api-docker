@@ -1,0 +1,14 @@
+---
+class: standard
+completed: 2026-08-29T02:53:44Z
+created: 2026-08-28T16:54:52Z
+id: 99
+priority: high
+started: 2026-08-29T02:53:44Z
+status: done
+title: 'images->pull sends tag=latest unconditionally: pull(fromImage => ''nginx:1.25'')
+  pulls nginx:latest on Docker, 500s on Podman'
+updated: 2026-08-29T02:53:44Z
+---
+
+lib/API/Docker/API/Images.pm:410: $params{tag} = $opts{tag} // 'latest' is sent whenever the caller gave none, so pull(fromImage => 'nginx:1.25') goes out as ?fromImage=nginx:1.25&tag=latest. spec /images/create: 'If both fromImage and tag are provided, tag takes precedence' -- moby replaces the tag (pulls nginx:latest, reports success); Podman concatenates to nginx:1.25:latest and answers 500 'invalid reference format'. Same for a digest reference (alpine@sha256:... becomes ...:latest). Not measured live (a pull mutates); measurable with a name that resolves nowhere, e.g. POST /images/create?fromImage=localhost:1/nope:1.0&tag=latest. Fix shape: default tag only when fromImage carries neither a :tag after the last / nor an @digest. t/images.t:205 mocks POST /images/create without asserting the query -- add that assertion (api-docker-test-writer) with the fix (api-docker-engine-worker). Found in the 0.004 pre-release grill.
