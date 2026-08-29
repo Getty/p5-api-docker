@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-29T02:53:44Z
+created: 2026-08-28T16:43:17Z
+id: 94
+priority: high
+started: 2026-08-29T02:53:44Z
+status: done
+tags:
+- docs
+- release-blocker
+title: README/SYNOPSIS still say the type model is incremental, not complete
+updated: 2026-08-29T02:53:44Z
+---
+
+lib/API/Docker.pm:78-79 and README.md:78-79 both say 'A typed object model generated from Docker's own swagger ... -- containers today, the remaining resources incrementally'. That's pre-k84 phrasing. Per Changes {{$NEXT}} and api-docker-core, all seven resources (containers, images, networks, volumes, plugins, secrets, configs) now return generated API::Docker::Type::* objects via from_data -- the type model is complete, not incremental. Both lines need updating before 0.004 ships; it directly contradicts the release's own headline Changes entry. Route to api-docker-doc-writer.
