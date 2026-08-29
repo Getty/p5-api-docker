@@ -1,0 +1,14 @@
+---
+class: standard
+completed: 2026-08-29T16:01:17Z
+created: 2026-08-28T16:55:20Z
+id: 104
+priority: medium
+started: 2026-08-29T16:01:17Z
+status: done
+title: A daemon key spelled 'client' crashes from_data on an entity-composed class
+  ('Can't weaken a nonreference'), or is silently dropped
+updated: 2026-08-29T16:01:17Z
+---
+
+lib/API/Docker/Role/Type.pm:307: if ($mine->{$key}) { $args{$key} = $data->{$key} } routes a response key matching an entity attribute into the constructor rather than unknown_fields. Measured: ContainerSummary->from_data({ Id => 'x', client => 'DAEMON' }) croaks 'Can't weaken a nonreference'; with client => $docker passed (the resource-API path) the daemon's key vanishes -- not in unknown_fields, not in TO_JSON. The from_data POD directly above promises the opposite ('a daemon that one day sends a key of that name should not be able to overwrite ours'). No engine sends 'client' today, which is exactly the case the passthrough invariant exists for. Fix: entity attributes come only from %extra; a data key of that name goes to unknown_fields. api-docker-type-writer, regression in t/type.t. Found in the 0.004 pre-release grill.
