@@ -75,6 +75,15 @@ Revision history for API-Docker
     `networks->disconnect`, and `exec->create` are normalised on the way
     out; a caller may pass `1`/`0` or a JSON boolean and either goes out
     correctly. `exec->start` already did this.
+  - Check Docker's `v1.55` swagger into `spec/` (159 definitions). The model
+    stays generated against `v1.51` -- v1.55 is the diff baseline for the next
+    ceiling bump, not the generation target. The v1.51 -> v1.55 delta is large
+    and partly structural (`Network` splits into `NetworkSummary` +
+    `NetworkInspect` with a new `Status`, `Port` into `PortSummary`,
+    `VolumeCreateOptions` renamed `VolumeCreateRequest`; 28 new classes, 29
+    dropped fields, two type changes), so the migration is a deliberate
+    field-by-field job rather than a regeneration. `maint/spec-drift-check.pl
+    --from spec/v1.51.yaml --to spec/v1.55.yaml` prints the full list.
   - The type model is complete: 201 classes under `API::Docker::Type::*`,
     one per definition and one per inline schema of `spec/v1.51.yaml`, all
     of them written by `maint/spec-to-type.pl`.
