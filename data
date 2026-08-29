@@ -1,0 +1,14 @@
+---
+class: standard
+completed: 2026-08-29T16:01:17Z
+created: 2026-08-28T16:55:14Z
+id: 103
+priority: medium
+started: 2026-08-29T16:01:17Z
+status: done
+title: '_uri_encode corrupts character strings above 0x7F: U+00FC -> %FC, U+4E2D ->
+  %4E2D (not UTF-8, not even an escape)'
+updated: 2026-08-29T16:01:17Z
+---
+
+lib/API/Docker/Role/HTTP.pm:1665: sprintf('%%%02X', ord($1)) on each character. With a byte string the result is right (%C3%BC%E4%B8%AD, measured); with a decoded character string (use utf8, or anything read through a :utf8 layer) it is wrong: 'ü中' -> %FC%4E2D. filters are unaffected because encode_json runs first. Affected: images->commit(author/comment), images->search($term), any name/t/tag a user types. Fix: utf8::encode a copy before escaping (the JSON path already emits UTF-8 bytes, so this makes the two consistent). t/role_http.t:180 '_uri_encode: what it escapes' stops at "a\nb" -- add one character above 0x7F, as a character string. api-docker-worker + api-docker-test-writer. Found in the 0.004 pre-release grill.
