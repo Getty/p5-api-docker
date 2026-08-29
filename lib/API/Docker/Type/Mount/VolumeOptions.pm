@@ -3,6 +3,7 @@ package API::Docker::Type::Mount::VolumeOptions;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::Mount::VolumeOptions::DriverConfig;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

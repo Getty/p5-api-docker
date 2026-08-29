@@ -6,6 +6,7 @@ use API::Docker::Type::EngineDescription;
 use API::Docker::Type::Platform;
 use API::Docker::Type::ResourceObject;
 use API::Docker::Type::TLSInfo;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

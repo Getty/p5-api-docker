@@ -8,6 +8,7 @@ use API::Docker::Type::ContainerMemoryStats;
 use API::Docker::Type::ContainerNetworkStats;
 use API::Docker::Type::ContainerPidsStats;
 use API::Docker::Type::ContainerStorageStats;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

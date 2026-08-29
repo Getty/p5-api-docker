@@ -7,6 +7,7 @@ use API::Docker::Type::DeviceRequest;
 use API::Docker::Type::Resources::BlkioWeightDevice;
 use API::Docker::Type::Resources::Ulimit;
 use API::Docker::Type::ThrottleDevice;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

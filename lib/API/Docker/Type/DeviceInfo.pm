@@ -2,6 +2,7 @@ package API::Docker::Type::DeviceInfo;
 # ABSTRACT: A device that can be used by a container
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

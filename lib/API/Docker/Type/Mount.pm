@@ -6,6 +6,7 @@ use API::Docker::Type::Mount::BindOptions;
 use API::Docker::Type::Mount::ImageOptions;
 use API::Docker::Type::Mount::TmpfsOptions;
 use API::Docker::Type::Mount::VolumeOptions;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

@@ -3,6 +3,7 @@ package API::Docker::Type::SwarmSpec::TaskDefaults;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::SwarmSpec::TaskDefaults::LogDriver;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

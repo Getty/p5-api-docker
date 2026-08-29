@@ -6,6 +6,7 @@ use API::Docker::Type::ConfigReference;
 use API::Docker::Type::IPAM;
 use API::Docker::Type::NetworkContainer;
 use API::Docker::Type::PeerInfo;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

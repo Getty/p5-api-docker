@@ -3,6 +3,7 @@ package API::Docker::Type::TaskSpec::Placement::Preference;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::TaskSpec::Placement::Preference::Spread;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

@@ -4,6 +4,7 @@ our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::ErrorDetail;
 use API::Docker::Type::ProgressDetail;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

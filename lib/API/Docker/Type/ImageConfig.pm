@@ -3,6 +3,7 @@ package API::Docker::Type::ImageConfig;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::HealthConfig;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

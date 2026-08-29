@@ -2,6 +2,7 @@ package API::Docker::Type::Resources::Ulimit;
 # ABSTRACT: One resource limit to set in a container
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

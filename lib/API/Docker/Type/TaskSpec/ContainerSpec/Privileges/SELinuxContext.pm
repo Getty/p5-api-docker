@@ -2,6 +2,7 @@ package API::Docker::Type::TaskSpec::ContainerSpec::Privileges::SELinuxContext;
 # ABSTRACT: SELinux labels of the container
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

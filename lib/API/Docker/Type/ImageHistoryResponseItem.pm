@@ -2,6 +2,7 @@ package API::Docker::Type::ImageHistoryResponseItem;
 # ABSTRACT: individual image layer information in response to ImageHistory operation
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

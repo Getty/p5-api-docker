@@ -4,6 +4,7 @@ our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::SystemVersion::Component;
 use API::Docker::Type::SystemVersion::Platform;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

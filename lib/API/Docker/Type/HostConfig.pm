@@ -6,6 +6,7 @@ use API::Docker::Type::HostConfig::LogConfig;
 use API::Docker::Type::Mount;
 use API::Docker::Type::PortBinding;
 use API::Docker::Type::RestartPolicy;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

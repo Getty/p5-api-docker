@@ -8,6 +8,7 @@ use API::Docker::Type::SwarmSpec::EncryptionConfig;
 use API::Docker::Type::SwarmSpec::Orchestration;
 use API::Docker::Type::SwarmSpec::Raft;
 use API::Docker::Type::SwarmSpec::TaskDefaults;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

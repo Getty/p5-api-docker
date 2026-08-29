@@ -2,6 +2,7 @@ package API::Docker::Type::ObjectVersion;
 # ABSTRACT: The version number of the object such as node, service, etc
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

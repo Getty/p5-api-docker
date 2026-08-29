@@ -65,12 +65,43 @@ subtest 'the whole model round-trips an empty object' => sub {
     'a class with nothing set serialises to an empty structure';
 };
 
+subtest 'no generated class leaks the DSL sugar' => sub {
+  # `use API::Docker::Type` imports Moo, the type vocabulary and the two DSL
+  # keywords into the class so its body can be written; none of them is part
+  # of the class's runtime surface, and every generated class ends its body
+  # with `use namespace::clean` to strip them (karr k105). Before that line
+  # was added every one of these leaked onto all 201 classes -- the same shape
+  # API::Docker::Role::Type's own namespace::clean closed for the role in k82,
+  # left open on the classes the role is composed onto. So this asserts the
+  # absence by name, over every class, and it is red on any class that has not
+  # had the cleanup applied.
+  #
+  # `docker`/`docker_extends` and the `Str`/`Int`/... a class body calls are
+  # gone from the symbol table yet still fired at load time, because Perl
+  # bound their CV into each call site at compile time; the DSL keeps `has`
+  # and `extends` reachable across the same cleanup by capturing them at
+  # import (see API::Docker::Type). The point of this test is the leak, not
+  # the mechanism: what a caller can reach through the object is what matters,
+  # and none of these should be it.
+  my @sugar = qw( has with extends docker docker_extends Str Int Bool around );
+  my %leaked;
+  for my $class (@classes) {
+    $leaked{$_}++ for grep { $class->can($_) } @sugar;
+  }
+  is_deeply \%leaked, {},
+    'no generated class answers to a Moo keyword, a type or a DSL keyword';
+};
+
 subtest 'a generated class holds its fields and the documented roster' => sub {
-  # What `use API::Docker::Type` puts on a class is a fixed set: Moo's
-  # keywords, the type vocabulary, the two DSL keywords, and everything
-  # composing API::Docker::Role::Type contributes. Measured over all 201
-  # classes it is the same 33 names every time, so the surface of a
-  # generated class can be stated positively -- its registry attributes plus
+  # What survives on a class once its own `use namespace::clean` has run is a
+  # fixed set: everything composing API::Docker::Role::Type contributes, and
+  # nothing else. The imported Moo keywords, the type vocabulary and the two
+  # DSL keywords are gone -- namespace::clean strips them at the end of the
+  # class's compilation, while the accessors `docker` builds and the role it
+  # composes are installed at runtime, after that cleanup, and stay. The
+  # subtest below asserts the stripping by name; here the surviving surface is
+  # stated positively. Measured over all 201 classes it is the same 20 names
+  # every time, so a generated class answers to its registry attributes plus
   # this roster, and nothing else.
   #
   # Stated that way on purpose. The assertion here used to be a list of two
@@ -94,17 +125,14 @@ subtest 'a generated class holds its fields and the documented roster' => sub {
   # gained ->start or ->remove that way would be reported here by name; that
   # is a deliberate change to the surface and belongs in the roster.
   my @roster = (
-    # Moo, imported into the class by API::Docker::Type::_setup_class
-    qw( has with extends around before after ),
-    # the type vocabulary, imported by the same sub, so that a class body
-    # can write `docker target => Str`
-    qw( Any Bool Int Num Str ),
-    # the two keywords, installed into the class through Package::Stash
-    qw( docker docker_extends ),
     # what composing API::Docker::Role::Type leaves behind: its two
     # attributes, all of its methods -- the private ones included, Role::Tiny
     # composes every sub the role has -- and the new, BUILDARGS and DOES that
-    # the composition itself generates
+    # the composition itself generates. The imported Moo sugar (has, with,
+    # extends, around, before, after), the type vocabulary (Any, Bool, Int,
+    # Num, Str) and the two DSL keywords (docker, docker_extends) are not on
+    # this list: `use namespace::clean` in each class removes them, and the
+    # 'no generated class leaks the DSL sugar' subtest below holds that.
     qw( new BUILDARGS DOES
         unknown_fields rejected_fields
         from_data from_json TO_JSON to_json

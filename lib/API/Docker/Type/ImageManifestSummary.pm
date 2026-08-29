@@ -6,6 +6,7 @@ use API::Docker::Type::ImageManifestSummary::AttestationData;
 use API::Docker::Type::ImageManifestSummary::ImageData;
 use API::Docker::Type::ImageManifestSummary::Size;
 use API::Docker::Type::OCIDescriptor;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

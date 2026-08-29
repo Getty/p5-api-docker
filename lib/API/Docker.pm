@@ -15,6 +15,7 @@ use API::Docker::API::Distribution;
 use API::Docker::API::Secrets;
 use API::Docker::API::Configs;
 use API::Docker::API::Plugins;
+use namespace::clean;
 
 =head1 SYNOPSIS
 

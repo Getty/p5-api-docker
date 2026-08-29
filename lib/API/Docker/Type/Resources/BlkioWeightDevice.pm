@@ -2,6 +2,7 @@ package API::Docker::Type::Resources::BlkioWeightDevice;
 # ABSTRACT: A per-device block IO weight
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

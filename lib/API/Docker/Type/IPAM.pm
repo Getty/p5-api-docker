@@ -3,6 +3,7 @@ package API::Docker::Type::IPAM;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::IPAMConfig;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

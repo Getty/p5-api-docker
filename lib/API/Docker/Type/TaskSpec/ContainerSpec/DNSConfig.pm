@@ -2,6 +2,7 @@ package API::Docker::Type::TaskSpec::ContainerSpec::DNSConfig;
 # ABSTRACT: Specification for DNS related configurations in resolver configuration file (C<resolv.conf>)
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

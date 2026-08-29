@@ -2,6 +2,7 @@ package API::Docker::Type::ImageID;
 # ABSTRACT: Image ID or Digest
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

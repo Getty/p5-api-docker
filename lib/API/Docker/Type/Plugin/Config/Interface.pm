@@ -3,6 +3,7 @@ package API::Docker::Type::Plugin::Config::Interface;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::PluginInterfaceType;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

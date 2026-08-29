@@ -2,6 +2,7 @@ package API::Docker::Type::DeviceMapping;
 # ABSTRACT: A device mapping between the host and container
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

@@ -4,6 +4,7 @@ our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::ServiceSpec::Mode::Replicated;
 use API::Docker::Type::ServiceSpec::Mode::ReplicatedJob;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

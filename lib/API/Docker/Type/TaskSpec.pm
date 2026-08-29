@@ -10,6 +10,7 @@ use API::Docker::Type::TaskSpec::Placement;
 use API::Docker::Type::TaskSpec::PluginSpec;
 use API::Docker::Type::TaskSpec::Resources;
 use API::Docker::Type::TaskSpec::RestartPolicy;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

@@ -8,6 +8,7 @@ use API::Docker::Type::ImageInspect::Metadata;
 use API::Docker::Type::ImageInspect::RootFS;
 use API::Docker::Type::ImageManifestSummary;
 use API::Docker::Type::OCIDescriptor;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

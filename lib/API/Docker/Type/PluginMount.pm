@@ -2,6 +2,7 @@ package API::Docker::Type::PluginMount;
 # ABSTRACT: One entry of C<Plugin.Config.Mounts>
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

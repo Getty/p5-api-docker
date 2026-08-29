@@ -2,6 +2,7 @@ package API::Docker::Type::EndpointIPAMConfig;
 # ABSTRACT: An endpoint's IPAM configuration
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

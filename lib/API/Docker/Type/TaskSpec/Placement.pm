@@ -4,6 +4,7 @@ our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::Platform;
 use API::Docker::Type::TaskSpec::Placement::Preference;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

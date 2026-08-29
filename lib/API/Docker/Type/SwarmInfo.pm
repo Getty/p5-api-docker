@@ -4,6 +4,7 @@ our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::ClusterInfo;
 use API::Docker::Type::PeerNode;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

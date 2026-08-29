@@ -3,6 +3,7 @@ package API::Docker::Type::ContainerState;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::Health;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

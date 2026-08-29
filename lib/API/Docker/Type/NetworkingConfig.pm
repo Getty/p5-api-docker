@@ -3,6 +3,7 @@ package API::Docker::Type::NetworkingConfig;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::EndpointSettings;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

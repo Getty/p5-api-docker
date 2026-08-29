@@ -6,6 +6,7 @@ use API::Docker::Type::GenericResource;
 use API::Docker::Type::ObjectVersion;
 use API::Docker::Type::TaskSpec;
 use API::Docker::Type::TaskStatus;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

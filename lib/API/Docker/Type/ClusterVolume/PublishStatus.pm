@@ -2,6 +2,7 @@ package API::Docker::Type::ClusterVolume::PublishStatus;
 # ABSTRACT: One entry of C<ClusterVolume.PublishStatus>
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

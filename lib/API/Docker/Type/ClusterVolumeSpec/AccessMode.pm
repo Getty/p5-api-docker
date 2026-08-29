@@ -5,6 +5,7 @@ use API::Docker::Type;
 use API::Docker::Type::ClusterVolumeSpec::AccessMode::AccessibilityRequirements;
 use API::Docker::Type::ClusterVolumeSpec::AccessMode::CapacityRange;
 use API::Docker::Type::ClusterVolumeSpec::AccessMode::Secret;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

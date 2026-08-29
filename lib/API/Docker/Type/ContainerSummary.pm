@@ -7,6 +7,7 @@ use API::Docker::Type::ContainerSummary::NetworkSettings;
 use API::Docker::Type::MountPoint;
 use API::Docker::Type::OCIDescriptor;
 use API::Docker::Type::Port;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

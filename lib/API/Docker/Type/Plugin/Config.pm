@@ -10,6 +10,7 @@ use API::Docker::Type::Plugin::Config::RootFS;
 use API::Docker::Type::Plugin::Config::User;
 use API::Docker::Type::PluginEnv;
 use API::Docker::Type::PluginMount;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

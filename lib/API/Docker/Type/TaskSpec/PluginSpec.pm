@@ -3,6 +3,7 @@ package API::Docker::Type::TaskSpec::PluginSpec;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::PluginPrivilege;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

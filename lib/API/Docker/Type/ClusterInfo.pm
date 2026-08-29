@@ -5,6 +5,7 @@ use API::Docker::Type;
 use API::Docker::Type::ObjectVersion;
 use API::Docker::Type::SwarmSpec;
 use API::Docker::Type::TLSInfo;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

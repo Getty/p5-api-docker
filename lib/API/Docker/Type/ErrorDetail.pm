@@ -2,6 +2,7 @@ package API::Docker::Type::ErrorDetail;
 # ABSTRACT: The value of C<BuildInfo.errorDetail>
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

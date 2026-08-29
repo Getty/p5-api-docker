@@ -2,6 +2,7 @@ package API::Docker::Type::TLSInfo;
 # ABSTRACT: Information about the issuer of leaf TLS certificates and the trusted root CA certificate
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

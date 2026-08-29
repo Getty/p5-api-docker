@@ -3,6 +3,7 @@ package API::Docker::Type::EventMessage;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::EventActor;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

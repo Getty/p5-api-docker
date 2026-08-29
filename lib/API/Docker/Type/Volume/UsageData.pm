@@ -2,6 +2,7 @@ package API::Docker::Type::Volume::UsageData;
 # ABSTRACT: Usage details about the volume
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

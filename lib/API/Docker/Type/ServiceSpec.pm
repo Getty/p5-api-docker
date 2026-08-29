@@ -8,6 +8,7 @@ use API::Docker::Type::ServiceSpec::Mode;
 use API::Docker::Type::ServiceSpec::RollbackConfig;
 use API::Docker::Type::ServiceSpec::UpdateConfig;
 use API::Docker::Type::TaskSpec;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

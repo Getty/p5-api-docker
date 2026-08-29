@@ -3,6 +3,7 @@ package API::Docker::Type::TaskSpec::ContainerSpec::Secret;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::TaskSpec::ContainerSpec::Secret::File;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

@@ -2,6 +2,7 @@ package API::Docker::Type::Service::ServiceStatus;
 # ABSTRACT: The status of the service's tasks
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

@@ -2,6 +2,7 @@ package API::Docker::Type::MountPoint;
 # ABSTRACT: A mount point configuration inside the container
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

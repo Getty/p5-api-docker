@@ -9,6 +9,7 @@ use API::Docker::Type::HostConfig;
 use API::Docker::Type::MountPoint;
 use API::Docker::Type::NetworkSettings;
 use API::Docker::Type::OCIDescriptor;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

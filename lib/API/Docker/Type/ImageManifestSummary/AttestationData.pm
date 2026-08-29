@@ -2,6 +2,7 @@ package API::Docker::Type::ImageManifestSummary::AttestationData;
 # ABSTRACT: The image data for the attestation manifest
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

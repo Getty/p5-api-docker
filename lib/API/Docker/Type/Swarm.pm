@@ -3,6 +3,7 @@ package API::Docker::Type::Swarm;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::JoinTokens;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

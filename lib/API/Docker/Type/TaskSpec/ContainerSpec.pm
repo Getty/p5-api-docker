@@ -9,6 +9,7 @@ use API::Docker::Type::TaskSpec::ContainerSpec::DNSConfig;
 use API::Docker::Type::TaskSpec::ContainerSpec::Privileges;
 use API::Docker::Type::TaskSpec::ContainerSpec::Secret;
 use API::Docker::Type::TaskSpec::ContainerSpec::Ulimit;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

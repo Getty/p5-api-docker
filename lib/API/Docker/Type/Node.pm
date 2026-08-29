@@ -7,6 +7,7 @@ use API::Docker::Type::NodeDescription;
 use API::Docker::Type::NodeSpec;
 use API::Docker::Type::NodeStatus;
 use API::Docker::Type::ObjectVersion;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

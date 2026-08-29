@@ -3,6 +3,7 @@ package API::Docker::Type::TaskSpec::ContainerSpec::Config;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::TaskSpec::ContainerSpec::Config::File;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

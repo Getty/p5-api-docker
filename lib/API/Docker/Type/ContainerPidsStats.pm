@@ -2,6 +2,7 @@ package API::Docker::Type::ContainerPidsStats;
 # ABSTRACT: PidsStats contains Linux-specific stats of a container's process-IDs (PIDs)
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

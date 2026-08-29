@@ -2,6 +2,7 @@ package API::Docker::Type::SwarmSpec::CAConfig::ExternalCA;
 # ABSTRACT: One entry of C<SwarmSpec.CAConfig.ExternalCAs>
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

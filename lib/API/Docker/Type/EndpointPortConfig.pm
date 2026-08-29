@@ -2,6 +2,7 @@ package API::Docker::Type::EndpointPortConfig;
 # ABSTRACT: One entry of C<EndpointSpec.Ports>
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

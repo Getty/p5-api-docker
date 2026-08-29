@@ -2,6 +2,7 @@ package API::Docker::Type::PeerNode;
 # ABSTRACT: Represents a peer-node in the swarm
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

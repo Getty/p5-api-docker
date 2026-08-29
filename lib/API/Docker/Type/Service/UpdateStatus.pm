@@ -2,6 +2,7 @@ package API::Docker::Type::Service::UpdateStatus;
 # ABSTRACT: The status of a service update
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

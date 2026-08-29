@@ -2,6 +2,7 @@ package API::Docker::Type::Mount::VolumeOptions::DriverConfig;
 # ABSTRACT: The volume driver a mount's volume is to be created with
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

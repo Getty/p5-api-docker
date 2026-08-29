@@ -4,6 +4,7 @@ our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::GenericResource::DiscreteResourceSpec;
 use API::Docker::Type::GenericResource::NamedResourceSpec;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

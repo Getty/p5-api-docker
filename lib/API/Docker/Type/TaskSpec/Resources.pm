@@ -4,6 +4,7 @@ our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::Limit;
 use API::Docker::Type::ResourceObject;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

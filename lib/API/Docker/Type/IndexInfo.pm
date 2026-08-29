@@ -2,6 +2,7 @@ package API::Docker::Type::IndexInfo;
 # ABSTRACT: Information about a registry
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

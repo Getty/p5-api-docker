@@ -2,6 +2,7 @@ package API::Docker::Type::TaskSpec::LogDriver;
 # ABSTRACT: Specifies the log driver to use for tasks created from this spec
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

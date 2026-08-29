@@ -421,6 +421,14 @@ sub class_file_body {
   push @out, "our \$VERSION = '" . $VERSION_LITERAL . "';";
   push @out, 'use API::Docker::Type;';
   push @out, 'use ' . $_ . ';' for @{ $info->{uses} };
+  # After the imports and before the runtime `docker ...;` DSL lines: the
+  # snapshot namespace::clean takes here holds the imported Moo and type sugar
+  # plus the two DSL keywords, and it strips exactly those at the end of the
+  # class's compilation. The accessors `docker` builds and the role it composes
+  # are installed later, at runtime, so they are not in the snapshot and stay.
+  # See L<API::Docker::Type> for how the DSL keeps `has`/`extends` reachable
+  # across that cleanup.
+  push @out, 'use namespace::clean;';
   push @out, '';
   push @out, '=head1 DESCRIPTION';
   push @out, '';

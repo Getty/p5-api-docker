@@ -12,6 +12,7 @@ use API::Docker::Type::RegistryServiceConfig;
 use API::Docker::Type::Runtime;
 use API::Docker::Type::SwarmInfo;
 use API::Docker::Type::SystemInfo::DefaultAddressPool;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

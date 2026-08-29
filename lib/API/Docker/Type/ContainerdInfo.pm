@@ -3,6 +3,7 @@ package API::Docker::Type::ContainerdInfo;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::ContainerdInfo::Namespaces;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

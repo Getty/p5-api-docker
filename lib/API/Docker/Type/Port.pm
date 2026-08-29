@@ -2,6 +2,7 @@ package API::Docker::Type::Port;
 # ABSTRACT: An open port on a container
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

@@ -2,6 +2,7 @@ package API::Docker::Type::OCIPlatform;
 # ABSTRACT: Describes the platform which the image in the manifest runs on, as defined in the L<OCI Image Index Specification|https://github.com/opencontainers/image-spec/blob/v1.0.1/image-index.md>
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

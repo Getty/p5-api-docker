@@ -2,6 +2,7 @@ package API::Docker::Type::Plugin::Config::RootFS;
 # ABSTRACT: The root filesystem of a plugin
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

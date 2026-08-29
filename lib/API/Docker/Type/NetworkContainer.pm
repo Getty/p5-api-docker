@@ -2,6 +2,7 @@ package API::Docker::Type::NetworkContainer;
 # ABSTRACT: One value of C<Network.Containers>
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

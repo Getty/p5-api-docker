@@ -232,14 +232,52 @@ sub import {
   return;
 }
 
+# Per-class state that has to outlive the class's own compilation, because a
+# generated class ends its body with `use namespace::clean`. That pragma takes
+# a snapshot of the package's subs when it is reached and strips every one of
+# them at the end of the class's compilation -- the imported Moo and type
+# sugar, the two DSL keywords, AND anything a role composed at that point had
+# already installed. Two consequences shape the setup below.
+#
+#   has / extends -- The runtime `docker ...;` and `docker_extends ...;` lines
+#     fire after that cleanup, so by then `has` and `extends` are gone from the
+#     class and `$target->can('has')` returns undef. The `docker` keyword and
+#     the `Str`/`Int`/... it is handed survive the same cleanup only because
+#     Perl bound their CV into the call site at compile time; a name the DSL
+#     looks up by string at runtime has no such binding, so the two it resolves
+#     that way are captured here while they are still imported.
+#
+#   the role -- API::Docker::Role::Type is NOT composed here. Composed at
+#     import (a BEGIN action) its methods and its two attributes would sit in
+#     namespace::clean's snapshot and be stripped with the sugar. So it is
+#     composed on the first `docker`/`docker_extends` call instead -- at
+#     runtime, after the cleanup, exactly as a `with 'Role'` line in a Moo
+#     class body would run. Every generated class issues at least one such
+#     call, and the composition lands before any object of the class is built.
+my %CLASS_SUGAR;
+
 sub _setup_class {
   my ($class, $target) = @_;
   Moo->import::into($target);
   Types::Standard->import::into($target, qw( Any Bool Int Num Str ));
-  Moo::Role->apply_roles_to_package($target, 'API::Docker::Role::Type');
+  $CLASS_SUGAR{$target} = {
+    has     => $target->can('has'),
+    extends => $target->can('extends'),
+  };
   my $stash = Package::Stash->new($target);
   $stash->add_symbol('&docker'         => sub { $class->_docker($target, @_) });
   $stash->add_symbol('&docker_extends' => sub { $class->_docker_extends($target, @_) });
+  return;
+}
+
+# Compose API::Docker::Role::Type once, on the first DSL call the class makes.
+# Runtime, so it outlasts the class's `use namespace::clean`; idempotent, so
+# the second and later DSL calls are a cheap flag check.
+sub _ensure_role {
+  my ($target) = @_;
+  return if $CLASS_SUGAR{$target}{role_composed};
+  $CLASS_SUGAR{$target}{role_composed} = 1;
+  Moo::Role->apply_roles_to_package($target, 'API::Docker::Role::Type');
   return;
 }
 
@@ -421,6 +459,7 @@ sub _encode_value {
 
 sub _docker {
   my ($class, $target, $name, $type_spec, %opt) = @_;
+  _ensure_role($target);
   croak __PACKAGE__ . ": '$name' is not a snake_case attribute name"
     unless defined $name && $name =~ /\A[a-z][a-z0-9_]*\z/;
   croak __PACKAGE__ . ": '$name' in $target is a name this role already uses"
@@ -467,7 +506,7 @@ sub _docker {
   }
   API::Docker::Role::Type::_invalidate_docker_cache($target);
 
-  my $has = $target->can('has');
+  my $has = $CLASS_SUGAR{$target}{has} // $target->can('has');
   my $info = $REGISTRY{$target}{$name};
   $has->($name,
     is => 'rw',
@@ -479,10 +518,11 @@ sub _docker {
 
 sub _docker_extends {
   my ($class, $target, @parents) = @_;
+  _ensure_role($target);
   croak __PACKAGE__ . ": docker_extends in $target needs at least one class"
     unless @parents;
   my @full = map { use_module(_expand_class($_)) } @parents;
-  my $extends = $target->can('extends');
+  my $extends = $CLASS_SUGAR{$target}{extends} // $target->can('extends');
   $extends->(@full);
   API::Docker::Role::Type::_invalidate_docker_cache($target);
   return;

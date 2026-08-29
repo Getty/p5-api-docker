@@ -2,6 +2,16 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - Stop the generated `API::Docker::Type::*` classes, and `API::Docker`
+    itself, leaking their imported sugar as callable methods. `has`, `with`,
+    `extends`, `around`, `docker`, `docker_extends`, `Str`, `Int` and `Bool`
+    were all callable on an instance -- `$obj->Str` even returned a type
+    object; k82 had closed this on `Role::Type` but not on the 201 classes it
+    composes onto. The generator now emits `use namespace::clean` in every
+    class, and `API::Docker::Type` composes `Role::Type` on the first `docker`
+    call rather than at compile time, so the cleanup strips the sugar without
+    taking the role's own methods with it. A `t/type_model.t` check asserts
+    none of the sugar is callable on any generated class.
   - Declare a minimum Perl of `5.014` in `cpanfile`. The floor is the
     non-destructive substitution `s///r` in `API::Docker::Role::HTTP`, which
     needs 5.14 -- higher than the `//` the code also uses; nothing in `lib/`

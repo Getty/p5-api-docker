@@ -2,6 +2,7 @@ package API::Docker::Type::ServiceSpec::UpdateConfig;
 # ABSTRACT: Specification for the update strategy of the service
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

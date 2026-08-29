@@ -3,6 +3,7 @@ package API::Docker::Type::VolumeCreateOptions;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::ClusterVolumeSpec;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

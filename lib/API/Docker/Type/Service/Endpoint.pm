@@ -5,6 +5,7 @@ use API::Docker::Type;
 use API::Docker::Type::EndpointPortConfig;
 use API::Docker::Type::EndpointSpec;
 use API::Docker::Type::Service::Endpoint::VirtualIP;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

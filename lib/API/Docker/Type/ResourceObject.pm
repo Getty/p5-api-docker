@@ -3,6 +3,7 @@ package API::Docker::Type::ResourceObject;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::GenericResource;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

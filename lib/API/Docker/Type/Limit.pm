@@ -2,6 +2,7 @@ package API::Docker::Type::Limit;
 # ABSTRACT: An object describing a limit on resources which can be requested by a task
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

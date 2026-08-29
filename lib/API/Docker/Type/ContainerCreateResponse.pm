@@ -2,6 +2,7 @@ package API::Docker::Type::ContainerCreateResponse;
 # ABSTRACT: OK response to ContainerCreate operation
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

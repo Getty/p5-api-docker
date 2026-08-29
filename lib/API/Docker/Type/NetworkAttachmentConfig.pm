@@ -2,6 +2,7 @@ package API::Docker::Type::NetworkAttachmentConfig;
 # ABSTRACT: Specifies how a service should be attached to a particular network
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

@@ -2,6 +2,7 @@ package API::Docker::Type::TaskSpec::ContainerSpec::Secret::File;
 # ABSTRACT: A specific target that is backed by a file
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

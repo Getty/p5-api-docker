@@ -5,6 +5,7 @@ use API::Docker::Type;
 use API::Docker::Type::Address;
 use API::Docker::Type::EndpointSettings;
 use API::Docker::Type::PortBinding;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

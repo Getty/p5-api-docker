@@ -4,6 +4,7 @@ our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::ContainerStatus;
 use API::Docker::Type::PortStatus;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

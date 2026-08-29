@@ -8,6 +8,7 @@ use API::Docker::Type::Service::JobStatus;
 use API::Docker::Type::Service::ServiceStatus;
 use API::Docker::Type::Service::UpdateStatus;
 use API::Docker::Type::ServiceSpec;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

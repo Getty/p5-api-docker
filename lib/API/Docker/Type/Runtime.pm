@@ -2,6 +2,7 @@ package API::Docker::Type::Runtime;
 # ABSTRACT: An L<OCI compliant|https://github.com/opencontainers/runtime-spec> runtime
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

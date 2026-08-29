@@ -6,6 +6,7 @@ use API::Docker::Type::TaskSpec::ContainerSpec::Privileges::AppArmor;
 use API::Docker::Type::TaskSpec::ContainerSpec::Privileges::CredentialSpec;
 use API::Docker::Type::TaskSpec::ContainerSpec::Privileges::SELinuxContext;
 use API::Docker::Type::TaskSpec::ContainerSpec::Privileges::Seccomp;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

@@ -2,6 +2,7 @@ package API::Docker::Type::PluginDevice;
 # ABSTRACT: One entry of C<Plugin.Config.Linux.Devices>
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

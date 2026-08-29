@@ -2,6 +2,7 @@ package API::Docker::Type::ContainerSummary::HostConfig;
 # ABSTRACT: Summary of host-specific runtime information of the container
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

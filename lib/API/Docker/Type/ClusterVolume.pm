@@ -6,6 +6,7 @@ use API::Docker::Type::ClusterVolume::Info;
 use API::Docker::Type::ClusterVolume::PublishStatus;
 use API::Docker::Type::ClusterVolumeSpec;
 use API::Docker::Type::ObjectVersion;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

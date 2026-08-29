@@ -2,6 +2,7 @@ package API::Docker::Type::SystemInfo::DefaultAddressPool;
 # ABSTRACT: One entry of C<SystemInfo.DefaultAddressPools>
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

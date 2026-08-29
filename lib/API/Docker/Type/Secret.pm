@@ -4,6 +4,7 @@ our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::ObjectVersion;
 use API::Docker::Type::SecretSpec;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

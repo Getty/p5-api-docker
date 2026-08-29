@@ -3,6 +3,7 @@ package API::Docker::Type::ClusterVolumeSpec;
 our $VERSION = '0.004';
 use API::Docker::Type;
 use API::Docker::Type::ClusterVolumeSpec::AccessMode;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

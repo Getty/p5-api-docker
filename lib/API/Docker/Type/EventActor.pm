@@ -2,6 +2,7 @@ package API::Docker::Type::EventActor;
 # ABSTRACT: Actor describes something that generates events, like a container, network, or a volume
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 

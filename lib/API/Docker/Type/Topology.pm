@@ -2,6 +2,7 @@ package API::Docker::Type::Topology;
 # ABSTRACT: A map of topological domains to topological segments
 our $VERSION = '0.004';
 use API::Docker::Type;
+use namespace::clean;
 
 =head1 DESCRIPTION
 
