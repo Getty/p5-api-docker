@@ -1,0 +1,14 @@
+---
+class: standard
+completed: 2026-08-29T17:24:44Z
+created: 2026-08-28T16:55:47Z
+id: 109
+priority: medium
+started: 2026-08-29T17:24:44Z
+status: done
+title: 'Test-suite coverage gaps found in the 0.004 grill: create bodies never asserted,
+  three entity roles never invoked, Containers::update and Exec::create untested'
+updated: 2026-08-29T17:24:44Z
+---
+
+1) containers->create moves name into the query (Containers.pm) -- every mock exerciser registers a static route, none captures %opts, so a regression leaking name into the body passes the suite. Same for networks->create/volumes->create (only Name asserted), networks->connect/disconnect (bodies never checked), images->build (params t/dockerfile never asserted, t/images.t:194-215). 2) Role::Entity::Network (4 methods), ::Volume (2; forwards by name not id -- the one deviation, exactly what a smoke call catches), ::Image (4) are never invoked as $entity->method anywhere; t/entity_roles.t only checks can(). Container's kill/logs/pause/restart/top/stats/unpause likewise can()-only. 3) Containers::update and Exec::create have zero coverage; containers->kill/rename/prune, networks->prune, volumes->prune, exec->inspect are forwarding-only (t/timeout_forwarding.t). 4) t/networks.t:76-84 and t/images.t:269,272 use pass('... completed') after calls whose request/return is checkable. 5) Mutation: lowercasing every additionalProperties key in Type.pm's hash-coercion branch leaves t/type.t green -- the case-sensitive key test only uses a Hash<Str,Str> field that skips coercion; PortBindings is tested with lowercase keys only. 6) Mock.pm:272-279 interpolates the route key as an unescaped regex. api-docker-test-writer. None of these blocks 0.004 by itself; the first two are where a wrong body would go out unnoticed.
