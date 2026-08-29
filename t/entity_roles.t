@@ -215,4 +215,111 @@ subtest 'version_index reads through the generated ObjectVersion' => sub {
   }
 };
 
+# --- Smoke calls: each role's methods actually invoked, request asserted ---
+#
+# "every entity role reaches the generated classes of its resource" above
+# only proves can() -- that the method exists. None of it calls one, so a
+# role method that raised, forwarded the wrong id, or dropped its arguments
+# on the floor would not fail a single assertion in this file. These
+# subtests call every method of Network, Image and Volume (Container's own
+# gaps -- kill/logs/pause/restart/top/stats/unpause -- are in
+# t/entity_container.t beside its other forwarding coverage) and assert what
+# actually reached the mock route table: the path, and the body where the
+# method sends one.
+
+subtest 'network entity methods reach the daemon under its own id' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  my %seen;
+  my $docker = test_docker(
+    'GET /networks/net1'             => sub { $seen{inspect}++; return { Id => 'net1', Name => 'net1' } },
+    'DELETE /networks/net1'          => sub { $seen{remove}++; return undef },
+    'POST /networks/net1/connect'    => sub {
+      my ($method, $path, %opts) = @_;
+      $seen{connect} = $opts{body};
+      return undef;
+    },
+    'POST /networks/net1/disconnect' => sub {
+      my ($method, $path, %opts) = @_;
+      $seen{disconnect} = $opts{body};
+      return undef;
+    },
+  );
+
+  my $network = API::Docker::Type::Network->new(client => $docker, Id => 'net1');
+
+  $network->connect(Container => 'c1');
+  is_deeply $seen{connect}, { Container => 'c1' },
+    "connect posts the container id under the network's own id";
+
+  $network->disconnect(Container => 'c1', Force => 1);
+  is_deeply $seen{disconnect}, { Container => 'c1', Force => \1 },
+    'disconnect posts its body too, with Force normalised to a JSON boolean';
+
+  $network->remove;
+  ok $seen{remove}, "remove reached DELETE /networks/net1 -- the entity's own id";
+
+  my $fresh = $network->inspect;
+  isa_ok $fresh, 'API::Docker::Type::Network';
+  ok $seen{inspect}, 'inspect reached GET /networks/net1';
+};
+
+subtest 'image entity methods reach the daemon under its own id' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  my %seen;
+  my $docker = test_docker(
+    'GET /images/img1/json'    => sub { $seen{inspect}++; return { Id => 'img1' } },
+    'GET /images/img1/history' => sub { $seen{history}++; return []; },
+    'POST /images/img1/tag'    => sub {
+      my ($method, $path, %opts) = @_;
+      $seen{tag} = $opts{params};
+      return undef;
+    },
+    'DELETE /images/img1'      => sub { $seen{remove}++; return []; },
+  );
+
+  my $image = API::Docker::Type::ImageSummary->new(client => $docker, Id => 'img1');
+
+  my $full = $image->inspect;
+  isa_ok $full, 'API::Docker::Type::ImageInspect',
+    'inspect returns the OTHER shape, whatever the invocant was';
+  ok $seen{inspect}, "inspect reached GET /images/img1/json -- the entity's own id";
+
+  is_deeply $image->history, [], 'history reached GET /images/img1/history';
+  ok $seen{history}, 'and was actually requested';
+
+  $image->tag(repo => 'myrepo/app', tag => 'v1');
+  is_deeply $seen{tag}, { repo => 'myrepo/app', tag => 'v1' },
+    "tag posts to the image's own id with repo/tag as query params";
+
+  $image->remove(force => 1);
+  ok $seen{remove}, "remove reached DELETE /images/img1 -- the entity's own id";
+};
+
+subtest 'volume entity methods forward the NAME, not an id -- the one deviation' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  # Volume requires 'name' rather than 'id' (see API::Docker::Role::Entity::Volume
+  # /"The entity is addressed by name, not by id"). can() alone cannot tell a
+  # method that forwards the right identifier from one that forwards the
+  # wrong one -- both satisfy `requires 'name'` -- so this is the one place
+  # that deviation is actually exercised: the path itself has to carry the
+  # volume's name.
+  my %seen;
+  my $docker = test_docker(
+    'GET /volumes/my-data'    => sub { $seen{inspect}++; return { Name => 'my-data' } },
+    'DELETE /volumes/my-data' => sub { $seen{remove}++; return undef },
+  );
+
+  my $volume = API::Docker::Type::Volume->new(client => $docker, Name => 'my-data');
+
+  my $fresh = $volume->inspect;
+  isa_ok $fresh, 'API::Docker::Type::Volume';
+  ok $seen{inspect}, "inspect reached GET /volumes/my-data -- the volume's name";
+
+  $volume->remove(force => 1);
+  ok $seen{remove}, "remove reached DELETE /volumes/my-data -- the volume's name";
+};
+
 done_testing;

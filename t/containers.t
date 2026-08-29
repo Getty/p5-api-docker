@@ -4,6 +4,7 @@ use Test::More;
 use lib 't/lib';
 use Test::API::Docker::Mock;
 use API::Docker::Role::Entity::Container;
+use JSON::MaybeXS qw( encode_json );
 
 check_live_access();
 
@@ -53,8 +54,23 @@ subtest 'list containers' => sub {
 subtest 'container lifecycle' => sub {
   skip_unless_write();
 
+  my $name = 'api-docker-test-' . $$;
+
   my $docker = test_docker(
-    'POST /containers/create'         => { Id => 'mock123', Warnings => [] },
+    'POST /containers/create'         => sub {
+      my ($method, $path, %opts) = @_;
+      # containers->create moves `name` out of the config and into the
+      # query string (Containers.pm) -- the rest of the config is the JSON
+      # body. Assert both, so a regression that leaked `name` into the body
+      # instead (or dropped it from the query) would fail here rather than
+      # only being visible by reading the code.
+      is($opts{params}{name}, $name, 'the container name reached the query string')
+        unless is_live();
+      ok(!exists $opts{body}{name}, 'and never the JSON body') unless is_live();
+      is_deeply($opts{body}, { Image => 'alpine:3', Cmd => ['sleep', '10'] },
+        'the rest of the config is the body, name excepted') unless is_live();
+      return { Id => 'mock123', Warnings => [] };
+    },
     'POST /containers/mock123/start'  => undef,
     'GET /containers/mock123/json'    => load_fixture('container_inspect'),
     'GET /containers/mock123/top'     => {
@@ -82,7 +98,6 @@ subtest 'container lifecycle' => sub {
     $docker->images->pull(fromImage => 'alpine', tag => '3');
   }
 
-  my $name = 'api-docker-test-' . $$;
   my $created = $docker->containers->create(
     name  => $name,
     Image => 'alpine:3',
@@ -165,6 +180,87 @@ subtest 'a state change reports whether it changed anything' => sub {
   );
   is $container->start, 0, '$container->start reports the 304 too';
   is $container->stop, 1, 'and $container->stop the 204';
+};
+
+# --- Request-shape assertions for methods that previously had none ---
+
+subtest 'update sends resource limits and normalises its booleans' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  my $body;
+  my $docker = test_docker(
+    'POST /containers/deadbeef/update' => sub {
+      my ($method, $path, %opts) = @_;
+      $body = $opts{body};
+      return { Warnings => [] };
+    },
+  );
+
+  my $result = $docker->containers->update('deadbeef',
+    Memory         => 314572800,
+    Init           => 1,
+    OomKillDisable => 0,
+  );
+
+  is_deeply($result, { Warnings => [] }, 'the daemon response is returned unwrapped');
+  is($body->{Memory}, 314572800, 'the resource limit reached the body');
+  my $json = encode_json($body);
+  like($json, qr/"Init":true/, 'Init => 1 goes out as JSON true, k100\'s normalisation');
+  like($json, qr/"OomKillDisable":false/, 'OomKillDisable => 0 goes out as JSON false');
+  unlike($json, qr/"(?:Init|OomKillDisable)":[01]/,
+    'no bare 1/0 for either boolean field');
+};
+
+subtest 'kill sends its signal to the container\'s own endpoint' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  my $params;
+  my $docker = test_docker(
+    'POST /containers/deadbeef/kill' => sub {
+      my ($method, $path, %opts) = @_;
+      $params = $opts{params};
+      return undef;
+    },
+  );
+
+  $docker->containers->kill('deadbeef', signal => 'SIGUSR1');
+  is_deeply($params, { signal => 'SIGUSR1' }, 'the signal reached the query string');
+};
+
+subtest 'rename posts the new name as a query param' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  my $params;
+  my $docker = test_docker(
+    'POST /containers/deadbeef/rename' => sub {
+      my ($method, $path, %opts) = @_;
+      $params = $opts{params};
+      return undef;
+    },
+  );
+
+  $docker->containers->rename('deadbeef', 'new-name');
+  is_deeply($params, { name => 'new-name' },
+    'the new name reached the query string, not the body');
+};
+
+subtest 'prune sends its filters and returns the daemon response' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  my $params;
+  my $docker = test_docker(
+    'POST /containers/prune' => sub {
+      my ($method, $path, %opts) = @_;
+      $params = $opts{params};
+      return { ContainersDeleted => ['abc'], SpaceReclaimed => 100 };
+    },
+  );
+
+  my $result = $docker->containers->prune(filters => { until => ['24h'] });
+  is_deeply($result, { ContainersDeleted => ['abc'], SpaceReclaimed => 100 },
+    'the daemon response is returned unwrapped');
+  is_deeply($params->{filters}, { until => ['24h'] },
+    'the filters reached the query string, shape-normalised');
 };
 
 # --- Validation Tests (always run, no Docker needed) ---

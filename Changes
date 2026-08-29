@@ -2,6 +2,18 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - Close the test-coverage gaps the grill found. The `create` and `update`
+    request bodies (`containers`, `networks`, `volumes`, `exec`, and
+    `networks->connect`/`disconnect`) and the `images->build` query are now
+    captured off the mock route and asserted, so a field leaking into the
+    wrong place no longer passes unnoticed; the `Network`, `Image` and
+    `Volume` entity roles (and the container operations) are exercised as real
+    calls rather than `can()` checks; `Containers::update` and `Exec::create`
+    gain their first coverage (a new `t/exec.t`); and the `pass()`-only checks
+    become real assertions. It also fixes a mock-harness bug: the route table
+    interpolated a key as an unescaped regex, so a key holding a regex
+    metacharacter could match the wrong path -- it is now matched as a literal
+    (`t/mock_harness.t`).
   - Stop the generated `API::Docker::Type::*` classes, and `API::Docker`
     itself, leaking their imported sugar as callable methods. `has`, `with`,
     `extends`, `around`, `docker`, `docker_extends`, `Str`, `Int` and `Bool`

@@ -156,7 +156,9 @@ untouched.
 
 `test_docker('GET /images/json' => $fixture_or_coderef, ...)` returns a client
 whose `_request` dispatches against the route table (exact key first, then the
-key as a regex). A `GET /version` route is injected when none is given.
+key matched as a literal path -- it is `\Q..\E`-escaped, not a regex, so a
+metacharacter in a route key means itself). A `GET /version` route is injected
+when none is given.
 
 **In live mode `test_docker` ignores the routes entirely** and returns a real
 client against `$ENV{API_DOCKER_TEST_HOST}`. An assertion that only holds for

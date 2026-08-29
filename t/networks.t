@@ -44,10 +44,12 @@ subtest 'list networks' => sub {
 subtest 'network lifecycle' => sub {
   skip_unless_write();
 
+  my ($connect_body, $disconnect_body);
   my $docker = test_docker(
     'POST /networks/create' => sub {
       my ($method, $path, %opts) = @_;
-      is($opts{body}{Name}, 'test-net', 'network name in body') unless is_live();
+      is_deeply($opts{body}, { Name => 'test-net', Driver => 'bridge' },
+        'the full create body reached the daemon') unless is_live();
       return { Id => 'mock-net-123', Warning => '' };
     },
     'GET /networks/mock-net-123'             => {
@@ -57,8 +59,16 @@ subtest 'network lifecycle' => sub {
       Scope  => 'local',
       Labels => {},
     },
-    'POST /networks/mock-net-123/connect'    => undef,
-    'POST /networks/mock-net-123/disconnect' => undef,
+    'POST /networks/mock-net-123/connect'    => sub {
+      my ($method, $path, %opts) = @_;
+      $connect_body = $opts{body};
+      return undef;
+    },
+    'POST /networks/mock-net-123/disconnect' => sub {
+      my ($method, $path, %opts) = @_;
+      $disconnect_body = $opts{body};
+      return undef;
+    },
     'DELETE /networks/mock-net-123'          => undef,
   );
 
@@ -78,10 +88,12 @@ subtest 'network lifecycle' => sub {
 
   unless (is_live()) {
     $docker->networks->connect($id, Container => 'abc123');
-    pass('connect completed');
+    is_deeply($connect_body, { Container => 'abc123' },
+      'connect posted the container id in the request body');
 
-    $docker->networks->disconnect($id, Container => 'abc123');
-    pass('disconnect completed');
+    $docker->networks->disconnect($id, Container => 'abc123', Force => 1);
+    is_deeply($disconnect_body, { Container => 'abc123', Force => \1 },
+      'disconnect posted its body too, with Force normalised to a JSON boolean');
   }
 
   $docker->networks->remove($id);
@@ -105,6 +117,25 @@ subtest 'connect requires container' => sub {
 
   eval { $docker->networks->connect('net1') };
   like($@, qr/Container required/, 'croak on missing container for connect');
+};
+
+subtest 'prune sends its filters and returns the daemon response' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  my $params;
+  my $docker = test_docker(
+    'POST /networks/prune' => sub {
+      my ($method, $path, %opts) = @_;
+      $params = $opts{params};
+      return { NetworksDeleted => ['unused-net'] };
+    },
+  );
+
+  my $result = $docker->networks->prune(filters => { until => ['24h'] });
+  is_deeply($result, { NetworksDeleted => ['unused-net'] },
+    'the daemon response is returned unwrapped');
+  is_deeply($params->{filters}, { until => ['24h'] },
+    'the filters reached the query string, shape-normalised');
 };
 
 done_testing;

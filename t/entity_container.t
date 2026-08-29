@@ -157,4 +157,56 @@ subtest 'is_running reads whichever of the two shapes it is on' => sub {
     'inspect: no State at all is not running';
 };
 
+# "a method forwards the entity own id to the resource class" above covers
+# start/stop/remove/inspect; kill, logs, pause, restart, top, stats and
+# unpause were only ever proved with can() (karr k109). Call each and assert
+# what actually reached the mock route table.
+subtest 'the remaining container methods forward the entity own id too' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  my $multiplexed = load_fixture_raw('containers_logs_multiplexed.bin');
+
+  my %seen;
+  my $docker = test_docker(
+    'GET /containers/json'              => [ { Id => 'deadbeef', State => 'running' } ],
+    'POST /containers/deadbeef/kill'    => sub {
+      my ($method, $path, %opts) = @_;
+      $seen{kill} = $opts{params};
+      return undef;
+    },
+    'GET /containers/deadbeef/logs'     => sub { $multiplexed },
+    'POST /containers/deadbeef/pause'   => sub { $seen{pause}++;   return undef },
+    'POST /containers/deadbeef/restart' => sub { $seen{restart}++; return undef },
+    'GET /containers/deadbeef/top'      => { Titles => [], Processes => [] },
+    'GET /containers/deadbeef/stats'    => { cpu_stats => { cpu_usage => { total_usage => 1 } } },
+    'POST /containers/deadbeef/unpause' => sub { $seen{unpause}++; return undef },
+  );
+
+  my ($c) = @{ $docker->containers->list };
+
+  $c->kill(signal => 'SIGTERM');
+  is_deeply $seen{kill}, { signal => 'SIGTERM' },
+    "kill reached POST /containers/deadbeef/kill under the entity's own id";
+
+  is_deeply $c->logs, [
+    { stream => 'stdout', data => "OUT\n" },
+    { stream => 'stderr', data => "ERR\n" },
+  ], 'logs reached GET /containers/deadbeef/logs and demultiplexed the frames';
+
+  is $c->pause, 1, 'pause reached POST /containers/deadbeef/pause';
+  ok $seen{pause}, 'and was actually requested';
+
+  is $c->restart, 1, 'restart reached POST /containers/deadbeef/restart';
+  ok $seen{restart}, 'and was actually requested';
+
+  is_deeply $c->top, { Titles => [], Processes => [] },
+    'top reached GET /containers/deadbeef/top';
+
+  is_deeply $c->stats, { cpu_stats => { cpu_usage => { total_usage => 1 } } },
+    'stats reached GET /containers/deadbeef/stats';
+
+  is $c->unpause, 1, 'unpause reached POST /containers/deadbeef/unpause';
+  ok $seen{unpause}, 'and was actually requested';
+};
+
 done_testing;

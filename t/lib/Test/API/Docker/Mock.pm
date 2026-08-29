@@ -282,7 +282,15 @@ sub _mock_docker {
       for my $pattern (keys %routes) {
         my ($route_method, $route_path) = split /\s+/, $pattern, 2;
         next unless $method eq $route_method;
-        next unless $clean_path =~ m{^$route_path$};
+        # \Q...\E: $route_path is a literal path, not a regex a test author
+        # wrote on purpose -- interpolated unescaped, a route key containing
+        # a regex metacharacter (`.`, `?`, `+`, `(` ...) was read as a
+        # pattern rather than as the literal string it looks like, and could
+        # match a different path than the one it was registered for (or
+        # croak on an unbalanced `(`). This tier still tolerates only
+        # whitespace between method and path -- the exact-match branch above
+        # is the fast path for everything else. See t/mock_harness.t.
+        next unless $clean_path =~ m{^\Q$route_path\E$};
         $handler = $routes{$pattern};
         $matched = 1;
         last;

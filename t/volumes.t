@@ -49,7 +49,8 @@ subtest 'volume lifecycle' => sub {
   my $docker = test_docker(
     'POST /volumes/create' => sub {
       my ($method, $path, %opts) = @_;
-      is($opts{body}{Name}, 'test-vol', 'volume name in body') unless is_live();
+      is_deeply($opts{body}, { Name => 'test-vol' }, 'the full create body reached the daemon')
+        unless is_live();
       return {
         Name       => 'test-vol',
         Driver     => 'local',
@@ -97,6 +98,25 @@ subtest 'volume name required' => sub {
 
   eval { $docker->volumes->remove(undef) };
   like($@, qr/Volume name required/, 'croak on missing name for remove');
+};
+
+subtest 'prune sends its filters and returns the daemon response' => sub {
+  plan skip_all => 'route assertions are fixture-only' if is_live();
+
+  my $params;
+  my $docker = test_docker(
+    'POST /volumes/prune' => sub {
+      my ($method, $path, %opts) = @_;
+      $params = $opts{params};
+      return { VolumesDeleted => ['unused-vol'], SpaceReclaimed => 42 };
+    },
+  );
+
+  my $result = $docker->volumes->prune(filters => { label => ['stage=build'] });
+  is_deeply($result, { VolumesDeleted => ['unused-vol'], SpaceReclaimed => 42 },
+    'the daemon response is returned unwrapped');
+  is_deeply($params->{filters}, { label => ['stage=build'] },
+    'the filters reached the query string, shape-normalised');
 };
 
 done_testing;

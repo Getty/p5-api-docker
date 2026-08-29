@@ -203,19 +203,31 @@ subtest 'search images' => sub {
 subtest 'image build and pull lifecycle' => sub {
   skip_unless_write();
 
+  my ($pull_params, $tag_params);
   my $docker = test_docker(
     'POST /build' => sub {
       my ($method, $path, %opts) = @_;
       ok(defined $opts{raw_body}, 'raw_body present in request');
       is($opts{content_type}, 'application/x-tar', 'content type is tar');
       ok($opts{ndjson}, 'build asks for stream decoding');
+      # Never asserted before: build() only ever proved its own params by
+      # inspection of the code, not of what actually reached the mock route.
+      is($opts{params}{t}, 'myapp:latest',
+        'the build tag reaches the query string') unless is_live();
+      is($opts{params}{dockerfile}, 'Dockerfile',
+        'and so does the dockerfile path') unless is_live();
       return build_events();
     },
     'POST /images/create' => sub {
       my ($method, $path, %opts) = @_;
+      $pull_params = $opts{params};
       return '';
     },
-    'POST /images/nginx:latest/tag'  => undef,
+    'POST /images/nginx:latest/tag'  => sub {
+      my ($method, $path, %opts) = @_;
+      $tag_params = $opts{params};
+      return undef;
+    },
     'DELETE /images/nginx:latest'    => [
       { Untagged => 'nginx:latest' },
       { Deleted  => 'sha256:abc123' },
@@ -275,10 +287,12 @@ subtest 'image build and pull lifecycle' => sub {
     );
 
     $docker->images->pull(fromImage => 'nginx', tag => 'latest');
-    pass('pull completed');
+    is_deeply($pull_params, { fromImage => 'nginx', tag => 'latest' },
+      'pull sent fromImage and tag as query params');
 
     $docker->images->tag('nginx:latest', repo => 'myrepo/nginx', tag => 'v1');
-    pass('tag completed');
+    is_deeply($tag_params, { repo => 'myrepo/nginx', tag => 'v1' },
+      'tag sent repo and tag as query params, on the nginx:latest path');
 
     my $removed = $docker->images->remove('nginx:latest');
     is(ref $removed, 'ARRAY', 'remove returns array of actions');

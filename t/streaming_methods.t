@@ -487,9 +487,15 @@ subtest 'the entity classes forward the callback too' => sub {
   plan skip_all => 'live mode ignores the route table' if is_live();
 
   # containers_list (karr k101 follow-up): a real capture -- see t/containers.t.
+  # The logs route names the fixture's own container id exactly, rather than
+  # a [^/]+ wildcard: Test::API::Docker::Mock's fallback tier used to
+  # interpolate a route key as an unescaped regex, which is what made a
+  # wildcard like that "work" here by accident (karr k109, t/mock_harness.t)
+  # -- now that it is quotemeta'd, a route key means the literal path it
+  # looks like.
   my $docker = test_docker(
     'GET /containers/json' => load_fixture('containers_list'),
-    'GET /containers/[^/]+/logs' => [
+    'GET /containers/b20ac7508d80182ba3cd1cbd006ac10c8a15f4f7590fa89c2078d146caf96555/logs' => [
       { stream => 'stdout', data => "one\n" },
       { stream => 'stdout', data => "two\n" },
     ],

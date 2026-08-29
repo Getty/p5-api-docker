@@ -101,6 +101,30 @@ subtest 'caller-data keys survive in both directions' => sub {
     ['com.docker.network.bridge.name'], 'a network option name is not touched');
 };
 
+# The block above never actually exercises the coercion sub that runs a
+# hash-typed field's additionalProperties keys through _coerce_for's hash
+# branch (Type.pm): Labels et al are Hash<Str,Str>, whose scalar Str inner
+# needs no coercion, so _coerce_for returns undef for it and the hashref is
+# never touched by anything -- a coercion bug there would go uncaught no
+# matter what the keys look like. And PortBindings above, which IS of that
+# shape (its inner is an array of typed PortBinding objects, so a coerce sub
+# does run), is only ever given lowercase keys ('2377/tcp', '53/udp',
+# '80/tcp'), so a coercion that silently lower-cased every key on that path
+# would still leave this file green. Use PortBindings again, this time with
+# a key a lowercasing bug would visibly rewrite.
+subtest 'a mixed-case additionalProperties key survives the hash coercion branch'
+    => sub {
+  my $hc = API::Docker::Type::HostConfig->from_data({
+    PortBindings => {
+      '80/TCP' => [ { HostIp => '0.0.0.0', HostPort => '8080' } ],
+    },
+  });
+  is_deeply([ keys %{ $hc->port_bindings } ], ['80/TCP'],
+    'the mixed-case key survives the coercion that inflates its values');
+  is_deeply([ keys %{ $hc->TO_JSON->{PortBindings} } ], ['80/TCP'],
+    'and comes back out of TO_JSON exactly as written');
+};
+
 # ---------------------------------------------------------------------------
 # INVARIANT 2: a field the model has never heard of goes through unchanged.
 # A caller whose engine is newer than spec/v1.51.yaml must still reach the
