@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-08-29T17:46:46Z
+claimed_by: flow-rain
+class: standard
+completed: 2026-08-29T17:46:46Z
+created: 2026-08-29T16:01:23Z
+id: 113
+priority: low
+started: 2026-08-29T17:35:52Z
+status: done
+tags:
+- transport
+- robustness
+title: 'Harden HTTP response parsing: TE case-insensitive, validate status-line/Content-Length,
+  skip 1xx'
+updated: 2026-08-29T17:46:46Z
+---
+
+The 'related, lower' items surfaced fixing k107 (non-hex chunk header), deliberately left out of that pass to keep the Role::HTTP change surgical: (1) Transfer-Encoding is compared case-sensitively (eq 'chunked') at Role/HTTP.pm ~1324/1405 -- a value in other case ('Chunked') is not recognised as chunked and returns the raw framing; (2) the status line and Content-Length are checked for completeness/termination but not well-formedness (~1046/1330) -- a non-numeric Content-Length or a malformed status line runs through unchecked; (3) 1xx informational responses are not skipped. All three are robustness gaps against a non-conforming server/proxy, not observed against Docker or Podman. api-docker-worker.
+
+2026-08-29 17:42 Fixed all three in Role::HTTP (surgical, transport-internal only, no public signature/shape change; consumer p5-dist-zilla-plugin-docker-api uses only ->images/->new, unaffected). (1) TE compared via lc() in _read_body + _read_streaming_response. (2) _assert_status_line now also matches HTTP/x.y SP 3DIGIT [SP reason] and croaks Error::Truncated phase=status-line; new _assert_content_length croaks Error::Truncated phase=content-length on a non-numeric length (both call sites). (3) _read_head loops and skips 1xx. Regression tests: role_http.t (TE Chunked/CHUNKED dechunks, 1xx skipped buffered+streaming), truncated_response.t (malformed status line + non-numeric Content-Length croak, no warning). prove -lr t/ green (46 files, 754 tests). Changes entry left for maintainer.
