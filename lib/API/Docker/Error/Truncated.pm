@@ -36,7 +36,11 @@ L<API::Docker::Role::HTTP> croaks with an object of this class when the daemon
 closed the connection in the middle of a response -- a status line with no
 terminator, a header block with no blank line to close it, a body shorter than
 its C<Content-Length>, a chunk shorter than its own header, a chunk header cut
-in half, or a chunked body with no terminating zero chunk.
+in half, or a chunked body with no terminating zero chunk. It is raised in one
+more place that is not a closed connection but has the same consequence: a
+chunk size line that arrived in full and is not a hexadecimal number, which
+would otherwise be misread as a zero chunk and end the body early (see
+L</phase>).
 
 It is a structural check, not a heuristic, and it asks one of two questions
 depending on how the piece is delimited. Where the response announced a length
@@ -180,7 +184,12 @@ empty line whether there are twenty fields or none
 header announced
 
 =item * C<'chunk-header'> - the stream ended inside a chunk size line, or at a
-chunk boundary with no terminating zero chunk after it
+chunk boundary with no terminating zero chunk after it, or a chunk size line
+that arrived in full but is not a hexadecimal number. The last is not a cut
+response: the line is complete and terminated, but C<hex> would read its
+garbage as C<0> -- the terminating zero chunk -- so the body would silently
+come back empty. It is caught here because the outcome is the same body-shaped
+lie a truncation is, not because the connection went away
 
 =item * C<'chunk-data'> - the stream ended inside a chunk, short of the size
 that chunk's own header announced

@@ -1439,9 +1439,7 @@ sub _read_streaming_response {
   if ($headers->{'transfer-encoding'} && $headers->{'transfer-encoding'} eq 'chunked') {
     while ($more) {
       my $chunk_header = $self->_read_line($sock, $ctx);
-      $self->_assert_chunk_header($ctx, $chunk_header);
-      $chunk_header =~ s/\r?\n$//;
-      my $chunk_size = hex($chunk_header);
+      my $chunk_size   = $self->_assert_chunk_header($ctx, $chunk_header);
       last if $chunk_size == 0;
 
       my $read = 0;
@@ -1640,9 +1638,7 @@ sub _read_chunked {
 
   while (1) {
     my $chunk_header = $self->_read_line($sock, $ctx);
-    $self->_assert_chunk_header($ctx, $chunk_header);
-    $chunk_header =~ s/\r?\n$//;
-    my $chunk_size = hex($chunk_header);
+    my $chunk_size   = $self->_assert_chunk_header($ctx, $chunk_header);
     last if $chunk_size == 0;
 
     $self->_read_exact($sock, $chunk_size, \$body, $ctx, 'chunk-data',
@@ -1680,7 +1676,22 @@ sub _assert_chunk_header {
       . length($line) . ' byte' . (length($line) == 1 ? '' : 's') . ' of one')
     unless $line =~ /\n\z/;
 
-  return;
+  # The line arrived whole and terminated, and its size is not a hexadecimal
+  # number. Left to hex() that warns once and reads as 0 -- the terminating
+  # zero chunk -- so a 200 whose framing is corrupt used to come back as an
+  # empty body, the same body-shaped lie a truncation is. A chunk size is hex
+  # digits, optionally followed by a ';' extension (RFC 9112 section 7.1.1),
+  # which is read past and discarded; anything else is refused here rather than
+  # silently misread by the caller. The returned size is parsed from the same
+  # match, so hex() is called on nothing but hex digits and never has cause to
+  # warn on a legal extension either.
+  my ($size) = $line =~ /^([0-9A-Fa-f]+)(?:;.*)?\r?\n\z/;
+  $self->_croak_truncated($ctx, phase => 'chunk-header',
+    detail => "the chunk size line '" . ($line =~ s/\r?\n\z//r)
+      . "' is not a hexadecimal number")
+    unless defined $size;
+
+  return hex($size);
 }
 
 # Completeness only, never content: a terminator that arrived but is not CRLF
@@ -1698,8 +1709,21 @@ sub _assert_chunk_terminator {
 
 sub _uri_encode {
   my ($str) = @_;
-  $str =~ s/([^A-Za-z0-9\-_.~:\/])/sprintf("%%%02X", ord($1))/ge;
-  return $str;
+  # Escape a character string by its UTF-8 bytes ('ü' -> %C3%BC, not %FC), and
+  # a byte string as it stands. ord() on a character is not its wire byte: a
+  # name or tag typed under `use utf8`, or read through a :utf8 layer, arrives
+  # as characters and used to escape to a lone high byte or a bare codepoint
+  # (%FC, %4E2D) that is not UTF-8 at all. But the encoding cannot be
+  # unconditional: encode_json has already handed a HASH param (filters among
+  # them) its UTF-8 octets, and re-encoding those would double them
+  # (%C3%BC -> %C3%83%C2%BC). The utf8 flag is exactly that distinction -- on
+  # for a decoded string, off for encode_json's output -- so a copy is encoded
+  # only when it carries one, leaving the caller's own value untouched either
+  # way.
+  my $bytes = $str;
+  utf8::encode($bytes) if utf8::is_utf8($bytes);
+  $bytes =~ s/([^A-Za-z0-9\-_.~:\/])/sprintf("%%%02X", ord($1))/ge;
+  return $bytes;
 }
 
 sub get {

@@ -2,6 +2,28 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - `_uri_encode` now UTF-8-encodes a decoded character string before
+    percent-escaping it. A string from `use utf8` or a `:utf8` layer was
+    escaped a codepoint at a time -- `ü` became `%FC` and `中` `%4E2D`,
+    neither valid UTF-8 -- so `images->commit`, `images->search` and any
+    name or tag a caller typed as characters went out corrupt. The encode is
+    guarded on the string's utf8 flag, so a filter body `encode_json` already
+    emitted as UTF-8 bytes is left alone rather than double-encoded. Measured:
+    `ü` now goes out `%C3%BC`, `中` `%E4%B8%AD`.
+  - `negotiate_version` now croaks, naming `GET /version` and the expected
+    shape, when the body is not a JSON object carrying an `ApiVersion` of the
+    form `N.N`. A non-object body died with a raw strict-refs error, a body
+    without `ApiVersion` silently marked the version negotiated and sent every
+    later request unversioned, and an `ApiVersion` was copied into the path
+    with no shape check (`v1.44/../x` produced `GET /vv1.44/../x/info`) -- all
+    of these now fail with one clear message instead.
+  - A chunked response whose chunk-size line is not hexadecimal now croaks
+    `API::Docker::Error::Truncated` (phase `chunk-header`) instead of
+    returning an empty body. The line was `hex()`-ed unchecked: `ZZZ` warned
+    once, read as 0, and a 200 came back as `undef` -- corrupt framing passing
+    as an empty body. It is validated at the one seam the buffered and
+    streaming readers share, so a legal chunk extension (`5;foo=bar`) is now
+    read without the per-chunk warning it used to raise.
   - `from_data` now files a response key that merely spells an entity
     attribute (such as `client`) under `unknown_fields`, as its POD already
     promised, rather than routing it into the constructor. A non-reference

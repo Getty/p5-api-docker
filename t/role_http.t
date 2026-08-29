@@ -195,6 +195,26 @@ subtest '_uri_encode: what it escapes and what it leaves alone' => sub {
     '? and = are percent-encoded';
   is $encode->('100%'), '100%25', 'a literal percent sign is escaped itself';
   is $encode->("a\nb"), 'a%0Ab', 'control characters are escaped, not passed through';
+
+  # A character string -- what a name/tag/author/comment/search term arrives as
+  # under `use utf8` or through a :utf8 layer -- is escaped by its UTF-8 bytes,
+  # not by its codepoint. The old code took ord() of the character, so 'ü'
+  # became %FC (not even valid UTF-8) and '中' became %4E2D.
+  is $encode->("\x{4E2D}"), '%E4%B8%AD',
+    'a wide character is escaped by its UTF-8 bytes, not its codepoint';
+  {
+    my $u = "\x{00FC}";
+    utf8::upgrade($u); # what a decoded 'ü' is: codepoint 252, the utf8 flag on
+    is $encode->($u), '%C3%BC',
+      'a Latin-1 character with the utf8 flag is UTF-8 encoded before escaping';
+  }
+
+  # The other half, and the reason the encoding is not unconditional: a byte
+  # string is already octets and must be escaped as-is. encode_json hands a
+  # HASH param (filters among them) its UTF-8 bytes, and re-encoding those would
+  # turn %C3%BC into %C3%83%C2%BC -- trading this bug for a broader one.
+  is $encode->("\xC3\xBC"), '%C3%BC',
+    'a byte string of UTF-8 octets is escaped as-is, never double-encoded';
 };
 
 # ---------------------------------------------------------------------------

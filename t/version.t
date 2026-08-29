@@ -58,4 +58,61 @@ subtest 'auto-negotiate version' => sub {
   }
 };
 
+# negotiate_version reads GET /version and puts its ApiVersion straight into
+# every later request path (/v1.44/...). A body that is not a JSON object
+# carrying an ApiVersion of the form N.N used to fail in three measured ways
+# against a fake daemon: a non-object body died deep in strict refs ('garbage'
+# -> "Can't use string as a HASH ref", [1] -> "Not a HASH reference"); an
+# object with no ApiVersion silently left the client sending every request
+# unversioned; and an ApiVersion copied verbatim let 'v1.44/../x' become
+# GET /vv1.44/../x/info. All four now croak, naming the endpoint and the shape.
+{
+  package Test::Version::Canned;
+  use Moo;
+  extends 'API::Docker';
+  has canned => (is => 'ro');
+  sub _request { return $_[0]->canned }
+}
+
+sub negotiate_with {
+  my ($canned) = @_;
+  my $c = Test::Version::Canned->new(
+    host   => 'unix:///nonexistent.sock',
+    canned => $canned,
+  );
+  my $ok = eval { $c->negotiate_version; 1 };
+  return ($ok ? undef : $@, $c);
+}
+
+subtest 'a /version body that is not a versioned object croaks' => sub {
+  return plan skip_all => 'not a negotiation exercise against a live daemon'
+    if is_live();
+
+  for my $case (
+    [ 'a bare string',            'garbage',                  qr/HASH ref|strict refs/ ],
+    [ 'an array reference',       [1],                        qr/Not a HASH reference/ ],
+    [ 'undef',                    undef,                      undef ],
+    [ 'an object with no ApiVersion', { Version => '29.7.2' }, undef ],
+    [ 'an ApiVersion that is not N.N', { ApiVersion => 'v1.44/../x' }, undef ],
+  ) {
+    my ($label, $body, $old_pattern) = @$case;
+    my ($err) = negotiate_with($body);
+    ok $err, "$label: negotiate_version croaks rather than proceeding";
+    like $err, qr{GET /version}, "$label: the message names the endpoint";
+    like $err, qr/ApiVersion/, "$label: and the shape it expected";
+    unlike $err, $old_pattern, "$label: not the old strict-refs death"
+      if defined $old_pattern;
+  }
+};
+
+subtest 'a well-formed /version body negotiates as before' => sub {
+  return plan skip_all => 'pinned api_version short-circuits under live'
+    if is_live();
+
+  my ($err, $c) = negotiate_with({ ApiVersion => '1.44' });
+  is $err, undef, 'a JSON object with an N.N ApiVersion raises nothing'
+    or diag "raised: $err";
+  is $c->api_version, '1.44', 'and the version is adopted';
+};
+
 done_testing;

@@ -521,10 +521,43 @@ sub negotiate_version {
     exists $opts{read_timeout} ? ( read_timeout => $opts{read_timeout} ) : (),
     exists $opts{connect_timeout} ? ( connect_timeout => $opts{connect_timeout} ) : (),
   );
-  if ($version_info && $version_info->{ApiVersion}) {
-    $self->_set_api_version($version_info->{ApiVersion});
-    $log->debugf("Negotiated API version: %s", $version_info->{ApiVersion});
+
+  # The ApiVersion is put straight into every later request path (/v1.44/...),
+  # so it has to be a JSON object carrying one of the form N.N -- nothing else
+  # can be trusted there. Three ways a body fails that, each measured against a
+  # fake daemon: a non-object body reached strict refs ('garbage' died with
+  # "Can't use string as a HASH ref", [1] with "Not a HASH reference"); an
+  # object with no ApiVersion set _version_negotiated and then sent every
+  # request unversioned; and an ApiVersion copied verbatim let 'v1.44/../x'
+  # become "GET /vv1.44/../x/info". One croak, naming the endpoint and the
+  # shape, covers all of them.
+  my $got;
+  if (!defined $version_info) {
+    $got = 'nothing';
   }
+  elsif (ref $version_info ne 'HASH') {
+    $got = ref $version_info ? 'a ' . ref($version_info) . ' reference'
+      : "the non-object body '" . $version_info . "'";
+  }
+  elsif (!defined $version_info->{ApiVersion}) {
+    $got = 'an object with no ApiVersion field';
+  }
+  else {
+    my $v = $version_info->{ApiVersion};
+    $got = 'an ApiVersion of '
+      . (ref $v ? 'a ' . ref($v) . ' reference' : "'" . $v . "'");
+  }
+
+  croak __PACKAGE__ . '->negotiate_version: GET /version must answer with a '
+    . 'JSON object carrying an ApiVersion of the form N.N (e.g. "1.44"); got '
+    . $got
+    unless ref $version_info eq 'HASH'
+      && defined $version_info->{ApiVersion}
+      && !ref $version_info->{ApiVersion}
+      && $version_info->{ApiVersion} =~ /^\d+\.\d+$/;
+
+  $self->_set_api_version($version_info->{ApiVersion});
+  $log->debugf("Negotiated API version: %s", $version_info->{ApiVersion});
   $self->_version_negotiated(1);
 }
 
@@ -539,6 +572,16 @@ is not set.
 
 After negotiation, L</api_version> will contain the negotiated version
 (e.g., C<1.41>).
+
+C<GET /version> must answer with a JSON object carrying an C<ApiVersion> of
+the form C<N.N> -- the value is placed directly into the path of every later
+request (C</v1.44/...>). A body that is not such an object croaks, naming the
+endpoint and the shape expected: a non-object body, an object with no
+C<ApiVersion>, or an C<ApiVersion> that is not two dot-separated numbers. This
+replaces three earlier failures on the same path -- a non-object body dying in
+C<strict refs>, an object with no C<ApiVersion> silently leaving the client
+sending every request unversioned, and a malformed C<ApiVersion> being copied
+verbatim into the request path.
 
 Options:
 

@@ -42,6 +42,9 @@ sub _request {
   # Shaped only so the method under test can finish. What it does with the
   # answer is asserted elsewhere; the option list it built is what matters
   # here. The container inspect is attach()'s running-check pre-flight.
+  # /version must carry a well-formed ApiVersion, or negotiate_version croaks
+  # before the recorded call can be asserted.
+  return { ApiVersion => '1.41' } if $path eq '/version';
   return { State => { Running => 1 } } if $path =~ m{^/containers/[^/]+/json$};
   return { Volumes => [] }             if $path eq '/volumes';
   return []

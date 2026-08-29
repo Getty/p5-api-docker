@@ -178,6 +178,41 @@ subtest 'a chunk whose data arrived but whose CRLF did not' => sub {
     message  => qr/before the CRLF that terminates a chunk/;
 };
 
+# Not truncation but the same danger: a chunk size line that arrived whole and
+# terminated, and is not a hexadecimal number. hex('ZZZ') is 0, which reads as
+# the terminating zero chunk, so the reader used to hand back the chunks before
+# it as the whole response -- a 200 whose corrupt framing came back as an empty
+# body, one warning ("Illegal hexadecimal digit Z ignored") the only trace.
+subtest 'a chunk size that is not hexadecimal is refused, not read as zero'
+  => sub {
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+  my ($err) = over_pair(
+    "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nZZZ\r\nhello\r\n0\r\n\r\n",
+    sub { $client->_read_response($_[0], 'GET', {}) });
+
+  isa_ok $err, 'API::Docker::Error::Truncated';
+  is $err && $err->phase, 'chunk-header', 'phase: chunk-header';
+  like $err && "$err", qr/not a hexadecimal number/,
+    'the message says the size line was not a hex number';
+  is_deeply \@warnings, [], 'and hex() is never reached to warn about it';
+};
+
+# The streaming path shares the same size-line check, so it refuses the same
+# garbage rather than delivering an empty stream.
+subtest 'the streaming reader refuses a non-hexadecimal chunk size too'
+  => sub {
+  my $handler = $client->_stream_handler('GET /v1.41/events', 'on_event',
+    sub { }, 0);
+  my ($err) = over_pair(
+    "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nZZZ\r\nhello\r\n0\r\n\r\n",
+    sub { $client->_read_streaming_response($_[0], 'GET', $handler, {}) });
+
+  isa_ok $err, 'API::Docker::Error::Truncated';
+  is $err && $err->phase, 'chunk-header', 'phase: chunk-header';
+  like $err && "$err", qr/not a hexadecimal number/, 'same complaint';
+};
+
 # ---------------------------------------------------------------------------
 # The head, which announces nothing and is framed all the same (karr k73)
 # ---------------------------------------------------------------------------
@@ -429,6 +464,24 @@ subtest 'a complete chunked response is unaffected' => sub {
   my $got = eval { $c->get('/containers/abc/json') };
   is $@, '', 'nothing raised' or diag "raised: $@";
   is_deeply $got, { Id => 'abc' }, 'the chunks are reassembled and decoded';
+  close $c->peer;
+};
+
+subtest 'a chunk header with a legal extension is read, and does not warn'
+  => sub {
+  # A chunk size may carry a ';'-delimited extension (RFC 9112 section 7.1.1).
+  # The size is read past it; the extension is discarded. It used to be handed
+  # to hex() whole, which read the right size but warned once per chunk
+  # ("Illegal hexadecimal digit ; ignored").
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+  my $c = client_for("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+    . "6;foo=bar\r\n{\"Id\":\r\n" . "7;x\r\n\"abc\"}\r\n" . "0\r\n\r\n");
+  my $got = eval { $c->get('/containers/abc/json') };
+  is $@, '', 'nothing raised' or diag "raised: $@";
+  is_deeply $got, { Id => 'abc' },
+    'the size is read past the extension and the chunks decode';
+  is_deeply \@warnings, [], 'and no hexadecimal-digit warning is emitted';
   close $c->peer;
 };
 
