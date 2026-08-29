@@ -402,12 +402,33 @@ path, collect it in the callback instead:
 
 =cut
 
+# The tag query parameter is not a default to hand out unconditionally: the
+# engine appends it to whatever reference `fromImage` already carries. Docker
+# lets tag take precedence and silently rewrites `nginx:1.25` to `nginx:latest`
+# (a wrong image, reported as success); Podman concatenates to
+# `nginx:1.25:latest` and answers 500 `invalid reference format`. A digest
+# reference breaks the same way on both. So `tag` is defaulted only when the
+# reference carries neither -- a `:tag` in the segment after the last `/`, or an
+# `@digest` anywhere. The colon in a registry `host:port/` is before that
+# segment, so it is not mistaken for a tag.
+sub _reference_has_tag_or_digest {
+  my ($self, $ref) = @_;
+  return 1 if $ref =~ /\@/;
+  my ($last_segment) = $ref =~ m{([^/]*)\z};
+  return $last_segment =~ /:/ ? 1 : 0;
+}
+
 sub pull {
   my ($self, %opts) = @_;
   croak "fromImage required" unless $opts{fromImage};
   my %params;
   $params{fromImage} = $opts{fromImage};
-  $params{tag}       = $opts{tag} // 'latest';
+  if (defined $opts{tag}) {
+    $params{tag} = $opts{tag};
+  }
+  elsif (!$self->_reference_has_tag_or_digest($opts{fromImage})) {
+    $params{tag} = 'latest';
+  }
   return $self->client->post('/images/create', undef,
     params => \%params,
     %{ $self->_request_options },
@@ -418,8 +439,21 @@ sub pull {
 =method pull
 
     my $events = $images->pull(fromImage => 'nginx', tag => 'latest');
+    my $events = $images->pull(fromImage => 'nginx:1.25');   # tag rides in the name
+    my $events = $images->pull(fromImage => 'alpine@sha256:...');  # by digest
 
-Pull an image from a registry. C<tag> defaults to C<latest>.
+Pull an image from a registry.
+
+C<tag> defaults to C<latest> B<only when C<fromImage> carries no tag or digest
+of its own>. The engine appends C<tag> to the reference rather than treating it
+as a fallback, so defaulting it onto an already-qualified name breaks the pull:
+measured against Docker 29.7.2 (API 1.55) C<< pull(fromImage => 'nginx:1.25')
+>> would silently fetch C<nginx:latest> and report success, and against Podman
+5.8.4 (compat API 1.44) the same request answers C<500 invalid reference
+format> for C<nginx:1.25:latest>. A digest reference breaks the same way on
+both. So C<tag> is sent only if given explicitly, or defaulted to C<latest>
+when the name carries neither a C<:tag> (in the segment after the last C</>)
+nor an C<@digest>. A registry C<host:port/> prefix is not mistaken for a tag.
 
 Returns an ArrayRef of progress events, one per object in the engine's
 newline-delimited JSON stream, even when the stream carried a single object.
@@ -455,7 +489,8 @@ Options:
 
 =item * C<fromImage> - Image name to pull (required)
 
-=item * C<tag> - Tag to pull (default C<latest>)
+=item * C<tag> - Tag to pull. Defaulted to C<latest> only when C<fromImage>
+carries no tag or digest of its own; see above
 
 =item * C<on_event> - CodeRef called with each progress event as it arrives,
 instead of the ArrayRef being collected and returned. The return value is then

@@ -9,6 +9,10 @@ check_live_access();
 
 # --- Read Tests (always run) ---
 
+# containers_list/container_inspect are still hand-rolled, not captured: at
+# recapture time (karr k101) no container existed on either engine reachable
+# from this machine, and creating one only to capture it was out of bounds
+# for that task. See the header of t/type_fixture_passthrough.t.
 subtest 'list containers' => sub {
   my $docker = test_docker(
     'GET /containers/json' => load_fixture('containers_list'),

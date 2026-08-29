@@ -2,6 +2,35 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - Five of the eight `t/fixtures/*.json` fixtures the test suite claimed
+    were captured daemon output were hand-typed instead -- a hex-looking Id
+    ending in non-hex characters, a ParentId padded to 64 characters, round
+    timestamps, invented names, and every one of them inflating with empty
+    `unknown_fields`/`rejected_fields` because they were written against the
+    open swagger, not a socket. `images_list.json` and `networks_list.json`
+    are now real captures against Podman 5.8.4 (compat API 1.44) and Docker
+    Engine Community 29.7.2 (API 1.55) respectively; `system_info.json` and
+    `system_version.json` against the same Docker (its `Name` redacted to
+    `docker-host` so a real hostname does not ship). `containers_list.json`,
+    `container_inspect.json` and `volumes_list.json` stay hand-rolled --
+    neither engine had a container or a volume to capture from, and
+    creating one only to capture it was out of bounds for this pass. See
+    the header of `t/type_fixture_passthrough.t` for the open gap and
+    `t/lib/Test/API/Docker/Mock.pm` for a second, adjacent fix this forced:
+    the mock's `api_version` was pinned to `'1.47'` only because the old
+    `system_version.json` happened to say `1.47` too, which is now `1.55`
+    to match the real fixture instead of the other way round.
+  - `images->pull` no longer defaults `tag` to `latest` onto a reference
+    that already carries one. The engine appends the query `tag` to the
+    name rather than treating it as a fallback: measured against Docker
+    29.7.2 (API 1.55) `pull(fromImage => 'nginx:1.25')` silently pulled
+    `nginx:latest` and reported success, and against Podman 5.8.4 (compat
+    API 1.44) the same call answered 500 `invalid reference format` for
+    `nginx:1.25:latest`; a digest reference broke the same way on both.
+    `tag` is now sent only when given explicitly, or defaulted when the
+    name carries neither a `:tag` (in the segment after the last `/`) nor
+    an `@digest` -- a registry `host:port/` prefix is not mistaken for a
+    tag.
   - JSON request bodies now send booleans as real JSON `true`/`false`
     instead of the Perl `1`/`0` a caller passes. The engine type-checks
     the body and rejects a number for a boolean field: measured

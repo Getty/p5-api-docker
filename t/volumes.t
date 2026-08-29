@@ -8,6 +8,10 @@ check_live_access();
 
 # --- Read Tests (always run) ---
 
+# volumes_list is still hand-rolled, not captured: at recapture time (karr
+# k101) no volume existed on either engine reachable from this machine, and
+# creating one only to capture it was out of bounds for that task. See the
+# header of t/type_fixture_passthrough.t.
 subtest 'list volumes' => sub {
   my $docker = test_docker(
     'GET /volumes' => load_fixture('volumes_list'),

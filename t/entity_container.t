@@ -44,6 +44,8 @@ subtest 'both container shapes carry the same methods' => sub {
 subtest 'the generated classes are still the model, not a wrapper around it' => sub {
   plan skip_all => 'fixture-only' if is_live();
 
+  # containers_list/container_inspect are still hand-rolled, not captured --
+  # see t/containers.t.
   my $docker = test_docker(
     'GET /containers/json'          => load_fixture('containers_list'),
     'GET /containers/abc123def456/json' => load_fixture('container_inspect'),

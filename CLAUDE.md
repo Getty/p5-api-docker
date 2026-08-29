@@ -118,7 +118,8 @@ maint/spec-drift-exceptions.yaml        # deliberate deviations the drift checke
 spec/v1.41.yaml, v1.44.yaml, v1.51.yaml # Docker's own swagger, checked in; generation runs against v1.51
 t/                                      # tests (prove -lr t/)
 t/lib/Test/API/Docker/Mock.pm           # fixture-driven mock helper
-t/fixtures/*.json                       # captured daemon responses
+t/fixtures/*.json                       # captured daemon responses -- three
+                                         # still owe a capture, see karr k101
 .claude/agents/                         # the api-docker-* subagents
 .claude/rules/api-docker-rules.md       # house rules, auto-loaded every turn
 .claude/skills/                         # briefed skills (hardlinked + owned)

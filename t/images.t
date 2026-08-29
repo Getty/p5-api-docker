@@ -64,6 +64,12 @@ subtest '_live_image_name picks a tag, falling back to id' => sub {
 
 # --- Read Tests (always run) ---
 
+# Captured 2026-08-28 (karr k101) against Podman 5.8.4 (Docker-compat API
+# 1.44): GET /images/json on this host's real engine, unmodified -- five
+# entries because that engine had five images at capture time, two of them
+# untagged buildah layers with no RepoTags. See
+# t/type_fixture_passthrough.t's "unknown-field regression" subtest for what
+# this engine sends beyond the swagger (Digest/History/Names/Dangling).
 subtest 'list images' => sub {
   my $docker = test_docker(
     'GET /images/json' => load_fixture('images_list'),
@@ -78,13 +84,16 @@ subtest 'list images' => sub {
   }
 
   unless (is_live()) {
-    is(scalar @$images, 2, 'two images');
+    is(scalar @$images, 5, 'five images');
 
-    my $first = $images->[0];
-    like($first->id, qr/^sha256:abc123/, 'image id');
-    is_deeply($first->repo_tags, ['nginx:latest', 'nginx:1.25'], 'repo tags');
-    is($first->size, 187654321, 'image size');
-    is($first->containers, 2, 'container count');
+    my ($alpine) = grep { grep { /alpine/ } @{ $_->repo_tags } } @$images;
+    ok $alpine, 'the tagged alpine image is in the list';
+    like($alpine->id, qr/^sha256:d529dd0c/, 'image id');
+    is_deeply($alpine->repo_tags,
+      ['docker.io/library/alpine:3', 'docker.io/library/alpine:latest'],
+      'repo tags');
+    is($alpine->size, 8709729, 'image size');
+    is($alpine->containers, 0, 'container count');
   }
 };
 
@@ -293,6 +302,47 @@ subtest 'image name required' => sub {
 
   eval { $docker->images->remove(undef) };
   like($@, qr/Image name required/, 'croak on missing name for remove');
+};
+
+# k99: `tag` must not be defaulted onto a reference that already carries one.
+# The engine appends it -- Docker rewrites nginx:1.25 to nginx:latest and
+# reports success, Podman 500s on nginx:1.25:latest. Prove which query goes out
+# for each case by capturing the params off the mock route table. Returning ''
+# gives pull's ndjson decode an empty stream, which comes back as [].
+subtest 'pull only defaults tag when the reference has none' => sub {
+  my $captured;
+  my $docker = test_docker(
+    'POST /images/create' => sub {
+      my ($method, $path, %opts) = @_;
+      $captured = $opts{params};
+      return '';
+    },
+  );
+
+  # (c) bare name -> tag=latest kept
+  $docker->images->pull(fromImage => 'nginx');
+  is($captured->{tag}, 'latest', 'bare name defaults tag to latest');
+
+  # (a) name already tagged -> no tag appended
+  $docker->images->pull(fromImage => 'nginx:1.25');
+  ok(!exists $captured->{tag}, 'tagged reference sends no tag param');
+  is($captured->{fromImage}, 'nginx:1.25', 'tagged reference passes through');
+
+  # (b) digest reference -> no tag appended
+  $docker->images->pull(fromImage => 'alpine@sha256:'.('0' x 64));
+  ok(!exists $captured->{tag}, 'digest reference sends no tag param');
+
+  # (d) explicit tag is respected even on a bare name
+  $docker->images->pull(fromImage => 'nginx', tag => 'x');
+  is($captured->{tag}, 'x', 'explicit tag is respected');
+
+  # registry host:port/ prefix is not a tag -> still defaults to latest
+  $docker->images->pull(fromImage => 'localhost:5000/foo');
+  is($captured->{tag}, 'latest', 'registry port colon is not mistaken for a tag');
+
+  # a tag after the registry port still suppresses the default
+  $docker->images->pull(fromImage => 'localhost:5000/foo:1.25');
+  ok(!exists $captured->{tag}, 'tag after a registry port sends no tag param');
 };
 
 done_testing;

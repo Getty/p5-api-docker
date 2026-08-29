@@ -8,6 +8,10 @@ check_live_access();
 
 # --- Read Tests (always run) ---
 
+# Captured 2026-08-28 (karr k101) against Docker Engine Community 29.7.2
+# (API 1.55): GET /networks on this host's real engine, unmodified -- three
+# entries (none/host/bridge) because that is the whole list a fresh install
+# starts with; none were created for this capture.
 subtest 'list networks' => sub {
   my $docker = test_docker(
     'GET /networks' => load_fixture('networks_list'),
@@ -22,14 +26,14 @@ subtest 'list networks' => sub {
   }
 
   unless (is_live()) {
-    is(scalar @$networks, 2, 'two networks');
+    is(scalar @$networks, 3, 'three networks');
 
-    my $first = $networks->[0];
-    is($first->name, 'bridge', 'network name');
-    is($first->driver, 'bridge', 'network driver');
-    is($first->scope, 'local', 'network scope');
-    ok(!$first->internal, 'not internal');
-    is($first->ipam->config->[0]->subnet, '172.17.0.0/16',
+    my ($bridge) = grep { $_->name eq 'bridge' } @$networks;
+    ok $bridge, 'the bridge network is in the list';
+    is($bridge->driver, 'bridge', 'network driver');
+    is($bridge->scope, 'local', 'network scope');
+    ok(!$bridge->internal, 'not internal');
+    is($bridge->ipam->config->[0]->subnet, '172.17.0.0/16',
       'and IPAM is inflated into its own generated classes rather than '
       . 'staying the raw HashRef the old entity kept');
   }

@@ -249,9 +249,19 @@ sub _mock_docker {
 
   require API::Docker;
 
+  # Pinned rather than left to negotiate: setting api_version here means
+  # negotiate_version's own guard ("return if defined $self->api_version",
+  # API::Docker.pm) short-circuits for every mocked client, so this number
+  # is never actually read off the injected 'GET /version' route -- it is
+  # read back as-is by anything that asserts $docker->api_version (only
+  # t/version.t does). Kept equal to t/fixtures/system_version.json's own
+  # ApiVersion (karr k101: Docker Engine Community 29.7.2, API 1.55) so the
+  # two do not silently drift apart the way they did when the fixture was
+  # hand-rolled at '1.47' to match this literal instead of the other way
+  # round.
   my $docker = API::Docker->new(
     host        => 'unix:///var/run/docker.sock',
-    api_version => '1.47',
+    api_version => '1.55',
   );
 
   my $mock_request = sub {

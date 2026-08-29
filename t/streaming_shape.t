@@ -175,6 +175,11 @@ SKIP: {
   };
 
   subtest 'the single-object endpoints still return a HashRef' => sub {
+    # images_list (karr k101): a real Podman 5.8.4 (API 1.44) capture, see
+    # t/images.t. container_inspect: still hand-rolled -- no container
+    # existed on either engine to capture from, see the header of
+    # t/type_fixture_passthrough.t. Neither fact matters here: this
+    # subtest only checks the returned class, not fixture content.
     my $docker = test_docker(
       'GET /images/nginx/json' => load_fixture('images_list')->[0],
       'GET /containers/deadbeef/json' => load_fixture('container_inspect'),

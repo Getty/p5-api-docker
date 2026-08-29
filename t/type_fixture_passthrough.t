@@ -19,6 +19,25 @@ use API::Docker::Type::VolumeListResponse;
 # author wrote. TO_JSON of the inflated object must carry every key the
 # fixture had: nothing dropped, nothing renamed.
 #
+# karr k101: that claim did not hold. Seven of these eight fixtures were
+# hand-typed -- a hex-looking Id ending "...defg" (g/h are not hex),
+# a ParentId padded out to 64 characters, timestamps rounded to the hour,
+# invented names ("my-container", "test-host") -- and every one of them
+# inflated with empty unknown_fields/rejected_fields because they were
+# written against the open swagger rather than against a socket.
+# images_list.json, networks_list.json, system_info.json and
+# system_version.json are now real captures; the "Measured"/"Captured"
+# comment at each fixture's load_fixture() call site (t/images.t,
+# t/networks.t, t/system.t, t/version.t) names which engine and API version
+# each came from. containers_list.json, container_inspect.json and
+# volumes_list.json are still hand-rolled: at capture time neither engine
+# reachable from this machine had a container or a volume to capture from
+# (`containers/json?all=1` and `volumes` both answered empty, on Docker
+# 29.7.2 and on Podman 5.8.4), and creating one only to capture it is outside
+# what this task may do -- read-only endpoints against existing resources
+# only. That gap is open, not closed; see karr k101. secrets_list.json
+# (2d5a50c) was already a real capture and stays as it was.
+#
 # karr k93: at every depth, and with one named exception. The comparison used
 # to be `keys %$item` -- the top level of each object only -- which is why the
 # two nulls the fixtures actually contain sat unexamined below it. A known
@@ -68,14 +87,44 @@ my @CASES = (
 
 # The whole list of keys the round trip is allowed to lose, written out here
 # rather than derived from what the run happens to produce -- a set the test
-# computes from the model is a set the test cannot be wrong about. Both are
-# a known field the engine sent as null: Network's IPAM.Options and
-# SecretSpec's Labels. The assertion at the end is is_deeply against this,
-# so a third one appearing is red, and so is one of these two ceasing to
-# drop -- which is what changing the null rule would look like.
+# computes from the model is a set the test cannot be wrong about. Every
+# entry is a known field the engine itself sent as an explicit null; the
+# assertion at the end is is_deeply against this, so a new one appearing is
+# red, and so is one of these ceasing to drop -- which is what changing the
+# null rule would look like. Recaptured 2026-08-28 (karr k101) against
+# Docker 29.7.2 (API 1.55) for networks_list/system_info and Podman 5.8.4
+# (compat API 1.44) for images_list -- see the load_fixture() call sites in
+# t/images.t, t/networks.t and t/system.t for detail:
+#   images_list[2..4]/Labels     -- Podman answers Labels: null on a tagged
+#                                    image that carries no label, where
+#                                    Docker answers {}
+#   networks_list[0,1]/IPAM/Config,
+#   networks_list[0..2]/IPAM/Options
+#                                 -- Docker's "none" and "host" networks
+#                                    carry no IPAM config at all; every one
+#                                    of the three ships IPAM.Options: null
+#   secrets_list[1]/Spec/Labels   -- unchanged, predates this recapture
+#   system_info[0]/GenericResources,
+#   system_info[0]/Plugins/Authorization,
+#   system_info[0]/Swarm/RemoteManagers,
+#   system_info[0]/Warnings
+#                                 -- this engine has none of the four to
+#                                    report and sends null rather than [] or
+#                                    {} for each
 my @EXPECTED_NULL_DROPS = (
+  'images_list[2]/Labels',
+  'images_list[3]/Labels',
+  'images_list[4]/Labels',
+  'networks_list[0]/IPAM/Config',
   'networks_list[0]/IPAM/Options',
+  'networks_list[1]/IPAM/Config',
+  'networks_list[1]/IPAM/Options',
+  'networks_list[2]/IPAM/Options',
   'secrets_list[1]/Spec/Labels',
+  'system_info[0]/GenericResources',
+  'system_info[0]/Plugins/Authorization',
+  'system_info[0]/Swarm/RemoteManagers',
+  'system_info[0]/Warnings',
 );
 
 # --- the comparison ---------------------------------------------------------
@@ -248,8 +297,9 @@ subtest 'the deepened comparison sees what the flat one could not' => sub {
     'networks_list[0]', \@lost, \@nulled);
   is_deeply \@lost, ['networks_list[0]/IPAM/Driver'],
     'the deepened comparison reports the lost nested key';
-  is_deeply \@nulled, ['networks_list[0]/IPAM/Options'],
-    'and still counts the nested null as the documented exemption, not as a loss';
+  is_deeply [ sort @nulled ],
+    [ 'networks_list[0]/IPAM/Config', 'networks_list[0]/IPAM/Options' ],
+    'and still counts the nested nulls as the documented exemption, not as a loss';
 
   # The comparison this file used to make, on the same broken output.
   my @flat = grep { !exists $broken{$_} } keys %$item;
@@ -258,25 +308,42 @@ subtest 'the deepened comparison sees what the flat one could not' => sub {
     . 'why the two fixture nulls went unexamined for as long as they did';
 };
 
-subtest 'the VirtualSize regression this ticket exists to pin down' => sub {
-  # Measured 2026-08-28 (karr k81): VirtualSize is in spec/v1.41.yaml, gone
-  # from spec/v1.44.yaml onward -- Docker removed it from the swagger -- and
-  # the engine that produced this fixture still sends it. The model forwards
-  # it verbatim instead of dropping it; this is the specific case the loop
-  # above proves in general but that "tidying" the model by discarding
-  # unrecognised fields would break first, so it gets its own assertion
-  # rather than staying implicit in the round-trip check.
+subtest 'the unknown-field regression this ticket exists to pin down' => sub {
+  # This used to be pinned on VirtualSize: in spec/v1.41.yaml, gone from
+  # spec/v1.44.yaml onward, with a fixture engine that still sent it. Recaptured
+  # 2026-08-28 (karr k101) from Podman 5.8.4 (compat API 1.44) -- neither engine
+  # on this machine sends VirtualSize any more (Docker is on 29.7.2 / API 1.55),
+  # so a captured fixture cannot demonstrate the defect with that field. Podman's
+  # compat layer supplies a live replacement instead: GET /images/json answers
+  # with Digest/History/Dangling (untagged images) or Digest/History/Names
+  # (tagged ones) alongside the swagger's own fields, and ImageSummary models
+  # none of them. The model still forwards them verbatim rather than dropping
+  # them -- the specific case the loop above proves in general but that
+  # "tidying" the model by discarding unrecognised fields would break first, so
+  # it gets its own assertion here too. Derived from the fixture itself via
+  # wire_index rather than hardcoded, so a future recapture that adds or drops
+  # one of Podman's extensions does not go stale here.
   my $data = load_fixture('images_list');
   ok scalar(@$data), 'images_list fixture has objects to check'
     or return;
 
+  my $known = wire_index('API::Docker::Type::ImageSummary');
+
   for my $item (@$data) {
+    my @unmodeled = sort grep { !exists $known->{$_} } keys %$item;
+    ok scalar(@unmodeled),
+      "$item->{Id}: the fixture has at least one field the model does not know"
+      or next;
+
     my $obj = API::Docker::Type::ImageSummary->from_data($item);
-    ok exists $obj->unknown_fields->{VirtualSize},
-      "$item->{Id}: VirtualSize is not in the model, so it is filed as unknown "
-      . 'rather than silently discarded';
-    is $obj->TO_JSON->{VirtualSize}, $item->{VirtualSize},
-      "$item->{Id}: and reaches TO_JSON unchanged";
+    my $out = $obj->TO_JSON;
+    for my $field (@unmodeled) {
+      ok exists $obj->unknown_fields->{$field},
+        "$item->{Id}: $field is not in the model, so it is filed as unknown "
+        . 'rather than silently discarded';
+      is_deeply $out->{$field}, $item->{$field},
+        "$item->{Id}: and $field reaches TO_JSON unchanged";
+    }
   }
 };
 
