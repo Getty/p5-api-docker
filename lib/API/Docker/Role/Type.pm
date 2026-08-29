@@ -289,7 +289,6 @@ sub from_data {
     unless ref $data eq 'HASH';
   my $reg  = $class->_docker_attr_registry;
   my $wire = $class->_docker_wire_index;
-  my $mine = $class->_entity_attribute_index;
   # Lifted out of the loop rather than handled in it, so that what the loop
   # files never depends on the order the keys came out in -- the same reason
   # the BUILDARGS above deletes them before it starts.
@@ -303,9 +302,14 @@ sub from_data {
   for my $key (keys %$data) {
     next if $key eq 'unknown_fields' || $key eq 'rejected_fields';
     my $attr = $wire->{$key};
+    # A decoded response is a map of wire names and nothing else, so a key
+    # that is not one is a field we have not heard of -- even where it spells
+    # an entity attribute such as `client`. Those never come from the daemon:
+    # the resource API injects them as the %extra above, kept apart from $data
+    # on purpose, so a key of that name in the response cannot overwrite ours
+    # and is forwarded verbatim like any other unknown field (karr k104).
     unless (defined $attr) {
-      if ($mine->{$key}) { $args{$key}    = $data->{$key} }
-      else               { $unknown{$key} = $data->{$key} }
+      $unknown{$key} = $data->{$key};
       next;
     }
     my ($fits, $value) = _fits($reg->{$attr}, $data->{$key});

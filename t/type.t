@@ -335,15 +335,42 @@ subtest 'from_data reads a response, so a key it does not know stays a key' => s
   is_deeply($nested->state->unknown_fields, { status => 'newer-engine' },
     'and a nested key we do not know is kept, not folded into the one we do');
 
-  # The entity hook has to work on this path as well: without it `client`
-  # would be filed as a daemon field and TO_JSON would offer the client
-  # object to the engine.
+  # An entity attribute reaches the object only through the %extra pairs the
+  # resource API passes after the hashref -- never out of the response itself.
+  # That is how every API::Docker::API::* calls from_data:
+  # $class->from_data($data, client => $self->client).
   my $client = bless {}, 'API::Docker';
-  my $summary = API::Docker::Type::ContainerSummary->from_data({
-    client => $client, Id => 'abc' });
-  is($summary->client, $client, 'an entity attribute reaches the object');
+  my $summary = API::Docker::Type::ContainerSummary->from_data(
+    { Id => 'abc' }, client => $client);
+  is($summary->client, $client, 'an entity attribute passed as %extra reaches the object');
   is_deeply($summary->unknown_fields, {},
-    'and is not mistaken for something the daemon sent');
+    'and nothing the daemon did not send is filed as unknown');
+
+  # A response key that merely spells an entity attribute is the caller's
+  # field to keep, not ours to route into the constructor. This is the whole
+  # point of keeping %extra apart from $data: no engine sends `client` today,
+  # which is exactly the case the passthrough invariant exists for. On the old
+  # code the non-ref case croaked `Can't weaken a nonreference`, and a ref
+  # vanished from unknown_fields and TO_JSON both (karr k104).
+  my $stray = API::Docker::Type::ContainerSummary->from_data(
+    { Id => 'abc', client => 'DAEMON' });
+  is($stray->client, undef,
+    'a response key named like an entity attribute fills no attribute');
+  is_deeply($stray->unknown_fields, { client => 'DAEMON' },
+    'it is kept verbatim as an unknown field');
+  is_deeply($stray->TO_JSON, { Id => 'abc', client => 'DAEMON' },
+    'and comes back out unchanged, croaking no more on a non-reference');
+
+  # Both together: the injected client sets the real attribute, and a
+  # same-named response key is still forwarded as unknown -- they coexist, and
+  # TO_JSON offers the daemon its own value rather than the client object.
+  my $both_c = API::Docker::Type::ContainerSummary->from_data(
+    { Id => 'abc', client => 'DAEMON' }, client => $client);
+  is($both_c->client, $client, 'the injected client sets the real attribute');
+  is_deeply($both_c->unknown_fields, { client => 'DAEMON' },
+    'while the response key of that name stays an unknown field beside it');
+  is_deeply($both_c->TO_JSON, { Id => 'abc', client => 'DAEMON' },
+    'and the client object is never offered to the engine');
 };
 
 subtest 'new builds a request, so a Perl name still works' => sub {
