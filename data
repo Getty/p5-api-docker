@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-29T16:21:00Z
+created: 2026-08-28T16:43:34Z
+id: 97
+priority: low
+started: 2026-08-29T16:21:00Z
+status: done
+tags:
+- cpanfile
+- packaging
+title: No minimum Perl version declared despite // (5.10+) usage
+updated: 2026-08-29T16:21:00Z
+---
+
+Neither cpanfile nor any lib/**/*.pm declares a minimum perl version (no 'requires perl' in cpanfile, no 'use v5.x'/'use 5.0xx' in lib/). lib/API/Docker/Role/HTTP.pm uses the defined-or operator (//) at lines 1058, 1073 and elsewhere, which needs perl 5.10+. maint/ scripts already declare 'use v5.10;'. Pre-existing gap (also absent at 0.003), not new to this release, but cheap to fix: add requires 'perl', '5.010'; to cpanfile (or higher if a newer feature is actually the true floor -- worth a proper perlver-style check).
