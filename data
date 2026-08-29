@@ -1,0 +1,14 @@
+---
+class: standard
+completed: 2026-08-29T02:53:44Z
+created: 2026-08-28T16:54:58Z
+id: 100
+priority: high
+started: 2026-08-29T02:53:44Z
+status: done
+title: 'POD examples send JSON-body booleans as Perl 1/0; Go rejects a number for
+  a bool (measured: Podman 500, moby 400)'
+updated: 2026-08-29T02:53:44Z
+---
+
+lib/API/Docker/API/Exec.pm:16-17 and :64-66 (SYNOPSIS/method POD) show AttachStdout => 1, AttachStderr => 1, Tty => 0; create passes the hash to encode_json, which writes "AttachStdout":1. Measured, non-mutating: POST /v1.44/containers/no-such/exec with {"Cmd":["true"],"AttachStdout":1} -> 500 'json: cannot unmarshal number into Go struct field ExecCreateConfig.ExecOptions.AttachStdout of type bool'; with true -> 404 (body accepted). Same trap on every method that forwards a caller HashRef unchanged: containers->create (Tty, OpenStdin, HostConfig.Privileged), containers->update, networks->create (Internal, EnableIPv6), networks->disconnect(Force => 1) at Networks.pm:787, volumes->create, exec->create. Only exec->start converts (\1/\0). No public POD under lib/API/Docker/API/ or README mentions \1/\0/JSON->true; only t/stream_frames.t:140 spells Tty => JSON->false. Minimum: correct the SYNOPSIS examples and state the rule once per raw-body method (api-docker-doc-writer). Better: normalise the known Bool keys on the way out, the way exec->start does -- or route the body through the generated Type class, whose Bool fields already emit JSON booleans (api-docker-engine-worker to decide). Found in the 0.004 pre-release grill.
