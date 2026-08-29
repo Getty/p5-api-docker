@@ -60,6 +60,28 @@ Behavior-relevant = the HTTP transport and everything it returns, the resource A
 surface, entity wrappers, request/response encoding, error handling, `cpanfile`, and
 tests. Pure prose docs and `Changes` notes are not.
 
+## Parallel fan-out — isolate the working tree
+
+Subagents share one working tree with the orchestrator and with each other. A global git
+command in one reaches all of them, so:
+
+- **A subagent never mutates git** — no `stash`, `reset`, `checkout -- <path>`, `clean`,
+  `add` or `commit`. The orchestrator owns git and commits. Say so in every subagent
+  prompt, but do not rely on the prompt alone: a subagent's `git stash`/`reset`/`checkout`
+  has thrown away another agent's uncommitted work three times (k111) even when the prompt
+  forbade it.
+- **When two or more code-touching agents run at once, isolate them.** Launch each with
+  `isolation: "worktree"` so a stray git command in one cannot reach another's tree, or run
+  them sequentially in the shared tree. Never fan out parallel code-touching agents into the
+  same working tree without isolation.
+- **A worktree may branch from a stale base.** Integrate its result by the diff
+  (`git diff <merge-base> <branch> -- <files>` piped to `git apply`, or a cherry-pick),
+  never by `git checkout <branch> -- <file>` for a file the main tree has since changed —
+  that reverts the main tree to the stale copy. Check the merge-base against what main
+  touched first.
+- **Commit a verified-green checkpoint before the next mutating fan-out.** A committed HEAD
+  is immune to a later stray `stash`/`reset`; uncommitted work is not.
+
 ## Coordination — karr board (always in scope)
 
 Ticket coordination is the orchestrating agent's job, so `karr` is always in scope —
