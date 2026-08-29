@@ -2,6 +2,16 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - Harden the HTTP response reader against three non-conforming shapes, the
+    robustness items held back from k107. A `Transfer-Encoding` header is
+    matched case-insensitively, so `Chunked` is dechunked rather than handed
+    back as raw framing. A status line or `Content-Length` that arrives whole
+    but malformed -- a proxy's plain-text banner, a non-numeric length -- now
+    croaks `API::Docker::Error::Truncated` (phase `status-line` or
+    `content-length`) instead of being split and misread or read as an empty
+    body. A 1xx informational response such as `100 Continue` is read and
+    passed over rather than taken as the response with the real one read as its
+    body.
   - Close the test-coverage gaps the grill found. The `create` and `update`
     request bodies (`containers`, `networks`, `volumes`, `exec`, and
     `networks->connect`/`disconnect`) and the `images->build` query are now

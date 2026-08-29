@@ -214,6 +214,72 @@ subtest 'the streaming reader refuses a non-hexadecimal chunk size too'
 };
 
 # ---------------------------------------------------------------------------
+# Well-formedness of the head, the sibling of the non-hexadecimal chunk size
+# above: a status line and a Content-Length that arrived whole and terminated,
+# and are not what an HTTP head says they must be. Left unchecked, a status
+# line that is not an HTTP status line is split on whitespace and its second
+# word run through the >= 400 comparison as the status; a Content-Length that
+# is not a number is run through `$len > 0`, read as 0 (one "isn't numeric"
+# warning the only trace), and the body taken to be empty. Both are refused
+# here the same way the chunk size is (k113).
+subtest 'a status line that is terminated but not an HTTP status line is refused'
+  => sub {
+  for my $bad (
+    "HTTP/1.1 nonsense\r\n\r\n",
+    "HTTP/1.1 OK\r\n\r\n",
+    "<html>502 Bad Gateway</html>\r\n\r\n",
+    "ICY 200 OK\r\n\r\n",
+  ) {
+    my ($err) = over_pair($bad,
+      sub { $client->_read_response($_[0], 'GET', {}) });
+    isa_ok $err, 'API::Docker::Error::Truncated', $bad =~ s/\r?\n/ /gr;
+    is $err && $err->phase, 'status-line', 'phase: status-line';
+    like $err && "$err", qr/not a well-formed HTTP status line/,
+      'the message says the status line was malformed';
+  }
+};
+
+subtest 'a well-formed status line with no reason phrase is still accepted'
+  => sub {
+  # RFC 9112 allows an empty reason-phrase: 'HTTP/1.1 200' is a complete
+  # status line. It must not be caught by the well-formedness check.
+  my $resp = eval { $client->_read_response(
+    (pair_with("HTTP/1.1 200\r\nContent-Length: 2\r\n\r\n{}"))[0],
+    'GET', {}) };
+  is $@, '', 'a status line with no reason raises nothing' or diag "raised: $@";
+  is $resp && $resp->[0], 200, 'the code is read';
+  is $resp && $resp->[3], '{}', 'and the body follows';
+};
+
+subtest 'a Content-Length that is not a number is refused, not read as zero'
+  => sub {
+  for my $bad ('abc', '', '11, 11', '0x10') {
+    my @warnings;
+    local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+    my ($err) = over_pair(
+      "HTTP/1.1 200 OK\r\nContent-Length: $bad\r\n\r\nbody",
+      sub { $client->_read_response($_[0], 'GET', {}) });
+    isa_ok $err, 'API::Docker::Error::Truncated', "Content-Length: '$bad'";
+    is $err && $err->phase, 'content-length', 'phase: content-length';
+    like $err && "$err", qr/is not a number/,
+      'the message says the length was not a number';
+    is_deeply \@warnings, [],
+      'and $len > 0 is never reached to warn about a non-number';
+  }
+};
+
+subtest 'the streaming reader refuses a non-numeric Content-Length too' => sub {
+  my $handler = $client->_stream_handler('GET /v1.41/images/create',
+    'on_event', sub { }, 0);
+  my ($err) = over_pair(
+    "HTTP/1.1 200 OK\r\nContent-Length: abc\r\n\r\nbody",
+    sub { $client->_read_streaming_response($_[0], 'GET', $handler, {}) });
+  isa_ok $err, 'API::Docker::Error::Truncated';
+  is $err && $err->phase, 'content-length', 'phase: content-length';
+  like $err && "$err", qr/is not a number/, 'same complaint';
+};
+
+# ---------------------------------------------------------------------------
 # The head, which announces nothing and is framed all the same (karr k73)
 # ---------------------------------------------------------------------------
 # karr k64 stopped at the body because the check it built was a comparison,

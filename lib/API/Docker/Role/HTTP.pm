@@ -1255,32 +1255,45 @@ sub _read_head {
   my ($self, $sock, $ctx) = @_;
   $ctx ||= {};
 
-  my $status_line = $self->_read_line($sock, $ctx);
-  # A daemon that closed without answering at all, which is the one shape here
-  # that was never silent and is left saying exactly what it always said.
-  croak "No response from Docker daemon" unless defined $status_line;
-  $self->_assert_status_line($ctx, $status_line);
-  $status_line =~ s/\r?\n$//;
-
-  my ($proto, $status_code, $status_text) = split /\s+/, $status_line, 3;
-
-  # while(1)-and-assert rather than `while (my $line = ...)`, which is the
-  # same shape _read_chunked uses and for the same reason: the loop used to
-  # end on anything false, so an end of stream inside the header block left it
-  # exactly as the blank line would have. The assert is now the only way out
-  # that is not the blank line.
-  my %headers;
+  # Looped so a 1xx informational response is read whole and passed by: it is a
+  # complete head -- a status line and an optional field section closed by the
+  # blank line -- with no body of its own, sent before the real response
+  # (RFC 9110 section 15.2). Without this the reader took the 1xx status as the
+  # response and then read the real response as its body. A 100 Continue is the
+  # one an HTTP/1.1 client is most likely to be sent; 102 and 103 have the same
+  # framing.
   while (1) {
-    my $line = $self->_read_line($sock, $ctx);
-    $self->_assert_header_line($ctx, $line);
-    $line =~ s/\r?\n$//;
-    last if $line eq '';
-    if ($line =~ /^([^:]+):\s*(.*)$/) {
-      $headers{lc $1} = $2;
-    }
-  }
+    my $status_line = $self->_read_line($sock, $ctx);
+    # A daemon that closed without answering at all, which is the one shape here
+    # that was never silent and is left saying exactly what it always said.
+    croak "No response from Docker daemon" unless defined $status_line;
+    $self->_assert_status_line($ctx, $status_line);
+    $status_line =~ s/\r?\n$//;
 
-  return [$status_code, $status_text, \%headers];
+    my ($proto, $status_code, $status_text) = split /\s+/, $status_line, 3;
+
+    # while(1)-and-assert rather than `while (my $line = ...)`, which is the
+    # same shape _read_chunked uses and for the same reason: the loop used to
+    # end on anything false, so an end of stream inside the header block left it
+    # exactly as the blank line would have. The assert is now the only way out
+    # that is not the blank line.
+    my %headers;
+    while (1) {
+      my $line = $self->_read_line($sock, $ctx);
+      $self->_assert_header_line($ctx, $line);
+      $line =~ s/\r?\n$//;
+      last if $line eq '';
+      if ($line =~ /^([^:]+):\s*(.*)$/) {
+        $headers{lc $1} = $2;
+      }
+    }
+
+    # The status code is three digits by now (_assert_status_line), so a 1xx is
+    # exactly 100..199. Its headers are dropped with it and the next head read.
+    next if $status_code >= 100 && $status_code < 200;
+
+    return [$status_code, $status_text, \%headers];
+  }
 }
 
 # The two ways the head ends early, and neither of them has a byte count to
@@ -1322,6 +1335,19 @@ sub _assert_status_line {
       . length($line) . ' byte' . (length($line) == 1 ? '' : 's') . ' of one')
     unless $line =~ /\n\z/;
 
+  # Terminated, and now: is it an HTTP status line at all? RFC 9112 section 4:
+  # HTTP-version SP status-code SP [ reason-phrase ], with status-code exactly
+  # three digits. A line that arrived whole but is not this shape -- a proxy's
+  # plain-text banner, an ICY greeting, an HTML error page -- would otherwise
+  # be split on whitespace in _read_head and its second word run through the
+  # >= 400 comparison as the status. It is refused here rather than silently
+  # misread, the same way a non-hexadecimal chunk size is one level down.
+  my $stripped = $line =~ s/\r?\n\z//r;
+  $self->_croak_truncated($ctx, phase => 'status-line',
+    detail => "the status line '" . $stripped
+      . "' is not a well-formed HTTP status line")
+    unless $stripped =~ m{\AHTTP/[0-9]+\.[0-9]+ [0-9]{3}(?: .*)?\z};
+
   return;
 }
 
@@ -1355,12 +1381,13 @@ sub _read_body {
   # body is not read for HEAD, whatever the headers promise.
   return '' if defined $method && uc($method) eq 'HEAD';
 
-  if ($headers->{'transfer-encoding'} && $headers->{'transfer-encoding'} eq 'chunked') {
+  if ($headers->{'transfer-encoding'}
+      && lc($headers->{'transfer-encoding'}) eq 'chunked') {
     return $self->_read_chunked($sock, $ctx);
   }
 
   if (defined $headers->{'content-length'}) {
-    my $len = $headers->{'content-length'};
+    my $len = $self->_assert_content_length($ctx, $headers->{'content-length'});
     return '' unless $len > 0;
     my $body = '';
     # What a timeout hands over instead of dropping: see
@@ -1436,7 +1463,8 @@ sub _read_streaming_response {
   # expires delivers none -- so the property k59 established now holds by
   # construction instead of by rescue.
 
-  if ($headers->{'transfer-encoding'} && $headers->{'transfer-encoding'} eq 'chunked') {
+  if ($headers->{'transfer-encoding'}
+      && lc($headers->{'transfer-encoding'}) eq 'chunked') {
     while ($more) {
       my $chunk_header = $self->_read_line($sock, $ctx);
       my $chunk_size   = $self->_assert_chunk_header($ctx, $chunk_header);
@@ -1471,7 +1499,7 @@ sub _read_streaming_response {
     }
   }
   elsif (defined $headers->{'content-length'}) {
-    my $len  = $headers->{'content-length'};
+    my $len  = $self->_assert_content_length($ctx, $headers->{'content-length'});
     my $read = 0;
     while ($more && $read < $len) {
       my $want = $len - $read;
@@ -1705,6 +1733,23 @@ sub _assert_chunk_terminator {
     unless defined $line && $line =~ /\n\z/;
 
   return;
+}
+
+# The declared body length, validated to be the digits RFC 9110 section 8.6
+# requires before it is compared against or counted down (karr k113). The
+# sibling of _assert_chunk_header's hex check: a Content-Length that is not a
+# number -- 'abc', an empty value, a duplicated '11, 11', a leading space --
+# left as it stood is run through `$len > 0`, which warns once ("isn't
+# numeric") and reads as 0, so the body is taken to be empty and a response
+# that had one comes back blank. Refused here rather than silently misread, so
+# hex()'s sibling warning is never reached either.
+sub _assert_content_length {
+  my ($self, $ctx, $value) = @_;
+
+  return $value if $value =~ /\A[0-9]+\z/;
+
+  $self->_croak_truncated($ctx, phase => 'content-length',
+    detail => "the Content-Length header '" . $value . "' is not a number");
 }
 
 sub _uri_encode {

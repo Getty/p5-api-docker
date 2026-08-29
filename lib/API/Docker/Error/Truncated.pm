@@ -173,7 +173,11 @@ Which piece of the response framing the stream ended inside. One of:
 =item * C<'status-line'> - the stream ended inside the status line, before the
 CRLF that terminates it. A status line with nothing after it parses perfectly
 well -- C<'HTTP/1.1 200 OK'> yields 200 and C<OK> -- so the missing terminator
-is the only thing that says the daemon never finished writing it
+is the only thing that says the daemon never finished writing it. Also a line
+that arrived in full but is not an HTTP status line at all -- a proxy's
+plain-text banner, an HTML error page -- which is no cut response, but is
+refused here for the reason the non-hexadecimal chunk size below is: its second
+word would otherwise be split out and read as the status
 
 =item * C<'header-block'> - the stream ended inside a header line, or where
 one belongs with the blank line that ends the field section never sent. The
@@ -181,7 +185,10 @@ second covers a head with no fields at all: RFC 9112 section 2.1 requires the
 empty line whether there are twenty fields or none
 
 =item * C<'content-length'> - fewer bytes arrived than the C<Content-Length>
-header announced
+header announced, or the header arrived in full but its value is not a number.
+The second is no cut response either: left as it stood it would read as C<0>
+and a response that had a body would come back empty, the same body-shaped lie
+a truncation is
 
 =item * C<'chunk-header'> - the stream ended inside a chunk size line, or at a
 chunk boundary with no terminating zero chunk after it, or a chunk size line

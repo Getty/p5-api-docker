@@ -154,6 +154,83 @@ subtest '_read_response: read-to-EOF fallback' => sub {
 };
 
 # ---------------------------------------------------------------------------
+# HTTP field values are case-insensitive (RFC 9110 section 5.6.2). A daemon or
+# a proxy in front of it may write Transfer-Encoding in any case; the value is
+# compared with lc() so that a body announced as chunked is dechunked whatever
+# the spelling. Before this, a value that was not exactly 'chunked' fell
+# through to the close-delimited branch and the raw chunk framing came back as
+# the body.
+subtest '_read_response: Transfer-Encoding is matched case-insensitively'
+  => sub {
+  for my $spelling (qw( Chunked CHUNKED chUNKed )) {
+    my $raw = "HTTP/1.1 200 OK\r\n"
+      . "Transfer-Encoding: $spelling\r\n"
+      . "\r\n"
+      . "5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n";
+    my $resp = $client->_read_response(string_handle($raw));
+    is $resp->[3], 'hello world',
+      "Transfer-Encoding: $spelling is dechunked, not returned as framing";
+  }
+};
+
+subtest 'the streaming reader dechunks a case-varied Transfer-Encoding too'
+  => sub {
+  my @got;
+  my $handler = $client->_stream_handler('GET /v1.41/events', 'on_event',
+    sub { push @got, $_[0] }, 0);
+  my $raw = "HTTP/1.1 200 OK\r\n"
+    . "Transfer-Encoding: Chunked\r\n"
+    . "\r\n"
+    . qq(11\r\n{"status":"one"}\n\r\n)
+    . qq(11\r\n{"status":"two"}\n\r\n)
+    . "0\r\n\r\n";
+  $client->_read_streaming_response(string_handle($raw), 'GET', $handler, {});
+  is_deeply [ map { ref $_ eq 'HASH' ? $_->{status} : $_ } @got ],
+    [qw( one two )],
+    'exactly the two events, not the chunk framing decoded line by line';
+};
+
+# ---------------------------------------------------------------------------
+# A 1xx informational response (100 Continue, 103 Early Hints, ...) is a whole
+# head with no body, sent before the real response (RFC 9110 section 15.2). It
+# is read and discarded so the reader continues with the real response rather
+# than taking the 1xx status and reading the real response as its body.
+subtest '_read_response: a 1xx informational response is skipped' => sub {
+  my $raw = "HTTP/1.1 100 Continue\r\n\r\n"
+    . "HTTP/1.1 200 OK\r\n"
+    . "Content-Length: 2\r\n\r\n"
+    . "{}";
+  my $resp = $client->_read_response(string_handle($raw));
+  is $resp->[0], 200, 'the real status is returned, not the 100';
+  is $resp->[1], 'OK', 'and its reason';
+  is $resp->[3], '{}', 'and the real body, not the second response as bytes';
+};
+
+subtest '_read_response: several stacked 1xx heads are all skipped' => sub {
+  my $raw = "HTTP/1.1 100 Continue\r\n\r\n"
+    . "HTTP/1.1 103 Early Hints\r\nLink: </x>; rel=preload\r\n\r\n"
+    . "HTTP/1.1 204 No Content\r\n\r\n";
+  my $resp = $client->_read_response(string_handle($raw));
+  is $resp->[0], 204, 'the first non-1xx status wins';
+};
+
+subtest 'the streaming reader skips a 1xx before the stream too' => sub {
+  my @got;
+  my $handler = $client->_stream_handler('GET /v1.41/events', 'on_event',
+    sub { push @got, $_[0] }, 0);
+  my $raw = "HTTP/1.1 100 Continue\r\n\r\n"
+    . "HTTP/1.1 200 OK\r\n"
+    . "Transfer-Encoding: chunked\r\n\r\n"
+    . qq(11\r\n{"status":"one"}\n\r\n)
+    . "0\r\n\r\n";
+  my $res = $client->_read_streaming_response(
+    string_handle($raw), 'GET', $handler, {});
+  is $res->[0], 200, 'the stream reader also passes the 100 by';
+  is_deeply [ map { $_->{status} } @got ], ['one'],
+    'and the real event reaches the callback';
+};
+
+# ---------------------------------------------------------------------------
 subtest '_read_chunked: hex sizes, upper and lower case' => sub {
   # 'a' and 'A' are both 10 -- hex() is case-insensitive, and so must this be.
   my $raw = "a\r\n0123456789\r\nA\r\nABCDEFGHIJ\r\n0\r\n\r\n";
