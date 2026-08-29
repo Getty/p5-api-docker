@@ -1,0 +1,20 @@
+---
+class: standard
+completed: 2026-08-29T16:21:00Z
+created: 2026-08-28T16:43:28Z
+id: 96
+priority: low
+started: 2026-08-29T16:21:00Z
+status: done
+tags:
+- docs
+- podcheck
+title: podchecker finds 3 dangling POD L</> links in the woven build
+updated: 2026-08-29T16:21:00Z
+---
+
+podchecker over the dzil-built (woven) lib/ reports 3 real errors (234 OK / 237 total; xt/author/pod-syntax.t doesn't catch these because Test::Pod's pod_file_ok only checks syntax, not L<> link resolution):
+- lib/API/Docker/Type.pm ~line 493 (woven): L</_expand_class> -- links to a private sub with no POD anchor.
+- lib/API/Docker/Role/Entity/Plugin.pm ~line 199: L</name> -- 'name' isn't documented in this file (it lives on API::Docker::Type::Plugin); should probably be L<API::Docker::Type::Plugin/name>.
+- lib/API/Docker/Role/Entity/Image.pm ~line 152: L</id> -- same pattern, 'id' lives on the generated Image types, not in this file.
+Cosmetic (renders as a broken link on metacpan/search), not build-breaking.
