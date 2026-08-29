@@ -1,0 +1,17 @@
+---
+class: standard
+completed: 2026-08-29T18:17:55Z
+created: 2026-08-29T03:11:11Z
+id: 111
+priority: medium
+started: 2026-08-29T18:17:55Z
+status: done
+tags:
+- tooling
+- process
+title: 'Parallel agents share one working tree: give each isolation:worktree or forbid
+  git stash/reset'
+updated: 2026-08-29T18:17:55Z
+---
+
+During the 0.004 grill (k94/k99/k100/k101/k102) four api-docker-* subagents ran in parallel in the same git working tree. Despite each prompt forbidding git state changes, two used 'git stash' / 'git reset' as debugging tools: a 'git reset' discarded another agent's uncommitted k99 work (reapplied), and a 'git stash' pulled every agent's unstaged changes into stash@{0} -- the k94 doc-writer's README.md + lib/API/Docker.pm changes briefly lived only in the stash, absent from the tree. All recovered by hand via 'git checkout stash@{0} -- <files>', nothing ultimately lost, but only because it was caught in review. Two of the subagents independently recommended per-agent worktrees. Fix options: (a) launch parallel behavior-touching agents with the Agent tool's isolation:"worktree" so each gets its own tree; (b) if they must share a tree, harden the briefing/house-rules so no subagent ever runs git stash/reset/checkout/clean/commit -- the orchestrator commits. Reflog showed 'reset: moving to HEAD'; stash@{0} 'WIP on main' held 4 agents' intermingled changes.
