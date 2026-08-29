@@ -1,0 +1,16 @@
+---
+claimed_at: 2026-08-29T03:04:37Z
+claimed_by: fixture-recapture
+class: standard
+completed: 2026-08-29T03:04:37Z
+created: 2026-08-28T16:55:03Z
+id: 101
+priority: high
+started: 2026-08-29T02:54:04Z
+status: done
+title: Seven of eight t/fixtures/*.json are hand-rolled, while t/type_fixture_passthrough.t:15,
+  CLAUDE.md and api-docker-core claim they are daemon captures
+updated: 2026-08-29T03:04:37Z
+---
+
+t/fixtures/images_list.json carries "Id": "sha256:def789ghi012345...defg" -- g and h are not hex, no engine ever produced that digest. Same file: ParentId is 'abc123def456' padded to 64; networks_list.json's second Id is a1b2c3d4e5f67890 x4; container names /my-container, host test-host, volume my-data, timestamps on the hour. All seven trace to f6d97e5 (Initial commit) with no capture note; only secrets_list.json (2d5a50c) is credible (irregular nanoseconds, this machine's storage path). All seven inflate with zero unknown_fields/rejected_fields -- data written with the swagger open. The test's own header says 'karr k81: every fixture under t/fixtures/*.json is captured output from a real daemon ... not hand-rolled', and k81 cites VirtualSize in images_list.json as proof of capture. So the 'passthrough measured against reality' claim is false for 7 of 8. Either recapture them from the engines on this machine (Podman 1.44 at unix:///run/user/1000/podman/podman.sock, Docker 1.55 at /var/run/docker.sock -- read-only endpoints, name the engine+version in the file that uses it) or correct the claim in the test, CLAUDE.md and the skill. The .ndjson/.tar/.bin fixtures show genuine capture traits (podId, apidocker-probe-* names, real docker save layout) and are not in question. api-docker-test-writer. Found in the 0.004 pre-release grill.
