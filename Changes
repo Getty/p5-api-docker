@@ -1,6 +1,6 @@
 Revision history for API-Docker
 
-{{$NEXT}}
+0.004     2026-08-30 03:30:59Z
 
   - The typed object model: `list` and `inspect` on every resource now
     return generated `API::Docker::Type::*` objects with snake_case
