@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskSpec::ContainerSpec::Privileges::CredentialSpec;
 # ABSTRACT: CredentialSpec for managed service account (Windows only)
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

@@ -1,6 +1,6 @@
 package API::Docker::Type::ServiceUpdateResponse;
 # ABSTRACT: The body of the C<200> response to C<POST /services/{id}/update>
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

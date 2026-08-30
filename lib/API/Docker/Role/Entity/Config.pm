@@ -1,6 +1,6 @@
 package API::Docker::Role::Entity::Config;
 # ABSTRACT: Config operations, on the generated config type
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Moo::Role;
 with 'API::Docker::Role::Entity';
 requires 'id';

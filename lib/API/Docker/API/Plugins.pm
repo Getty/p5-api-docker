@@ -1,6 +1,6 @@
 package API::Docker::API::Plugins;
 # ABSTRACT: Docker Engine Plugins API
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Moo;
 with 'API::Docker::Role::Filters', 'API::Docker::Role::RegistryAuth',
   'API::Docker::Role::Using';

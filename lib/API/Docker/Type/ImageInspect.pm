@@ -1,6 +1,6 @@
 package API::Docker::Type::ImageInspect;
 # ABSTRACT: Information about an image in the local image cache
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::DriverData;
 use API::Docker::Type::ImageConfig;

@@ -1,6 +1,6 @@
 package API::Docker::Type::Mount;
 # ABSTRACT: One entry of a container's Mounts specification
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::Mount::BindOptions;
 use API::Docker::Type::Mount::ImageOptions;

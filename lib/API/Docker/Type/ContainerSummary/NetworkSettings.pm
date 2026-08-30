@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerSummary::NetworkSettings;
 # ABSTRACT: Summary of the container's network settings
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::EndpointSettings;
 use namespace::clean;

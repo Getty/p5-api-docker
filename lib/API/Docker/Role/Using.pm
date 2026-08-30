@@ -1,6 +1,6 @@
 package API::Docker::Role::Using;
 # ABSTRACT: A resource class clone that bounds a run of calls
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Moo::Role;
 use Carp qw( croak );
 use namespace::clean;

@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerThrottlingData;
 # ABSTRACT: CPU throttling stats of the container
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

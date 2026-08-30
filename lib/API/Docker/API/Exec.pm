@@ -1,6 +1,6 @@
 package API::Docker::API::Exec;
 # ABSTRACT: Docker Engine Exec API
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Moo;
 with 'API::Docker::Role::Using', 'API::Docker::Role::JSONBody';
 use Carp qw( croak );

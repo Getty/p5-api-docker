@@ -1,6 +1,6 @@
 package API::Docker::Type::ServiceSpec::Mode;
 # ABSTRACT: Scheduling mode for the service
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::ServiceSpec::Mode::Replicated;
 use API::Docker::Type::ServiceSpec::Mode::ReplicatedJob;

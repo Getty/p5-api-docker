@@ -1,6 +1,6 @@
 package API::Docker::Type::ResourceObject;
 # ABSTRACT: An object describing the resources which can be advertised by a node and requested by a task
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::GenericResource;
 use namespace::clean;

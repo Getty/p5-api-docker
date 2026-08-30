@@ -1,6 +1,6 @@
 package API::Docker::Config;
 # ABSTRACT: Removed in 0.004 -- replaced by API::Docker::Type::Config
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use strict;
 use warnings;
 use Carp qw( croak );

@@ -1,6 +1,6 @@
 package API::Docker::Role::JSONBody;
 # ABSTRACT: coerce known boolean keys of a request body to JSON booleans
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Moo::Role;
 use namespace::clean;
 

@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerSummary;
 # ABSTRACT: One entry of the C<200> response to C<GET /containers/json>
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::ContainerSummary::HostConfig;
 use API::Docker::Type::ContainerSummary::NetworkSettings;

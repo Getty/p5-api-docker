@@ -1,6 +1,6 @@
 package API::Docker::Type::Volume;
 # ABSTRACT: The body of the C<200> response to C<GET /volumes/{name}>
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::ClusterVolume;
 use API::Docker::Type::Volume::UsageData;

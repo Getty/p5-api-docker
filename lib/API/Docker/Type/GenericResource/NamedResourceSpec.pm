@@ -1,6 +1,6 @@
 package API::Docker::Type::GenericResource::NamedResourceSpec;
 # ABSTRACT: A string-valued user-defined resource
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

@@ -1,6 +1,6 @@
 package API::Docker::Type::SwarmSpec::TaskDefaults::LogDriver;
 # ABSTRACT: The log driver to use for tasks created in the orchestrator if unspecified by a service
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

@@ -1,6 +1,6 @@
 package API::Docker::Type::ClusterVolume;
 # ABSTRACT: Options and information specific to, and only present on, Swarm CSI cluster volumes
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::ClusterVolume::Info;
 use API::Docker::Type::ClusterVolume::PublishStatus;

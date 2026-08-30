@@ -1,6 +1,6 @@
 package API::Docker::Type::Node;
 # ABSTRACT: One entry of the C<200> response to C<GET /nodes>
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::ManagerStatus;
 use API::Docker::Type::NodeDescription;

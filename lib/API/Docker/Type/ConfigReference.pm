@@ -1,6 +1,6 @@
 package API::Docker::Type::ConfigReference;
 # ABSTRACT: The config-only network source to provide the configuration for this network
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

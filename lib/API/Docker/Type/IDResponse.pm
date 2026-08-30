@@ -1,6 +1,6 @@
 package API::Docker::Type::IDResponse;
 # ABSTRACT: Response to an API call that returns just an Id
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

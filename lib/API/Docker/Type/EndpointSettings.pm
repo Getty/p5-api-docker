@@ -1,6 +1,6 @@
 package API::Docker::Type::EndpointSettings;
 # ABSTRACT: Configuration for a network endpoint
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::EndpointIPAMConfig;
 use namespace::clean;

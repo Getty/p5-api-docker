@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerInspectResponse;
 # ABSTRACT: The body of the C<200> response to C<GET /containers/{id}/json>
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::ContainerConfig;
 use API::Docker::Type::ContainerState;

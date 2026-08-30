@@ -1,6 +1,6 @@
 package API::Docker::Type::ServiceSpec::Mode::ReplicatedJob;
 # ABSTRACT: The mode used for services with a finite number of tasks that run to a completed state
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

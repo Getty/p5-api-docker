@@ -1,6 +1,6 @@
 package API::Docker::Type::Plugin;
 # ABSTRACT: A plugin for the Engine API
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::Plugin::Config;
 use API::Docker::Type::Plugin::Settings;

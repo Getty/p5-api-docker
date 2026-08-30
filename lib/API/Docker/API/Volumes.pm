@@ -1,6 +1,6 @@
 package API::Docker::API::Volumes;
 # ABSTRACT: Docker Engine Volumes API
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Moo;
 with 'API::Docker::Role::Filters', 'API::Docker::Role::Using';
 use API::Docker::Role::Entity::Volume;

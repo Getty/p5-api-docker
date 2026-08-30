@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskSpec::ContainerSpec::Config;
 # ABSTRACT: One entry of C<TaskSpec.ContainerSpec.Configs>
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::TaskSpec::ContainerSpec::Config::File;
 use namespace::clean;

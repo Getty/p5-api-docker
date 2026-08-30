@@ -1,6 +1,6 @@
 package API::Docker::Type::ImageManifestSummary::ImageData;
 # ABSTRACT: The image data for the image manifest
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::ImageManifestSummary::ImageData::Size;
 use API::Docker::Type::OCIPlatform;

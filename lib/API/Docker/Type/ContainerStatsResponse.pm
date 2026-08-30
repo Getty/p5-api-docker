@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerStatsResponse;
 # ABSTRACT: Statistics sample for a container
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::ContainerBlkioStats;
 use API::Docker::Type::ContainerCPUStats;

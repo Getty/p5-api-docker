@@ -1,6 +1,6 @@
 package API::Docker::Type::SwarmInfo;
 # ABSTRACT: Represents generic information about swarm
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::ClusterInfo;
 use API::Docker::Type::PeerNode;

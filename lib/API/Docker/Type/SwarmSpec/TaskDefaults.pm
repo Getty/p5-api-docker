@@ -1,6 +1,6 @@
 package API::Docker::Type::SwarmSpec::TaskDefaults;
 # ABSTRACT: Defaults for creating tasks in this cluster
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::SwarmSpec::TaskDefaults::LogDriver;
 use namespace::clean;

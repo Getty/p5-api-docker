@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskSpec::ContainerSpec::Ulimit;
 # ABSTRACT: One entry of C<TaskSpec.ContainerSpec.Ulimits>
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

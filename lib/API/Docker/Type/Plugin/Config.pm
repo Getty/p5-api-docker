@@ -1,6 +1,6 @@
 package API::Docker::Type::Plugin::Config;
 # ABSTRACT: The config of a plugin
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::Plugin::Config::Args;
 use API::Docker::Type::Plugin::Config::Interface;

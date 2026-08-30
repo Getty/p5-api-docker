@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskSpec::ContainerSpec::Secret;
 # ABSTRACT: One entry of C<TaskSpec.ContainerSpec.Secrets>
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::TaskSpec::ContainerSpec::Secret::File;
 use namespace::clean;

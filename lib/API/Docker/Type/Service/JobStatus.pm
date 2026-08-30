@@ -1,6 +1,6 @@
 package API::Docker::Type::Service::JobStatus;
 # ABSTRACT: The status of the service when it is in one of ReplicatedJob or GlobalJob modes
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::ObjectVersion;
 use namespace::clean;

@@ -1,6 +1,6 @@
 package API::Docker::Role::Filters;
 # ABSTRACT: The filters query parameter, normalised into the one shape the engine reads
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Moo::Role;
 use Carp qw( croak );
 use namespace::clean;

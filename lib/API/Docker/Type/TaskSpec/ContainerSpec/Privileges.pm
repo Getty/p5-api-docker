@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskSpec::ContainerSpec::Privileges;
 # ABSTRACT: Security options for the container
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::TaskSpec::ContainerSpec::Privileges::AppArmor;
 use API::Docker::Type::TaskSpec::ContainerSpec::Privileges::CredentialSpec;

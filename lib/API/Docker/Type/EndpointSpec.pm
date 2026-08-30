@@ -1,6 +1,6 @@
 package API::Docker::Type::EndpointSpec;
 # ABSTRACT: Properties that can be configured to access and load balance a service
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::EndpointPortConfig;
 use namespace::clean;

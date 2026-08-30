@@ -1,6 +1,6 @@
 package API::Docker::Type::ServiceSpec;
 # ABSTRACT: User modifiable configuration for a service
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::EndpointSpec;
 use API::Docker::Type::NetworkAttachmentConfig;

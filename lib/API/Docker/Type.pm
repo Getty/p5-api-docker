@@ -1,6 +1,6 @@
 package API::Docker::Type;
 # ABSTRACT: The DSL and attribute registry behind the generated Docker types
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 our %REGISTRY;
 use Moo ();
 use Moo::Role ();

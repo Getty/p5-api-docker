@@ -1,6 +1,6 @@
 package API::Docker::Error::Truncated;
 # ABSTRACT: The daemon closed before the response it announced was complete
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Moo;
 # namespace::clean has to come BEFORE "use overload" here, not after it as
 # everywhere else in this distribution -- same reason as in

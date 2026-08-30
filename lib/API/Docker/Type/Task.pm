@@ -1,6 +1,6 @@
 package API::Docker::Type::Task;
 # ABSTRACT: One entry of the C<200> response to C<GET /tasks>
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::GenericResource;
 use API::Docker::Type::ObjectVersion;

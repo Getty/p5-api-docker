@@ -1,6 +1,6 @@
 package API::Docker::Type::SecretSpec;
 # ABSTRACT: The body of a C<POST /secrets/create> request
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::Driver;
 use namespace::clean;

@@ -1,6 +1,6 @@
 package API::Docker::Type::ClusterVolume::Info;
 # ABSTRACT: Information about the global status of the volume
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::Topology;
 use namespace::clean;

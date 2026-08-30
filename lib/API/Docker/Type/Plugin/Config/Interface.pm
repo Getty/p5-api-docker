@@ -1,6 +1,6 @@
 package API::Docker::Type::Plugin::Config::Interface;
 # ABSTRACT: The interface between Docker and the plugin
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::PluginInterfaceType;
 use namespace::clean;

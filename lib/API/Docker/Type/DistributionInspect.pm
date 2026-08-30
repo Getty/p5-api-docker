@@ -1,6 +1,6 @@
 package API::Docker::Type::DistributionInspect;
 # ABSTRACT: Describes the result obtained from contacting the registry to retrieve image metadata
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::OCIDescriptor;
 use API::Docker::Type::OCIPlatform;

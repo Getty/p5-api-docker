@@ -1,6 +1,6 @@
 package API::Docker::Type::Commit;
 # ABSTRACT: Commit holds the Git-commit (SHA1) that a binary was built from, as reported in the version-string of external tools, such as C<containerd>, or C<runC>
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

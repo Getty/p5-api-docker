@@ -1,6 +1,6 @@
 package API::Docker::Type::NodeDescription;
 # ABSTRACT: NodeDescription encapsulates the properties of the Node as reported by the agent
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::EngineDescription;
 use API::Docker::Type::Platform;

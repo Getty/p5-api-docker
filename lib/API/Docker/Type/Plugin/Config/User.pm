@@ -1,6 +1,6 @@
 package API::Docker::Type::Plugin::Config::User;
 # ABSTRACT: The user and group a plugin's process runs as
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

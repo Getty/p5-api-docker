@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerdInfo::Namespaces;
 # ABSTRACT: The namespaces that the daemon uses for running containers and plugins in containerd
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

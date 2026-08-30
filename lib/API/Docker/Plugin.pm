@@ -1,6 +1,6 @@
 package API::Docker::Plugin;
 # ABSTRACT: Removed in 0.004 -- replaced by API::Docker::Type::Plugin
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use strict;
 use warnings;
 use Carp qw( croak );

@@ -1,6 +1,6 @@
 package API::Docker::Role::HTTP;
 # ABSTRACT: HTTP transport role for Docker Engine API
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Moo::Role;
 use IO::Socket::UNIX;
 use IO::Socket::INET;

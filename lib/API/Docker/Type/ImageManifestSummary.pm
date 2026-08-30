@@ -1,6 +1,6 @@
 package API::Docker::Type::ImageManifestSummary;
 # ABSTRACT: A summary of an image manifest
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::ImageManifestSummary::AttestationData;
 use API::Docker::Type::ImageManifestSummary::ImageData;

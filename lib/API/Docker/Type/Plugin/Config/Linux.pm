@@ -1,6 +1,6 @@
 package API::Docker::Type::Plugin::Config::Linux;
 # ABSTRACT: The Linux-specific capabilities and devices a plugin needs
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::PluginDevice;
 use namespace::clean;

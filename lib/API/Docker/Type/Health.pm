@@ -1,6 +1,6 @@
 package API::Docker::Type::Health;
 # ABSTRACT: Information about the container's healthcheck results
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::HealthcheckResult;
 use namespace::clean;

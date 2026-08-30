@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerCPUUsage;
 # ABSTRACT: All CPU stats aggregated since container inception
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

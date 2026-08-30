@@ -1,6 +1,6 @@
 package API::Docker::Type::JoinTokens;
 # ABSTRACT: The tokens workers and managers need to join the swarm
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

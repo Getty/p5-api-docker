@@ -1,6 +1,6 @@
 package API::Docker::Type::NetworkSettings;
 # ABSTRACT: NetworkSettings exposes the network settings in the API
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::Address;
 use API::Docker::Type::EndpointSettings;

@@ -1,6 +1,6 @@
 package API::Docker::Type::HostConfig;
 # ABSTRACT: Container configuration that depends on the host we are running on
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::HostConfig::LogConfig;
 use API::Docker::Type::Mount;

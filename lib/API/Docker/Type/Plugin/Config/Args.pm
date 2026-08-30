@@ -1,6 +1,6 @@
 package API::Docker::Type::Plugin::Config::Args;
 # ABSTRACT: The command-line arguments a plugin accepts
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

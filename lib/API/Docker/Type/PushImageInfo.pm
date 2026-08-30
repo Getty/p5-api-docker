@@ -1,6 +1,6 @@
 package API::Docker::Type::PushImageInfo;
 # ABSTRACT: One event of the stream a C<POST /images/{name}/push> answers with
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::ErrorDetail;
 use API::Docker::Type::ProgressDetail;

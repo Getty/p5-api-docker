@@ -1,6 +1,6 @@
 package API::Docker::API::Secrets;
 # ABSTRACT: Docker Engine Secrets API
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Moo;
 with 'API::Docker::Role::Filters', 'API::Docker::Role::Using';
 use API::Docker::Role::Entity::Secret;

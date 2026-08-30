@@ -1,6 +1,6 @@
 package API::Docker::Type::ImageConfig;
 # ABSTRACT: Configuration of the image
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::HealthConfig;
 use namespace::clean;

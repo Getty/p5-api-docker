@@ -1,6 +1,6 @@
 package API::Docker::Type::Plugin::Config::Network;
 # ABSTRACT: The network mode a plugin runs in
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

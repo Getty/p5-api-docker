@@ -1,6 +1,6 @@
 package API::Docker::Type::PortStatus;
 # ABSTRACT: represents the port status of a task's host ports whose service has published host ports
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::EndpointPortConfig;
 use namespace::clean;

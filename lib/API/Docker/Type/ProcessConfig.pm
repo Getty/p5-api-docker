@@ -1,6 +1,6 @@
 package API::Docker::Type::ProcessConfig;
 # ABSTRACT: The C<ProcessConfig> field of the C<200> response to C<GET /exec/{id}/json>
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

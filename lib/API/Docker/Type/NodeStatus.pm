@@ -1,6 +1,6 @@
 package API::Docker::Type::NodeStatus;
 # ABSTRACT: The status of a node
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

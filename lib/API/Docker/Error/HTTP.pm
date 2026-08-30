@@ -1,6 +1,6 @@
 package API::Docker::Error::HTTP;
 # ABSTRACT: Error status returned by the Docker Engine on the status line
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Moo;
 # namespace::clean has to come BEFORE "use overload" here, not after it as
 # everywhere else in this distribution -- same reason as in

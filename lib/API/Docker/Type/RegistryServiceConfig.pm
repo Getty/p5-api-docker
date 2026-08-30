@@ -1,6 +1,6 @@
 package API::Docker::Type::RegistryServiceConfig;
 # ABSTRACT: Daemon registry services configuration
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use API::Docker::Type::IndexInfo;
 use namespace::clean;

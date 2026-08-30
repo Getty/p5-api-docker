@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerWaitExitError;
 # ABSTRACT: container waiting error, if any
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 

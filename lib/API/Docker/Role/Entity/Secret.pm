@@ -1,6 +1,6 @@
 package API::Docker::Role::Entity::Secret;
 # ABSTRACT: Secret operations, on the generated secret type
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Moo::Role;
 with 'API::Docker::Role::Entity';
 requires 'id';

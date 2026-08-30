@@ -1,6 +1,6 @@
 package API::Docker::Type::ServiceSpec::RollbackConfig;
 # ABSTRACT: Specification for the rollback strategy of the service
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use API::Docker::Type;
 use namespace::clean;
 
