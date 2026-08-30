@@ -52,13 +52,29 @@ my @acceptable_roots = ($lib_dir->stringify);
 # `dzil test` builds and runs from a fresh temporary directory under
 # <checkout>/.build/<random> -- created new for every run, so it can never
 # hold a leftover -- and its TestRunner loads modules from that tree's
-# blib/lib, not its lib/. Recognise that specific, structural shape, and
-# only that shape, as a second acceptable root, so a blib/ sitting directly
-# in a real, persistent checkout (the actual "leftover blib" failure mode)
-# still fails this test rather than being waved through.
-if ($dist_root->parent->basename eq '.build') {
-  push @acceptable_roots, $dist_root->child('blib', 'lib')->stringify;
+# blib/lib, not its lib/. `dzil release`'s [@Filter/TestRelease] instead
+# builds the tarball and EXTRACTS it, so this test then runs one level
+# deeper still: <checkout>/.build/<random>/<Dist-Version>/, with the
+# extracted distribution's own directory as an extra ancestor between
+# $dist_root and .build. Checking only the immediate parent (as this used
+# to) catches the first shape and misses the second, so every release-time
+# run of this test failed even though blib/lib held exactly the right
+# modules. Recognise both shapes by walking $dist_root's ancestors for one
+# named .build, and only that signal, as what makes blib/lib a second
+# acceptable root -- so a blib/ sitting directly in a real, persistent
+# checkout (the actual "leftover blib" failure mode, which has no .build
+# ancestor at all) still fails this test rather than being waved through.
+my $in_build_tree = 0;
+my $ancestor       = $dist_root;
+while ($ancestor->parent->stringify ne $ancestor->stringify) {
+  $ancestor = $ancestor->parent;
+  if ($ancestor->basename eq '.build') {
+    $in_build_tree = 1;
+    last;
+  }
 }
+push @acceptable_roots, $dist_root->child('blib', 'lib')->stringify
+  if $in_build_tree;
 
 my %rel_paths;   # e.g. "API/Docker/Image.pm" => 1
 
