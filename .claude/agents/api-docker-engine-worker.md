@@ -2,7 +2,6 @@
 name: api-docker-engine-worker
 description: "Docker Engine API specialist for API::Docker — use whenever the question is what the daemon does or expects: adding or correcting an endpoint, query-parameter and filter semantics, response shapes (204/304, NDJSON event streams, errorDetail on HTTP 200), the multiplexed log/attach/exec frame format, X-Registry-Auth and X-Registry-Config, API version negotiation, and Podman compatibility. Pre-loaded with the Engine API reference; the plain api-docker-worker is not. Leaves a commit-ready tree; never commits — commits belong to api-docker-release-manager."
 model: inherit
-allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 briefing:
   skills:
     - docker-engine-api
