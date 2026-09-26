@@ -35,7 +35,7 @@ This rule depends on whether the Agent/Task tool is available to you.
 
 - **You can spawn subagents** (orchestrating main agent): Do NOT touch behavior-relevant
   code yourself — delegate. Your lane: coordinate, inspect, plan, review diffs, run
-  tests, manage git, edit non-behavioral docs. When in doubt, delegate. Why: only the
+  tests, edit non-behavioral docs. When in doubt, delegate. Why: only the
   `api-docker-*` agents get their skills force-loaded via `briefing.skills`; you get no
   briefing and would touch internals with too little context.
 
@@ -45,7 +45,7 @@ This rule depends on whether the Agent/Task tool is available to you.
   | The Perl side — Moo, transport internals, entity classes, refactoring, cpanfile | `api-docker-worker` (default) |
   | Write/extend tests, add fixtures | `api-docker-test-writer` |
   | The generated type model, the `API::Docker::Type` DSL, the drift checker, `spec/` | `api-docker-type-writer` |
-  | Pre-release audit | `api-docker-release-checker` |
+  | Commits, `Changes`, card → done, pre-release audit | `api-docker-release-manager` |
   | POD and README | `api-docker-doc-writer` |
 
   The two workers split by *question*, not by file: "what does the engine answer here?"
@@ -59,6 +59,9 @@ This rule depends on whether the Agent/Task tool is available to you.
 Behavior-relevant = the HTTP transport and everything it returns, the resource API method
 surface, entity wrappers, request/response encoding, error handling, `cpanfile`, and
 tests. Pure prose docs and `Changes` notes are not.
+
+**Only `api-docker-release-manager` commits.** A worker leaves a commit-ready tree and hands its card
+to `review`; you then dispatch `api-docker-release-manager` to cut the commit and close the card.
 
 ## Parallel fan-out — isolate the working tree
 
@@ -85,12 +88,12 @@ command in one reaches all of them, so:
 ## Coordination — karr board (always in scope)
 
 Ticket coordination is the orchestrating agent's job, so `karr` is always in scope —
-don't invoke the `kanban-issues-karr-cli` skill first, just use it. Git-native kanban;
+don't invoke the `kanban-issues-karr-coordination` skill first, just use it. Git-native kanban;
 state lives in `refs/karr/*`; one board, this repo. Day-to-day: `karr list --compact` /
 `karr board` for open work; `karr show ID` for detail; `karr create/edit/move/handoff`
 for the usual flow; mutating commands auto-sync. Use it for drift to reconcile and
 follow-up work that must not block the current change. Full surface: skill
-`kanban-issues-karr-cli`.
+`kanban-issues-karr-coordination`.
 
 **Serialize board mutations when fanning out.** Keep implementation work parallel if you
 like, but collect results and loop `karr move`/`handoff`/`sync` sequentially — N landing

@@ -177,7 +177,7 @@ The principle, the lanes and the repo's hazards are in
 | The Perl side — Moo, transport internals, entities, refactoring, cpanfile | `api-docker-worker` (default) |
 | Write/extend tests, add fixtures | `api-docker-test-writer` |
 | The generated type model — `API::Docker::Type::*`, the DSL, the drift checker, `spec/` | `api-docker-type-writer` |
-| Pre-release audit | `api-docker-release-checker` |
+| Commits, `Changes`, card → done, pre-release audit | `api-docker-release-manager` |
 | POD and README | `api-docker-doc-writer` |
 
 The two workers split by question, not by file. Only `api-docker-engine-worker`

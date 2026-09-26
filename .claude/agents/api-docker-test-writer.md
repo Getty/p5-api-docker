@@ -9,7 +9,7 @@ briefing:
     - docker-engine-api
     - getty-perl-core
     - getty-perl-moo
-    - kanban-issues-karr-cli
+    - kanban-issues-karr-ticket
 ---
 
 You are the api-docker-test-writer for **API::Docker**.

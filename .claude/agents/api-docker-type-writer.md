@@ -10,9 +10,8 @@ briefing:
     - docker-engine-api
     - getty-perl-core
     - getty-perl-moo
-    - getty-perl-release-author-getty
-    - getty-git-commit-style
-    - kanban-issues-karr-cli
+    - kanban-issues-karr-ticket
+    - getty-perl-pod
 ---
 
 You are the api-docker-type-writer for **API::Docker**.

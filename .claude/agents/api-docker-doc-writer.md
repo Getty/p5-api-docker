@@ -6,8 +6,8 @@ allowed-tools: Read, Edit, Grep, Glob
 briefing:
   skills:
     - api-docker-core
-    - getty-perl-release-author-getty
     - getty-perl-core
+    - getty-perl-pod
 ---
 
 You are the api-docker-doc-writer for **API::Docker**.
