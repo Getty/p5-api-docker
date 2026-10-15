@@ -64,7 +64,17 @@ my $SPEC = 'API::Docker::Maint::Spec';
 
 my $DIST_ROOT = File::Spec->rel2abs(File::Spec->catdir($FindBin::Bin, '..'));
 my $PREFIX    = 'API::Docker::Type::';
-my $VERSION_LITERAL = '0.004';
+# The next release's version, which lib/API/Docker.pm carries and every
+# generated class repeats. Read from there so that the bump a release makes
+# does not leave the byte-for-byte guard in t/spec_to_type.t red until
+# someone edits a literal in here (karr k115).
+my $VERSION_LITERAL = do {
+  my $main = File::Spec->catfile($DIST_ROOT, 'lib', 'API', 'Docker.pm');
+  open my $fh, '<', $main or die "cannot read $main: $!\n";
+  my ($v) = grep { defined } map { /^our \$VERSION\s*=\s*'([^']+)'/ ? $1 : undef } <$fh>;
+  die "no \$VERSION found in $main\n" unless defined $v;
+  $v;
+};
 my $WIDTH     = 76;
 
 # ---------------------------------------------------------------------------

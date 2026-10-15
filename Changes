@@ -2,6 +2,14 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - maint/spec-to-type.pl reads the version it writes into every generated
+    class from lib/API/Docker.pm instead of a hard-coded literal, so the
+    bump after a release no longer turns t/spec_to_type.t red in all 201
+    classes. t/spec_to_type.t now also runs in a git worktree (`.git` is a
+    file there, the check was `-d`). Measured: with the old literal the
+    first subtest fails against lib/ at 0.005, with the fix all 5 pass
+    (karr k115).
+
   - A daemon that answers and closes before it has read the request body no
     longer kills the calling process with SIGPIPE (status 141). The request
     is written with SIGPIPE ignored and every write checked; the response the
