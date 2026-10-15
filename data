@@ -1,0 +1,40 @@
+---
+class: standard
+completed: 2026-10-15T04:47:44Z
+created: 2026-10-06T19:41:21Z
+id: 115
+priority: medium
+started: 2026-10-15T03:13:00Z
+status: done
+tags:
+- bug
+- test
+- generator
+- release
+- review-2026-10-06
+title: 't/spec_to_type.t fails in every checkout since the 0.004 release: the generator
+  hard-codes $VERSION ''0.004'', lib/ is at 0.005'
+updated: 2026-10-15T04:47:44Z
+---
+
+`prove -l t/spec_to_type.t` on `main`:
+
+    not ok - no class differs from what lib/ ships      (got 201, expected 0)
+    not ok - every compared class is identical          (got 0, expected 201)
+
+Cause: `maint/spec-to-type.pl:67` carries `my $VERSION_LITERAL = '0.004';` and writes it into every generated class (`:421`). Commit `0996c90` ("increment $VERSION after 0.004 release", the bundle's bump-after-release step) rewrote all 201 `lib/API/Docker/Type/*.pm` to `0.005`. The only difference per class is that one line:
+
+    perl maint/spec-to-type.pl --verify /tmp/x/out
+    diff /tmp/x/out/.../AuthConfig.pm lib/API/Docker/Type/AuthConfig.pm
+    3c3
+    < our $VERSION = '0.004';
+    > our $VERSION = '0.005';
+
+So the byte-for-byte guard goes red after every release and stays red until someone edits the literal by hand; the test only runs in a checkout (it skips in a built dist), which is why the release itself did not notice.
+
+Done: the generator takes the version from `lib/API/Docker.pm` (or the comparison ignores the `our $VERSION` line), `t/spec_to_type.t` is green on `main`, and a release bump no longer needs a manual edit in `maint/`.
+
+---
+Fleet review 2026-10-06 · kind: test · confidence: verified
+
+2026-10-15 03:17 Done, commit 98e1e18 auf Branch worktree-karr-backlog (nicht gepusht). maint/spec-to-type.pl liest die Version aus lib/API/Docker.pm statt Literal. Gemessen: Literal 0.004 -> t/spec_to_type.t Test 1 rot; mit Fix 5/5 gruen, volle Suite gruen. Randbefund: t/spec_to_type.t skippte in einem git worktree (.git ist Datei, Check war -d) -> auf -e geaendert, im selben Commit.
