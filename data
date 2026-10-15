@@ -1,0 +1,38 @@
+---
+class: standard
+completed: 2026-10-15T04:47:38Z
+created: 2026-10-06T19:41:14Z
+id: 114
+priority: high
+started: 2026-10-15T03:12:59Z
+status: done
+tags:
+- bug
+- transport
+- review-2026-10-06
+title: 'Request write is unchecked: a daemon that closes before the body is sent kills
+  the process with SIGPIPE'
+updated: 2026-10-15T04:47:38Z
+---
+
+`lib/API/Docker/Role/HTTP.pm:1027` is `print $sock $request;` -- head and the whole body (a build context or `put_archive` tar passed as `raw_body`) in one unchecked `print`. Nothing under `lib/` touches `$SIG{PIPE}` or looks at the return value (`grep -n 'PIPE\|syswrite' lib/API/Docker/Role/HTTP.pm` is empty).
+
+When the daemon answers and closes before it has read the body, the kernel raises SIGPIPE on the next write and the calling program dies with status 141: no exception, no message, no `API::Docker::Error`. Go's `net/http` (dockerd) does exactly that when a handler returns early without draining a large body -- e.g. `containers->put_archive` on a container that does not exist, `images->load`/`build` rejected by an authorization plugin, or the daemon restarting mid-upload.
+
+Reproduced without Docker (a Unix-socket listener that reads 100 bytes, answers 413 and closes):
+
+```
+$d->post( '/build', undef, raw_body => 'x' x 20_000_000 );
+# process exits with status 141 (SIGPIPE); the eval {} around the call never returns
+```
+
+With a small body the same server yields the expected `Docker API error (413)` exception, so the error path itself is fine -- it is only unreachable once the body no longer fits the socket buffer.
+
+Related: because the return value of `print` is ignored, a short write (EPIPE with SIGPIPE ignored by the application, ECONNRESET) goes on to read a response as if the request had been sent; and `read_timeout` (SO_RCVTIMEO) does not bound a write that blocks on a stalled daemon.
+
+Done when: the write is done with `local $SIG{PIPE} = 'IGNORE'` (or `send` with MSG_NOSIGNAL) and its result checked; on EPIPE/ECONNRESET the transport still tries to read the response the daemon may have sent (so the 4xx reaches the caller as `API::Docker::Error::HTTP`) and otherwise croaks a transport error naming the endpoint; a test under `t/` drives the early-close case with a body larger than the socket buffer.
+
+---
+Fleet review 2026-10-06 · kind: bug · confidence: verified
+
+2026-10-15 03:17 Done in worktree branch worktree-karr-backlog, commit 8f5e6c9 (nicht gepusht, nicht auf main gemergt). Role::HTTP::_request: print laeuft mit local $SIG{PIPE}='IGNORE', Rueckgabewert geprueft; bei Fehler wird die Antwort trotzdem gelesen (4xx kommt als Error::HTTP), ohne Antwort croak mit Endpoint. Test t/request_write.t (20 MB raw_body, Fork-Listener): gegen altes lib/ rot (Tests 4+6, SIGPIPE ohne Antwort), danach prove -lr t gruen (47 Dateien, 755 Tests). Hinweis: Verhalten ohne Antwort ist neuer croak-String statt Truncated -- von Getty zu bestaetigen (ein Satz, kein neuer Fehlerklassen-Typ). Offen: read_timeout bindet blockierendes Write weiterhin nicht (SO_SNDTIMEO nicht gesetzt); Randbefund: Falls ECONNRESET die schon gesendete Antwort verwirft, bleibt nur der Transportfehler. Twin p5-net-async-*: gleiches ungeprueftes Write dort pruefen.
