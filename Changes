@@ -2,6 +2,15 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - A daemon that answers and closes before it has read the request body no
+    longer kills the calling process with SIGPIPE (status 141). The request
+    is written with SIGPIPE ignored and every write checked; the response the
+    daemon already sent is still read, so a 4xx arrives as
+    `API::Docker::Error::HTTP`, and with no response the call croaks naming
+    the endpoint. Measured offline with a 20 MB `raw_body` against a Unix
+    socket listener that reads 100 bytes and closes (t/request_write.t),
+    red before and green after (karr k114).
+
 0.004     2026-08-30 03:30:59Z
 
   - The typed object model: `list` and `inspect` on every resource now

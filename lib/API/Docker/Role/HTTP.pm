@@ -1024,7 +1024,23 @@ sub _request {
   # request, not per client: a socket is opened and closed for each one, so
   # this is the connection the option belongs to.
   $self->_apply_read_timeout($sock, $timeout);
-  print $sock $request;
+
+  # The request goes out with SIGPIPE ignored and every write checked
+  # (karr k114). A daemon that answers and closes before it has read the
+  # body -- dockerd does this for a rejected put_archive or build -- used to
+  # raise SIGPIPE on the next write and end the calling process with status
+  # 141, no exception. Now the failed write is only remembered: the response
+  # the daemon may already have sent is still read, so a 4xx reaches the
+  # caller as an Error::HTTP, and only when there is none is the write error
+  # the answer.
+  my $write_error;
+  # print rather than syswrite: it also serves the in-memory sinks the test
+  # transports use, and IO::Socket handles are autoflushed, so its result is
+  # the result of the write.
+  {
+    local $SIG{PIPE} = 'IGNORE';
+    $write_error = $!.'' unless print $sock $request;
+  }
 
   # Reading can croak, and now does so from further in than it used to: an
   # on_event stream raises Error::Stream at the event that reports the
@@ -1039,6 +1055,12 @@ sub _request {
   my $err = $@;
   close $sock;
   $self->_clear_socket;
+  if (!$ok && defined $write_error) {
+    # The daemon sent nothing usable and the write had failed: the write is
+    # the cause, and the endpoint belongs in the message.
+    croak 'Docker API request to '.$endpoint.' failed: could not send the '
+      .'request ('.$write_error.') and no response followed';
+  }
   die $err unless $ok;
 
   my ($status_code, $status_text, $headers, $body, $summary) = @$response;
