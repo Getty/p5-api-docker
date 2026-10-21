@@ -3,7 +3,8 @@
 Apply to every task in this distribution unless explicitly overridden. Bias: caution over speed on non-trivial
 work; use judgment on trivial tasks. Loaded automatically at launch (same priority as `CLAUDE.md`); subagents
 get their conventions from `briefing.skills` — this file is for the orchestrating agent. Skill pointers:
-`api-docker-core`, `docker-engine-api`, `api-docker-hazards` — skill content is not repeated here.
+`api-docker-core`, `docker-engine-api`, `api-docker-hazards`; Perl house skills `getty-perl-core`, `getty-perl-moo`,
+`getty-perl-release-author-getty`, `perl-release-dist-ini`, `getty-git-commit-style` — skill content is not repeated.
 
 ## Engineering discipline
 
