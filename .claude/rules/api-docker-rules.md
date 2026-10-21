@@ -1,10 +1,9 @@
 # API-Docker House Rules
 
-Apply to every task in this distribution unless explicitly overridden. Bias: caution over
-speed on non-trivial work; use judgment on trivial tasks. Loaded automatically at launch (same
-priority as `CLAUDE.md`); subagents get their conventions from `briefing.skills` — this file is
-for the orchestrating agent, and skill content is not repeated here. Skill pointers:
-`api-docker-core`, `docker-engine-api`, `api-docker-hazards` — don't duplicate them here.
+Apply to every task in this distribution unless explicitly overridden. Bias: caution over speed on non-trivial
+work; use judgment on trivial tasks. Loaded automatically at launch (same priority as `CLAUDE.md`); subagents
+get their conventions from `briefing.skills` — this file is for the orchestrating agent. Skill pointers:
+`api-docker-core`, `docker-engine-api`, `api-docker-hazards` — skill content is not repeated here.
 
 ## Engineering discipline
 
@@ -22,9 +21,10 @@ for the orchestrating agent, and skill content is not repeated here. Skill point
 
 ## Delegation
 
-- **You can spawn subagents** (orchestrating main agent): Do NOT touch behavior-relevant code
-  yourself — delegate, and when in doubt, delegate. Your lane: coordinate, inspect, plan, review
-  diffs, run tests, edit non-behavioral docs. Only the `api-docker-*` agents get their skills force-loaded via `briefing.skills`.
+- **You can spawn subagents** (orchestrating main agent): Do NOT touch behavior-relevant code yourself —
+  delegate, and when in doubt, delegate. Your lane: coordinate, inspect, plan, review diffs, run tests, edit
+  non-behavioral docs. Only the `api-docker-*` agents get their skills force-loaded via `briefing.skills`; you
+  get no briefing and would touch internals with too little context.
 
   | Task | Agent |
   |---|---|
