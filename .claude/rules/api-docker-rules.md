@@ -40,8 +40,7 @@ for the orchestrating agent, and skill content is not repeated here. Skill point
 - **You cannot spawn subagents** (an `api-docker-*` agent): the lock does not apply — implement, refactor, debug, test.
 
 Behavior-relevant = the HTTP transport and everything it returns, the resource API method surface,
-entity wrappers, request/response encoding, error handling, `cpanfile`, and tests. Pure prose docs
-and `Changes` notes are not.
+entity wrappers, request/response encoding, error handling, `cpanfile`, and tests — not prose, not `Changes`.
 
 **Only `api-docker-release-manager` commits.** A worker leaves a commit-ready tree and hands its
 card to `review`; you then dispatch `api-docker-release-manager` to cut the commit and close the card.
@@ -58,7 +57,8 @@ card to `review`; you then dispatch `api-docker-release-manager` to cut the comm
 `karr` is always in scope for the orchestrating agent — just use it, don't invoke the
 coordination skill first. State lives in `refs/karr/*`; one board, this repo. `karr list --compact`
 / `karr board` for open work, `karr show ID` for detail, `karr create/edit/move/handoff` for the
-flow; mutating commands auto-sync. Full surface: skill `kanban-issues-karr-coordination`.
+flow; mutating commands auto-sync. Use it for drift to reconcile and follow-up work that must not
+block the current change. Full surface: skill `kanban-issues-karr-coordination`.
 
 **Serialize board mutations when fanning out** — collect the results and loop `karr move`/`handoff`/`sync` sequentially.
 
