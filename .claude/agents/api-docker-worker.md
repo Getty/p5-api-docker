@@ -5,6 +5,7 @@ model: inherit
 briefing:
   skills:
     - api-docker-core
+    - api-docker-hazards
     - getty-perl-core
     - getty-perl-moo
     - kanban-issues-karr-ticket

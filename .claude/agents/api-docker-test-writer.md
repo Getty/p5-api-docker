@@ -5,6 +5,7 @@ model: sonnet
 briefing:
   skills:
     - api-docker-core
+    - api-docker-hazards
     - docker-engine-api
     - getty-perl-core
     - getty-perl-moo

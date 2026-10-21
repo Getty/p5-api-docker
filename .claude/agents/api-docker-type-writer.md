@@ -6,6 +6,7 @@ briefing:
   skills:
     - api-docker-type-model
     - api-docker-core
+    - api-docker-hazards
     - docker-engine-api
     - getty-perl-core
     - getty-perl-moo

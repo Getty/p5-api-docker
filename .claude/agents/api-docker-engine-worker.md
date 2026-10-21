@@ -6,6 +6,7 @@ briefing:
   skills:
     - docker-engine-api
     - api-docker-core
+    - api-docker-hazards
     - getty-perl-core
     - getty-perl-moo
     - kanban-issues-karr-ticket

@@ -6,6 +6,7 @@ briefing:
   skills:
     - getty-git-commit-style
     - api-docker-core
+    - api-docker-hazards
     - getty-perl-release-author-getty
     - perl-release-dist-ini
     - kanban-issues-karr-ticket
