@@ -62,7 +62,8 @@ it — nor any test that does — without explicit instruction.
 `containers->stats` without a bound and without `on_event`/`on_frame`/`on_chunk` never
 returns.
 
-**Do instead:** bound the window, pass a callback, or wrap a manual probe in `timeout`.
+**Do instead:** bound the window, pass a callback to consume the response as it arrives,
+or wrap a manual probe in `timeout`.
 A callback still needs `$stop->()` called from somewhere, or it runs until the daemon
 closes the connection on its own.
 
@@ -76,6 +77,22 @@ and `t/` directly rather than through the gathered file list.
 `prove` next to a failing `dzil test`, is this before anything else.
 
 **Do instead:** check `git status` for an untracked file first.
+
+## The fixtures are real captures, and arranging them was not trivial
+
+All eight files in `t/fixtures/*.json` are captures from a real daemon — that was not
+true until karr k101 and its follow-up. The header of `t/type_fixture_passthrough.t`
+names the engine and the API version each one was taken on, including
+`containers_list.json`, `container_inspect.json` and `volumes_list.json`: those came
+from a disposable container and a disposable volume, created and removed for the
+purpose, because an earlier recapture pass found neither engine reachable from the
+machine that held the fixtures to read.
+
+**The trap:** a hand-rolled fixture passes the suite and proves nothing about the
+daemon. Engine drift shows up only in a real capture.
+
+**Do instead:** read the fixture header before trusting a fixture, and recapture on the
+engine instead of editing the JSON by hand.
 
 ## The consumer repo makes a signature change cross-repo
 
