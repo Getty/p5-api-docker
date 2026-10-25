@@ -5,6 +5,7 @@ use API::Docker::Type;
 use API::Docker::Type::ConfigReference;
 use API::Docker::Type::IPAM;
 use API::Docker::Type::NetworkContainer;
+use API::Docker::Type::NetworkStatus;
 use API::Docker::Type::PeerInfo;
 use namespace::clean;
 
@@ -176,6 +177,15 @@ docker peers => [ 'PeerInfo' ];
 List of peer nodes for an overlay network. This field is only present for
 overlay networks, and omitted for other network types. See
 L<API::Docker::Type::PeerInfo>.
+
+=cut
+
+docker status => 'NetworkStatus', since => '1.55';
+
+=attr status
+
+Provides runtime information about the network such as the number of
+allocated IPs. See L<API::Docker::Type::NetworkStatus>.
 
 =cut
 

@@ -581,6 +581,7 @@ sub derive_identity {
 
 sub build_class {
   my ($class, $model_info, $spec, $defs, $exc, $since, $label) = @_;
+  $label = $model_info->{source} if $model_info->{source};
   my $path   = $model_info->{path};
   my @parts  = split /\./, $path;
   my $schema = $defs->{ $parts[0] };
@@ -884,7 +885,8 @@ sub since_index {
     $oldest //= $version;
     my $model = $SPEC->can('expected_model')->($spec, $exc);
     for my $class (keys %$model) {
-      $first{$class}{$_} //= $version for keys %{ $model->{$class}{props} };
+      $first{$class}{$_} //= $model->{$class}{props}{$_}{since} // $version
+        for keys %{ $model->{$class}{props} };
     }
   }
   for my $class (keys %first) {

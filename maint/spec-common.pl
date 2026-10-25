@@ -19,8 +19,13 @@ package API::Docker::Maint::Spec;
 use strict;
 use warnings;
 use YAML::XS ();
+use File::Spec;
+use File::Basename ();
 
 our $PREFIX = 'API::Docker::Type::';
+
+# The overlay list sits next to this file; see maint/spec-overlay.yaml.
+our $OVERLAY_FILE = File::Spec->catfile(File::Basename::dirname(__FILE__), 'spec-overlay.yaml');
 
 # ---------------------------------------------------------------------------
 # Loading
@@ -43,6 +48,14 @@ our $PREFIX = 'API::Docker::Type::';
 # file exists to make impossible.
 sub load {
   my ($path) = @_;
+  my $spec = _load_raw($path);
+  my $overlay = load_overlay($OVERLAY_FILE);
+  return $spec unless $overlay && (File::Spec->splitpath($path))[2] eq $overlay->{base};
+  return apply_overlay($spec, $overlay);
+}
+
+sub _load_raw {
+  my ($path) = @_;
   die "spec-common: no such spec: $path\n" unless -f $path;
   local $YAML::XS::Boolean = 'JSON::PP';
   my $spec = YAML::XS::LoadFile($path);
@@ -53,6 +66,75 @@ sub load {
   # The whole document, not just definitions: `paths:` is where the spec says
   # what a definition without a description of its own IS.
   return { definitions => $defs, order => $order, path => $path, document => $spec };
+}
+
+# ---------------------------------------------------------------------------
+# The overlay
+# ---------------------------------------------------------------------------
+
+sub load_overlay {
+  my ($path) = @_;
+  return undef unless -f $path;
+  local $YAML::XS::Boolean = 'JSON::PP';
+  my $data = YAML::XS::LoadFile($path) // {};
+  $data->{fields} //= [];
+  return $data;
+}
+
+# Graft the overlay's fields, and every definition only they need, onto a
+# loaded base spec. The result is an ordinary spec -- definitions, order,
+# document -- so nothing downstream knows an overlay exists, except that a
+# grafted field carries its `since` in $spec->{overlay_since}.
+sub apply_overlay {
+  my ($spec, $overlay) = @_;
+  my $dir = File::Basename::dirname($spec->{path});
+  my $src = _load_raw(File::Spec->catfile($dir, $overlay->{source}));
+  my $defs = $spec->{definitions};
+  my %new;    # definitions taken over from the source
+  my $take;
+  $take = sub {
+    my ($schema) = @_;
+    return unless ref $schema eq 'HASH';
+    if (my $ref = $schema->{'$ref'}) {
+      my $name = strip_ref($ref);
+      return if $defs->{$name} || $new{$name};
+      my $def = $src->{definitions}{$name}
+        or die "spec-common: overlay needs $name, which $overlay->{source} lacks\n";
+      $new{$name} = $def;
+      $take->($def);
+      return;
+    }
+    $take->($_) for @{ $schema->{allOf} || [] };
+    $take->($schema->{items});
+    $take->($schema->{additionalProperties});
+    $take->($_) for values %{ $schema->{properties} // {} };
+  };
+  my %since;
+  for my $f (@{ $overlay->{fields} }) {
+    my ($from_def, $from_field) = split /\./, $f->{from}, 2;
+    my $prop = $src->{definitions}{$from_def}{properties}{$from_field}
+      or die "spec-common: overlay field $f->{from} not in $overlay->{source}\n";
+    my $target = $defs->{ $f->{class} }
+      or die "spec-common: overlay class $f->{class} not in $spec->{path}\n";
+    die "spec-common: overlay would replace $f->{class}.$f->{field}\n"
+      if $target->{properties}{ $f->{field} };
+    $target->{properties}{ $f->{field} } = $prop;
+    push @{ $spec->{order}{ $f->{class} } }, $f->{field};
+    $since{ $f->{class} }{ $f->{field} } = $overlay->{since};
+    $take->($prop);
+  }
+  # A taken definition keeps the order it has in the source, including the
+  # order of anything inline inside it.
+  for my $name (keys %new) {
+    $defs->{$name} = $new{$name};
+    $spec->{overlay_source}{$name} = $overlay->{source};
+    $since{$name}{$_} = $overlay->{since} for keys %{ $new{$name}{properties} // {} };
+    for my $path (keys %{ $src->{order} }) {
+      $spec->{order}{$path} = $src->{order}{$path} if $path eq $name || index($path, "$name.") == 0;
+    }
+  }
+  $spec->{overlay_since} = \%since;
+  return $spec;
 }
 
 # The property names of one schema path, in the order the swagger writes
@@ -357,7 +439,8 @@ sub expected_model {
     }
     my %props;
     for my $part (@inline) {
-      $props{$_} = { schema => $part->{properties}{$_}, path => $name }
+      $props{$_} = { schema => $part->{properties}{$_}, path => $name,
+                     since => $spec->{overlay_since}{$name}{$_} }
         for keys %{ $part->{properties} // {} };
     }
     $own{$name}       = \%props;
@@ -404,6 +487,7 @@ sub expected_model {
       props      => $flatten->($name, {}),
       order      => [ @{ $own_order{$name} } ],
       flat_order => [ @{ $flatten_order->($name, {}) } ],
+      ($spec->{overlay_source}{$name} ? (source => $spec->{overlay_source}{$name}) : ()),
     };
   }
 

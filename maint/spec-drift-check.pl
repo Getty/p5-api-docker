@@ -203,7 +203,7 @@ sub build_since_index {
     my ($version, $model) = @$source;
     for my $class (keys %$model) {
       for my $wire (keys %{ $model->{$class}{props} }) {
-        $first{$class}{$wire} //= $version;
+        $first{$class}{$wire} //= $model->{$class}{props}{$wire}{since} // $version;
       }
     }
   }

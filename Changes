@@ -2,6 +2,22 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - API::Docker::Type::Network gains a typed `status` accessor for the
+    runtime IPAM usage the daemon reports on `GET /networks/{id}`
+    (NetworkStatus, IPAMStatus, SubnetStatus). It used to land in
+    unknown_fields. Measured on Docker Engine Community 29.8.0 (API 1.56):
+    the bridge network answers `Status.IPAM.Subnets` with `IPsInUse` and
+    `DynamicIPsAvailable` per subnet, and rejected_fields stays empty
+    (t/network_status.t, red before and green after).
+
+  - maint/spec-overlay.yaml lets named fields of a newer spec be grafted
+    onto the v1.51 base the model is generated against, together with the
+    definitions only they need. The generator, the drift checker and
+    t/spec_to_type.t all read the grafted model, and a grafted field
+    carries the `since` of the spec it came from. The first and only entry
+    is Network.Status from v1.55; the signature and attestation block of
+    ImageInspect.Identity stays out and remains an unknown field.
+
   - maint/spec-to-type.pl reads the version it writes into every generated
     class from lib/API/Docker.pm instead of a hard-coded literal, so the
     bump after a release no longer turns t/spec_to_type.t red in all 201

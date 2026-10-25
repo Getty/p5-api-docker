@@ -1,0 +1,32 @@
+# The overlay: named fields of a NEWER spec grafted onto the base spec the
+# model is generated against, read by maint/spec-common.pl on every load of
+# the base spec -- so the generator, the drift checker and t/spec_to_type.t
+# all see the same grafted model.
+#
+# The model is generated against v1.51 (karr k112). Moving the whole ceiling
+# to a newer spec renames and splits public return types, so it is not done
+# in one step; a field of a newer spec that is additive and conflict-free is
+# taken over here, one at a time, and the definitions only it needs come with
+# it. A field not listed stays in `unknown_fields`, reachable but untyped.
+#
+# Not listed on purpose: ImageInspect.Identity (v1.55). A typed accessor
+# would have to `use` Identity, which requires the whole signature and
+# attestation cluster (SignatureIdentity, PullIdentity, BuildIdentity,
+# SignerIdentity, AttestationStatement, ...). Nothing in a resource API
+# references that cluster, so it stays out of the model.
+
+# The spec this overlay is applied to (by file name), and the one the fields
+# are taken from, looked up next to it.
+base:   v1.51.yaml
+source: v1.55.yaml
+
+# The version a grafted field first appears in; becomes its `since`.
+since: '1.55'
+
+fields:
+  # Network and NetworkInspect are one class here (Type::Network answers
+  # list and inspect), so the inspect-only Status lands on it. NetworkStatus,
+  # IPAMStatus and SubnetStatus are new in v1.55 and come along.
+  - class:  Network
+    field:  Status
+    from:   NetworkInspect.Status
