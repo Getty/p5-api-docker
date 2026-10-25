@@ -168,7 +168,8 @@ fixed too — `_request` returns `[]` rather than `undef` for a zero-byte
 ## Delegation
 
 Don't touch behavior-relevant code yourself — hand it to the right agent.
-The principle, the lanes and the repo's hazards are in
+The delegation lock and the publish gate are shared house rules (skilletor
+bundle `getty-cpan-dist@getty`); the lanes and the repo's hazards are in
 `.claude/rules/api-docker-rules.md`.
 
 | Task | Agent |
