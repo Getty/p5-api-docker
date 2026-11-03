@@ -2,38 +2,25 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
-  - API::Docker::Type::Network gains a typed `status` accessor for the
+  - API::Docker::Type::Network has a typed `status` accessor for the
     runtime IPAM usage the daemon reports on `GET /networks/{id}`
-    (NetworkStatus, IPAMStatus, SubnetStatus). It used to land in
-    unknown_fields. Measured on Docker Engine Community 29.8.0 (API 1.56):
-    the bridge network answers `Status.IPAM.Subnets` with `IPsInUse` and
-    `DynamicIPsAvailable` per subnet, and rejected_fields stays empty
-    (t/network_status.t, red before and green after).
+    (NetworkStatus, IPAMStatus, SubnetStatus).
 
-  - maint/spec-overlay.yaml lets named fields of a newer spec be grafted
-    onto the v1.51 base the model is generated against, together with the
-    definitions only they need. The generator, the drift checker and
-    t/spec_to_type.t all read the grafted model, and a grafted field
-    carries the `since` of the spec it came from. The first and only entry
-    is Network.Status from v1.55; the signature and attestation block of
-    ImageInspect.Identity stays out and remains an unknown field.
+  - maint/spec-overlay.yaml grafts named fields of a newer spec onto the
+    v1.51 base model, together with the definitions they need. The
+    generator, the drift checker and t/spec_to_type.t read the grafted
+    model, and a grafted field carries the `since` of its spec. The overlay
+    holds Network.Status from v1.55.
 
-  - maint/spec-to-type.pl reads the version it writes into every generated
-    class from lib/API/Docker.pm instead of a hard-coded literal, so the
-    bump after a release no longer turns t/spec_to_type.t red in all 201
-    classes. t/spec_to_type.t now also runs in a git worktree (`.git` is a
-    file there, the check was `-d`). Measured: with the old literal the
-    first subtest fails against lib/ at 0.005, with the fix all 5 pass
-    (karr k115).
+  - maint/spec-to-type.pl takes the version it writes into the generated
+    classes from lib/API/Docker.pm, and t/spec_to_type.t runs in a git
+    worktree as well.
 
-  - A daemon that answers and closes before it has read the request body no
-    longer kills the calling process with SIGPIPE (status 141). The request
-    is written with SIGPIPE ignored and every write checked; the response the
-    daemon already sent is still read, so a 4xx arrives as
-    `API::Docker::Error::HTTP`, and with no response the call croaks naming
-    the endpoint. Measured offline with a 20 MB `raw_body` against a Unix
-    socket listener that reads 100 bytes and closes (t/request_write.t),
-    red before and green after (karr k114).
+  - A daemon that answers and closes before reading the request body leaves
+    the calling process running: the request is written with SIGPIPE
+    ignored and every write checked, the response the daemon sent is still
+    read, so a 4xx arrives as `API::Docker::Error::HTTP`, and without a
+    response the call croaks naming the endpoint.
 
 0.004     2026-08-30 03:30:59Z
 
