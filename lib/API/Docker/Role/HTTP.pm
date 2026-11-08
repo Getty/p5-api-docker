@@ -1856,10 +1856,10 @@ daemon to hang up when it is done, and the readers wait for that -- so a
 daemon that has nothing more to send and does not hang up leaves the client
 blocked with no way out. That is not hypothetical: attaching to a container
 that has B<already exited> answers, delivers the buffered frames and then
-holds the connection open indefinitely on rootless Podman (karr k52), and
+holds the connection open indefinitely on rootless Podman, and
 C</containers/{id}/stats> opened on a running container does not end when that
 container exits on Docker -- it degrades into zero-filled readings and keeps
-going (karr k59).
+going.
 
 L</read_timeout> bounds that:
 
