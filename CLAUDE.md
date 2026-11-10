@@ -121,7 +121,7 @@ t/lib/Test/API/Docker/Mock.pm           # fixture-driven mock helper
 t/fixtures/*.json                       # captured daemon responses
 .claude/agents/                         # the api-docker-* subagents
 .claude/rules/api-docker-rules.md       # house rules, auto-loaded every turn
-.claude/skills/                         # briefed skills (hardlinked + owned)
+.claude/skills/                         # briefed skills (owned + skilletor-installed)
 ```
 
 ## Build and test
@@ -189,9 +189,10 @@ pattern for the generated classes; see karr k79.
 
 The agents carry their skills via `briefing.skills` (see `.claude/agents/`);
 the main agent delegates rather than loading them. Skill sources live under
-`.claude/skills/` — `api-docker-core` is owned here, the rest are hardlinks
-managed with `manage-skills` (`docker-engine-api` lives in the shared library and
-is reused by `../p5-dist-zilla-plugin-docker-api`).
+`.claude/skills/` — `api-docker-core`, `api-docker-hazards` and `api-docker-type-model`
+are owned here, the rest are installed by skilletor from `.claude/skilletor.json`
+(`docker-engine-api` lives in the shared library and is reused by
+`../p5-dist-zilla-plugin-docker-api`).
 
 Ticket coordination runs on the repo's `karr` board (`karr board`).
 
