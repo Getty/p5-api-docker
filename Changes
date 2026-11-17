@@ -4,7 +4,10 @@ Revision history for API-Docker
 
   - API::Docker::Type::Network has a typed `status` accessor for the
     runtime IPAM usage the daemon reports on `GET /networks/{id}`
-    (NetworkStatus, IPAMStatus, SubnetStatus).
+    (NetworkStatus, IPAMStatus, SubnetStatus). Before, the daemon's `Status`
+    landed in `unknown_fields`. The fixture was captured from Docker 29.8.0
+    (API 1.56); Podman 5.8.4 (API 1.44) reports no `Status`, so `status` is
+    undef there.
 
   - maint/spec-overlay.yaml grafts named fields of a newer spec onto the
     v1.51 base model, together with the definitions they need. The
