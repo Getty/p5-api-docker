@@ -1,0 +1,29 @@
+---
+claimed_at: 2026-11-17T21:12:07Z
+claimed_by: api-docker-test-writer
+class: standard
+completed: 2026-11-17T21:12:07Z
+created: 2026-11-17T20:35:35Z
+id: 116
+priority: medium
+started: 2026-11-17T21:02:37Z
+status: done
+tags:
+- tests
+- live
+title: 'Keep the read-only live suite read-only: three tests reach the real engine
+  without API_DOCKER_TEST_WRITE'
+updated: 2026-11-17T21:12:12Z
+---
+
+Measured 2026-11-17 in the 0.005 pre-release audit: with API_DOCKER_TEST_HOST set and API_DOCKER_TEST_WRITE unset, three tests bypass the mock route table and send real requests. They fail on both engines (Docker 29.8.0 / API 1.56, Podman 5.8.4 / API 1.44).
+
+- t/images.t, subtest "pull only defaults tag when the reference has none" (k99): pulls nginx, nginx:1.25, alpine@sha256:000..., localhost:5000/foo against the real engine; 404 on the digest. podman events shows real pulls of docker.io/library/nginx:latest and nginx:1.25 from that run.
+- t/images_registry_auth.t: 500 from private.example (real pull attempt of private.example/app:v1).
+- t/json_body_booleans.t: 404 "No such container: test".
+
+So the read-only live run is not read-only: it can pull images onto the engine. Unchanged since 0.004 apart from the shebang, not a regression, not a 0.005 blocker. Fix: guard these as fixture-only (is_live() skip, like the other route-assertion tests), or gate them behind can_write(). Lane: api-docker-test-writer.
+
+Added per-subtest 'plan skip_all => route assertions are fixture-only if is_live()' guards: images.t (k99 pull subtest), images_registry_auth.t (pull, build; encoding subtest still runs live), json_body_booleans.t (all 3). Verified: fixture runs pass; live docker 29.8.0 and podman 5.8.4 pass/skip; no image events on either engine afterwards; prove -lr t/ PASS (48 files, 770 tests).
+
+Committed e5d5b30
