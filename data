@@ -1,0 +1,26 @@
+---
+class: standard
+created: 2026-11-17T21:02:32Z
+id: 118
+priority: medium
+status: backlog
+tags:
+- type-model
+- plugins
+- measure
+title: 'Plugin::Config::Interface.types: v1.51 types it as objects, v1.55 as strings
+  -- measure what the daemon sends'
+updated: 2026-11-17T21:02:32Z
+---
+
+Found while closing k112. `perl maint/spec-drift-check.pl --from spec/v1.51.yaml --to spec/v1.55.yaml` reports a TYPE CHANGE:
+
+  API::Docker::Type::Plugin::Config::Interface :: Types  array<object<PluginInterfaceType>> -> array<str>
+
+v1.51 declares PluginInterfaceType as {Prefix, Capability, Version} (all required); v1.55 declares a string with example "docker.volumedriver/1.0". lib/API/Docker/Type/Plugin/Config/Interface.pm:15 has `docker types => [ 'PluginInterfaceType' ]`.
+
+Suspicion, UNMEASURED: v1.55 corrects the spec, not the wire -- the daemon has always sent strings. Then `->types` is undef on every engine and the value sits in rejected_fields. There is no plugin fixture in t/fixtures/.
+
+Measuring needs a plugin installed on an engine (a write, pulls from a registry) -- only with the maintainer's go-ahead. Read GET /plugins on Docker and Podman first; a machine that already has a plugin installed needs no write.
+
+If confirmed: correcting a wrong type is not a rename, but it changes what an accessor returns -- decide per ADR 0001 (overlay, or a drift exception with WHY). Lanes: api-docker-engine-worker (measure), api-docker-type-writer (model).
