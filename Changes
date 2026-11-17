@@ -6,6 +6,9 @@ Revision history for API-Docker
     && make && make test`, as cpanm and CPAN smokers do): t/dist_source.t now
     checks only a git checkout and skips elsewhere.
 
+  - The tests accept the location Carp before 1.25 (perl 5.14 and 5.16)
+    appends to an error, without the final full stop.
+
 0.005     2026-11-17 21:33:48Z
 
   - API::Docker::Type::Network has a typed `status` accessor for the
