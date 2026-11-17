@@ -1,6 +1,6 @@
 package API::Docker::Type::Mount::TmpfsOptions;
 # ABSTRACT: Optional configuration for the C<tmpfs> type
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

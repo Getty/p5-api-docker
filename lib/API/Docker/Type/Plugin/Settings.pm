@@ -1,6 +1,6 @@
 package API::Docker::Type::Plugin::Settings;
 # ABSTRACT: Settings that can be modified by users
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::PluginDevice;
 use API::Docker::Type::PluginMount;

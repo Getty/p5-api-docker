@@ -1,6 +1,6 @@
 package API::Docker::Role::Entity::Volume;
 # ABSTRACT: Volume operations, on the generated volume type
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use Moo::Role;
 with 'API::Docker::Role::Entity';
 requires 'name';

@@ -1,6 +1,6 @@
 package API::Docker::Type::PluginInterfaceType;
 # ABSTRACT: One entry of C<Plugin.Config.Interface.Types>
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

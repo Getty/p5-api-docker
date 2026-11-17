@@ -1,6 +1,6 @@
 package API::Docker::Type::DeviceRequest;
 # ABSTRACT: A request for devices to be sent to device drivers
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

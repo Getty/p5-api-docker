@@ -1,6 +1,6 @@
 package API::Docker::Type::GenericResource::DiscreteResourceSpec;
 # ABSTRACT: An integer-valued user-defined resource
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

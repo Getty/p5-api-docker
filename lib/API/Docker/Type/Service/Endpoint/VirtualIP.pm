@@ -1,6 +1,6 @@
 package API::Docker::Type::Service::Endpoint::VirtualIP;
 # ABSTRACT: One entry of C<Service.Endpoint.VirtualIPs>
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

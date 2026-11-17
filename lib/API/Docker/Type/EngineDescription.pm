@@ -1,6 +1,6 @@
 package API::Docker::Type::EngineDescription;
 # ABSTRACT: EngineDescription provides information about an engine
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::EngineDescription::Plugin;
 use namespace::clean;

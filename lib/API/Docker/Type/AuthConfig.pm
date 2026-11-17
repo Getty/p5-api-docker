@@ -1,6 +1,6 @@
 package API::Docker::Type::AuthConfig;
 # ABSTRACT: The body of a C<POST /auth> request
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

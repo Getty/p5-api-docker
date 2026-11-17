@@ -1,6 +1,6 @@
 package API::Docker::Type::VolumeListResponse;
 # ABSTRACT: Volume list response
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::Volume;
 use namespace::clean;

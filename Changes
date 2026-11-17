@@ -1,5 +1,7 @@
 Revision history for API-Docker
 
+{{$NEXT}}
+
 0.005     2026-11-17 21:33:48Z
 
   - API::Docker::Type::Network has a typed `status` accessor for the

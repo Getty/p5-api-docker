@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerNetworkStats;
 # ABSTRACT: Aggregates the network stats of one container
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

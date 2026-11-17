@@ -1,6 +1,6 @@
 package API::Docker::Type::FirewallInfo;
 # ABSTRACT: Information about the daemon's firewalling configuration
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

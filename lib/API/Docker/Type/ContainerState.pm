@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerState;
 # ABSTRACT: Container's running state
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::Health;
 use namespace::clean;

@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskSpec::Placement;
 # ABSTRACT: Where in the swarm a task may be scheduled
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::Platform;
 use API::Docker::Type::TaskSpec::Placement::Preference;

@@ -1,6 +1,6 @@
 package API::Docker::Type::ImageHistoryResponseItem;
 # ABSTRACT: individual image layer information in response to ImageHistory operation
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

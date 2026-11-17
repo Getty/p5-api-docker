@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskSpec;
 # ABSTRACT: User modifiable task configuration
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::NetworkAttachmentConfig;
 use API::Docker::Type::TaskSpec::ContainerSpec;

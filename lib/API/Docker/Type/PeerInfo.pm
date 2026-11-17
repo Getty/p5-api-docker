@@ -1,6 +1,6 @@
 package API::Docker::Type::PeerInfo;
 # ABSTRACT: One peer of an overlay network
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

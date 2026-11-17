@@ -1,6 +1,6 @@
 package API::Docker::Type::ServiceCreateResponse;
 # ABSTRACT: contains the information returned to a client on the creation of a new service
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

@@ -1,6 +1,6 @@
 package API::Docker::Type::IPAM;
 # ABSTRACT: The C<IPAM> field of the body of a C<POST /networks/create> request
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::IPAMConfig;
 use namespace::clean;

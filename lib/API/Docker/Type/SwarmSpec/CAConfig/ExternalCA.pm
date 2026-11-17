@@ -1,6 +1,6 @@
 package API::Docker::Type::SwarmSpec::CAConfig::ExternalCA;
 # ABSTRACT: One entry of C<SwarmSpec.CAConfig.ExternalCAs>
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

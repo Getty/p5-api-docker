@@ -1,6 +1,6 @@
 package API::Docker::Type::SwarmSpec;
 # ABSTRACT: User modifiable swarm configuration
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::SwarmSpec::CAConfig;
 use API::Docker::Type::SwarmSpec::Dispatcher;

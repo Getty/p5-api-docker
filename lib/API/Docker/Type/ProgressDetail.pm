@@ -1,6 +1,6 @@
 package API::Docker::Type::ProgressDetail;
 # ABSTRACT: The value of C<BuildInfo.progressDetail>
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

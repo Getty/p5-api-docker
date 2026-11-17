@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerCPUStats;
 # ABSTRACT: CPU related info of the container
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::ContainerCPUUsage;
 use API::Docker::Type::ContainerThrottlingData;

@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskSpec::Placement::Preference::Spread;
 # ABSTRACT: The node attribute a task is spread over
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

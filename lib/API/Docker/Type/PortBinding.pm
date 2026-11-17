@@ -1,6 +1,6 @@
 package API::Docker::Type::PortBinding;
 # ABSTRACT: A binding between a host IP address and a host port
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

@@ -1,6 +1,6 @@
 package API::Docker::Type::Service::Endpoint;
 # ABSTRACT: The resolved endpoint of a service
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::EndpointPortConfig;
 use API::Docker::Type::EndpointSpec;

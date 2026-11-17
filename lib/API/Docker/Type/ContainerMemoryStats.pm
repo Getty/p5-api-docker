@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerMemoryStats;
 # ABSTRACT: Aggregates all memory stats since container inception on Linux
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

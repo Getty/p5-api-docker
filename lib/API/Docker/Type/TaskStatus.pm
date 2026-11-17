@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskStatus;
 # ABSTRACT: represents the status of a task
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::ContainerStatus;
 use API::Docker::Type::PortStatus;

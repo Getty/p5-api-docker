@@ -1,6 +1,6 @@
 package API::Docker::Type::Address;
 # ABSTRACT: An IPv4 or IPv6 IP address
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

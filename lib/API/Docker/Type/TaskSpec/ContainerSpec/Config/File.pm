@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskSpec::ContainerSpec::Config::File;
 # ABSTRACT: A specific target that is backed by a file
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerUpdateResponse;
 # ABSTRACT: Response for a successful container-update
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

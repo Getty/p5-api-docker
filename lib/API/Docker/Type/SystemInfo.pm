@@ -1,6 +1,6 @@
 package API::Docker::Type::SystemInfo;
 # ABSTRACT: The body of the C<200> response to C<GET /info>
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::Commit;
 use API::Docker::Type::ContainerdInfo;

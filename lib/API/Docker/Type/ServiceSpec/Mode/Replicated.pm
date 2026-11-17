@@ -1,6 +1,6 @@
 package API::Docker::Type::ServiceSpec::Mode::Replicated;
 # ABSTRACT: The replicated mode of a service, and its replica count
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

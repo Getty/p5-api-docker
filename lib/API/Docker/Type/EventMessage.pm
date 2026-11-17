@@ -1,6 +1,6 @@
 package API::Docker::Type::EventMessage;
 # ABSTRACT: The information an event contains
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::EventActor;
 use namespace::clean;

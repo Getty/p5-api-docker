@@ -1,6 +1,6 @@
 package API::Docker::Type::ImageInspect::Metadata;
 # ABSTRACT: Additional metadata of the image in the local cache
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

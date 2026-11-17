@@ -1,6 +1,6 @@
 package API::Docker::Role::Entity;
 # ABSTRACT: The client reference an entity delegates through
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use Moo::Role;
 use namespace::clean;
 

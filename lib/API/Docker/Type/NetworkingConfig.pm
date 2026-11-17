@@ -1,6 +1,6 @@
 package API::Docker::Type::NetworkingConfig;
 # ABSTRACT: The container's networking configuration for each of its interfaces
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::EndpointSettings;
 use namespace::clean;

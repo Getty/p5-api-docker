@@ -1,6 +1,6 @@
 package API::Docker::Type::Network;
 # ABSTRACT: One entry of the C<200> response to C<GET /networks>
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::ConfigReference;
 use API::Docker::Type::IPAM;

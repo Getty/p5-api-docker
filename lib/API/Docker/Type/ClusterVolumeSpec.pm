@@ -1,6 +1,6 @@
 package API::Docker::Type::ClusterVolumeSpec;
 # ABSTRACT: Cluster-specific options used to create the volume
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::ClusterVolumeSpec::AccessMode;
 use namespace::clean;

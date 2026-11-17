@@ -1,6 +1,6 @@
 package API::Docker::Type::ClusterVolumeSpec::AccessMode::Secret;
 # ABSTRACT: One cluster volume secret entry
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

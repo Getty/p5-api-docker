@@ -1,6 +1,6 @@
 package API::Docker::Type::SwarmSpec::EncryptionConfig;
 # ABSTRACT: Parameters related to encryption-at-rest
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

@@ -1,6 +1,6 @@
 package API::Docker::Type::SystemVersion::Platform;
 # ABSTRACT: The name of the platform the daemon reports itself as
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use namespace::clean;
 

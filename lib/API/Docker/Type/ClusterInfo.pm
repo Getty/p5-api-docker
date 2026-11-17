@@ -1,6 +1,6 @@
 package API::Docker::Type::ClusterInfo;
 # ABSTRACT: Information about the swarm as is returned by the "/info" endpoint
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use API::Docker::Type;
 use API::Docker::Type::ObjectVersion;
 use API::Docker::Type::SwarmSpec;
