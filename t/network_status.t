@@ -10,6 +10,11 @@ use Test::API::Docker::Mock;
 # unknown_fields. Captured 2026-10-25 (karr k112) from Docker Engine
 # Community 29.8.0 (API 1.56): GET /networks/bridge, unmodified.
 
+# The assertions are about the captured fixture; under API_DOCKER_TEST_HOST the
+# mock route table is bypassed and an engine without Status (Podman) has none.
+plan skip_all => 'fixture-only: mock route table is bypassed in live mode'
+  if is_live();
+
 my $docker = test_docker(
   'GET /networks/bridge' => load_fixture('network_inspect_status'),
 );
