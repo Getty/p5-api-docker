@@ -1,6 +1,6 @@
 ---
 name: api-docker-hazards
-description: "Use when touching the engine, the live tests or the build of the API::Docker distribution: which daemon answers on the socket, GET /version, live write tests, prune and push, streaming endpoints, Git::GatherDir, or several agents in one working tree."
+description: "Use when touching the engine, the live tests or the build of the API::Docker distribution: which daemon answers on the socket, GET /version, DOCKER_HOST or the docker CLI, live write tests, prune and push, streaming endpoints, Git::GatherDir, or several agents in one working tree."
 ---
 
 # API::Docker — hazards and mechanics
@@ -28,6 +28,20 @@ the skip line before believing a green run.
 **Do instead:** a measurement names the engine and the version it was taken on — write
 both into the output, or it is not a measurement.
 
+The `docker` CLI is not `/var/run/docker.sock`: it talks to whatever `DOCKER_HOST` or
+the active docker context names.
+
+**The trap:** `docker images` or `docker events` can print another engine's answers
+under Docker's name. On the maintainer's machine on 2026-11-17 `DOCKER_HOST` pointed at
+Podman: two agents checked Docker with the CLI, one reported nothing pulled, while
+`/events` on `/var/run/docker.sock` showed two `image pull nginx` — and `docker ps -a`
+printed the same list as `podman ps -a`.
+
+**Do instead:** ask the socket itself
+(`curl -s --unix-socket <sock> http://localhost/…`), or name the host explicitly
+(`docker -H unix:///var/run/docker.sock …`). Never trust the bare `docker` CLI to mean
+the Docker daemon.
+
 ## Live write tests mutate the real engine
 
 `API_DOCKER_TEST_WRITE=1` creates and removes actual containers, images, networks and
@@ -35,6 +49,18 @@ volumes. Cleanup runs in an `END` block, so an interrupted run leaves them behin
 
 **Do instead:** run the live-write suite only when the task is about live behavior —
 and check the engine afterwards for leftovers the `END` block never got to remove.
+
+An unset write flag does not make a live run read-only. `test_docker` drops its routes
+in live mode (`api-docker-core`), so a subtest that passes routes and asserts on what
+they captured sends its pull, build or create to the real engine (k116).
+
+**The trap:** without `API_DOCKER_TEST_WRITE` the run looks safe, and an earlier subtest
+dying first can hide the next unguarded one until it stops dying.
+
+**Do instead:** every new subtest that passes routes to `test_docker` and asserts on
+what they captured opens with
+`plan skip_all => 'route assertions are fixture-only' if is_live();`. After any live
+run, read the engine's `/events` over the socket for the run's window.
 
 ## `prune` destroys, and `dangling => 0` destroys MORE, not less
 
