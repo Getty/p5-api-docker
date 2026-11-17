@@ -1,0 +1,24 @@
+---
+class: standard
+created: 2026-11-17T21:02:28Z
+id: 117
+priority: low
+status: backlog
+tags:
+- type-model
+- spec
+title: Graft further v1.55 fields onto the model via the overlay when a caller needs
+  them
+updated: 2026-11-17T21:02:28Z
+---
+
+Follow-up to k112. Per ADR 0001 (rule 2 + 5) new fields are added additively, and only once something needs them. maint/spec-overlay.yaml is the mechanism (k112, 84506ef). The 8 NEW FIELDs of `perl maint/spec-drift-check.pl --from spec/v1.51.yaml --to spec/v1.55.yaml`:
+
+- ContainerSummary.Health -- the most useful one: container health in `containers->list` without an inspect per container
+- ContainerInspectResponse.Storage
+- ContainerStatsResponse.os_type
+- SystemInfo.NRI
+- TaskSpec::Resources.MemorySwappiness, .SwapBytes
+- ImageInspect.Identity, ImageManifestSummary::ImageData.Identity -- stay OUT: they pull in the signature/attestation cluster (decided on k112, recorded in maint/spec-overlay.yaml)
+
+Each graft: an overlay entry, the new nested classes it needs, a fixture captured from a live engine (name engine + version), and a Changes entry. Until then every one of these is reachable in unknown_fields (measured k110). Lane: api-docker-type-writer.
