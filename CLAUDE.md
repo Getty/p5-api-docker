@@ -115,7 +115,8 @@ maint/spec-common.pl                    # the spec loader shared by the two scri
 maint/spec-to-type-names.yaml           # inline-class naming exceptions the generator and checker share
 maint/spec-to-type-prose.yaml           # hand-written POD for fields/classes the swagger describes poorly
 maint/spec-drift-exceptions.yaml        # deliberate deviations the drift checker accepts
-spec/v1.41.yaml, v1.44.yaml, v1.51.yaml # Docker's own swagger, checked in; generation runs against v1.51
+maint/spec-overlay.yaml                 # named fields of v1.55 grafted onto the v1.51 base model
+spec/v1.41.yaml .. v1.55.yaml           # Docker's own swagger, checked in; generation runs against v1.51 plus the overlay
 t/                                      # tests (prove -lr t/)
 t/lib/Test/API/Docker/Mock.pm           # fixture-driven mock helper
 t/fixtures/*.json                       # captured daemon responses
