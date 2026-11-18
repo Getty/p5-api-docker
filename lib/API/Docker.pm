@@ -671,7 +671,8 @@ large C</build> context or C<< images->load >> archive being written to a
 daemon that has stopped reading.
 
 =item * B<Under TLS, C<read_timeout> is not quite an idle timer on the
-plaintext.> It is C<SO_RCVTIMEO> on the socket, which bounds each blocking
+plaintext.> It is C<SO_RCVTIMEO> on the socket (on Windows, which does not
+keep that option, a C<select> before each read), which bounds each blocking
 receive on the underlying connection, and one plaintext read can consume
 several of those while a TLS record arrives in pieces -- so a record dribbling
 in slowly enough resets the clock without a byte reaching the caller. It still

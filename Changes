@@ -2,6 +2,14 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - `read_timeout` holds on Windows too: there a request waits for the
+    socket with `select` before each read, for the time given. Everywhere
+    else it stays the socket option.
+
+  - The test suite runs on Windows. t/request_write.t checks there that a
+    daemon closing early ends the call with an exception naming the
+    endpoint, and skips the two checks for the daemon's early 413 answer.
+
 0.006     2026-11-18 01:20:29Z
 
   - The test suite runs again in an installed distribution (`perl Makefile.PL

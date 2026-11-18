@@ -77,13 +77,30 @@ sub attempt {
   return ( $status, @out );
 }
 
+# On Windows (measured on Strawberry Perl 5.42.3) an answer the daemon sends
+# before it closes, while the request is still being written, does not reach
+# the caller: the write fails with "Invalid argument" and the response is gone
+# with the connection. The call still croaks and names the endpoint, which is
+# what the first block checks there.
+my $early_answer_lost = $^O eq 'MSWin32'
+  ? 'on Windows an answer sent while the request is still being written does '
+    .'not reach the caller (the write fails with EINVAL first)'
+  : undef;
+
 {
   my ( $status, $cls, $msg ) = attempt($reply);
   is $status, 0, 'the process survives a daemon that closes early'
     or diag 'wait status '.$status;
-  is $cls // '', 'API::Docker::Error::HTTP',
-    'the 413 reaches the caller as an HTTP error';
-  like $msg // '', qr/413/, 'and names the status';
+  SKIP: {
+    skip $early_answer_lost, 2 if $early_answer_lost;
+    is $cls // '', 'API::Docker::Error::HTTP',
+      'the 413 reaches the caller as an HTTP error';
+    like $msg // '', qr/413/, 'and names the status';
+  }
+  isnt $cls // '', 'ok', 'it croaks';
+  like $msg // '', $early_answer_lost ? qr{/build} : qr/413/,
+    $early_answer_lost ? 'and the message names the endpoint'
+      : 'and the message carries the status';
 }
 
 {

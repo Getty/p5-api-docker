@@ -8,6 +8,7 @@ use IO::Socket::INET;
 # that IO::Socket::SSL's own gets picked up rather than the builtin. See _pull.
 use IO::Handle;
 use Socket qw( SOL_SOCKET SO_RCVTIMEO );
+use Time::HiRes ();
 # How a read that delivered nothing says it ran out of time rather than out of
 # stream (EAGAIN/EWOULDBLOCK), and how it says it was interrupted rather than
 # either (EINTR). See _pull and _timed_out.
@@ -544,31 +545,48 @@ sub _connect_timeout_value {
   return $self->_timeout_value('connect_timeout', $timeout);
 }
 
-# Why SO_RCVTIMEO and not select(): a bound that reads the socket cannot see
-# what is already buffered above it, and would fire while the data it was
-# waiting for was in hand. That was true of PerlIO's read-ahead when this was
-# written (measured: after one readline of a socket holding
-# "one\ntwo\nthree\n", two whole lines sit in the PerlIO buffer and select()
-# says the handle is not ready), and it is true of _read_buffer now. A
-# select-based bound would have to be asked only when that buffer is empty,
-# which is one more invariant to keep for no gain: SO_RCVTIMEO bounds the one
-# syscall in _pull for one setsockopt, and gets idle-since-the-last-byte
-# semantics for free, which is the semantics these endpoints need (karr k52:
-# the buffered frames arrive, and *then* the socket stalls -- a
-# time-to-first-byte bound would never fire).
+# How the bound is held depends on the system, measured on both kinds.
+#
+# Where SO_RCVTIMEO works (Linux, measured against unix://, plain tcp:// and
+# TLS), it bounds the one syscall in _pull for one setsockopt and gets
+# idle-since-the-last-byte semantics for free, which is the semantics these
+# endpoints need (karr k52: the buffered frames arrive, and *then* the socket
+# stalls -- a time-to-first-byte bound would never fire).
+#
+# On Windows perl accepts the option and does not keep it (Strawberry Perl
+# 5.42.3, over socketpair and over IO::Socket::UNIX: setsockopt succeeds and
+# getsockopt reads the value back, yet recv, sysread and readline on a silent
+# peer wait for as long as the test does; select on the same socket returns
+# after the time it was given). There _pull waits with select before each
+# sysread, and the option is not armed. The wait covers the same thing the
+# option does -- the time until the next byte -- so the bound stays an idle
+# timeout. A select-based bound can only see the socket, so it is asked only
+# when nothing is buffered above it: _pull is entered with an empty
+# _read_buffer, and a TLS socket that already holds decrypted bytes
+# (`pending`) is read without waiting.
+#
+# $SELECT_READ_TIMEOUT forces that path on any system; the tests set it.
+our $SELECT_READ_TIMEOUT;
+
+sub _select_read_timeout {
+  return $SELECT_READ_TIMEOUT if defined $SELECT_READ_TIMEOUT;
+  return $^O eq 'MSWin32' ? 1 : 0;
+}
+
 sub _apply_read_timeout {
   my ($self, $sock, $timeout) = @_;
 
   return unless $timeout;
 
+  # _pull holds the time itself; arming an option the platform ignores would
+  # only suggest a bound that is not there.
+  return if $self->_select_read_timeout;
+
   my $packed;
-  if ($^O eq 'MSWin32' || $^O eq 'cygwin') {
+  if ($^O eq 'cygwin') {
     # Winsock takes a DWORD of milliseconds here rather than a struct timeval,
     # and reads a zero as "wait forever" -- so a sub-millisecond request is
-    # rounded up instead of becoming the hang it asked to avoid. Reasoned from
-    # the Winsock documentation and NOT measured: there is no Windows here.
-    # What makes that safe to ship is the croak below -- a shape the platform
-    # rejects is reported rather than ignored.
+    # rounded up instead of becoming the hang it asked to avoid. Not measured.
     my $ms = int($timeout * 1000 + 0.5);
     $ms = 1 if $ms < 1;
     $packed = pack('L', $ms);
@@ -753,6 +771,34 @@ sub _read_buffer {
   return \${*$sock}{$RBUF};
 }
 
+# True when a read will not block: decrypted bytes are held by a TLS socket,
+# or select says the handle is readable (data, or the end of the stream). False
+# when $timeout seconds went by without either. A handle without a descriptor
+# (a tied stand-in) cannot be waited on and is read directly.
+sub _wait_readable {
+  my ($self, $sock, $timeout) = @_;
+
+  return 1 if $sock->can('pending') && $sock->pending;
+
+  my $fileno = fileno($sock);
+  return 1 unless defined $fileno && $fileno >= 0;
+
+  my $vec = '';
+  vec($vec, $fileno, 1) = 1;
+
+  my $deadline = Time::HiRes::time() + $timeout;
+  while (1) {
+    my $left = $deadline - Time::HiRes::time();
+    $left = 0 if $left < 0;
+    my $n = select(my $rout = $vec, undef, undef, $left);
+    return 1 if $n > 0;
+    return 0 if $n == 0;
+    # -1: interrupted by a signal is not an answer, retry with what is left;
+    # anything else is left to the read itself to report.
+    return 1 unless $! == EINTR;
+  }
+}
+
 # The one physical read. It answers with what happened rather than with a
 # count, because a count makes every reader re-derive the same distinction and
 # an undef quietly becoming an end of stream at any one of them is the silent
@@ -786,6 +832,15 @@ sub _pull {
   my $buf = $self->_read_buffer($sock);
 
   while (1) {
+    # Where the platform ignores SO_RCVTIMEO, wait for the socket here, for at
+    # most the time of the request. Not readable in that time is the expiry,
+    # reported as the EAGAIN the option would have produced so that
+    # _timed_out reads both the same way. See _apply_read_timeout.
+    if ($ctx->{timeout} && $self->_select_read_timeout) {
+      my $ready = $self->_wait_readable($sock, $ctx->{timeout});
+      return 'timeout' unless $ready;
+    }
+
     # errno immediately before, errno immediately after, nothing in between:
     # it is only meaningful after a failure, and any operation at all would
     # overwrite it. See _timed_out.
@@ -1918,13 +1973,19 @@ C</build> context sent to a daemon that has stopped reading.
 It is implemented with C<SO_RCVTIMEO> on the socket, which was measured to
 behave the same over C<unix://>, plain C<tcp://> and TLS: the timeout fires,
 the handle is not left unusable, and reading afterwards works. The C<struct
-timeval> it is set with was measured on Linux; on Windows the millisecond
-C<DWORD> Winsock documents is sent instead, which is reasoned rather than
-measured. A platform that rejects either croaks rather than continuing without
-the bound.
+timeval> it is set with was measured on Linux. A platform that rejects it
+croaks rather than continuing without the bound.
 
-Over TLS it is not quite an idle timer on the plaintext. C<SO_RCVTIMEO> bounds
-each blocking receive on the underlying socket, and one plaintext read can
+On Windows that option is accepted and not kept: measured with Strawberry Perl
+5.42.3, C<setsockopt> succeeds and C<getsockopt> reads the value back, yet a
+read from a silent peer waits forever. There the timeout is held by waiting for
+the socket with C<select> before each read, for the same time and with the same
+meaning -- silence since the last byte -- and the option is not set. A TLS
+socket that already holds decrypted bytes is read without waiting.
+
+Over TLS it is not quite an idle timer on the plaintext. C<SO_RCVTIMEO> (on
+Windows the wait for the socket) bounds each blocking receive on the underlying
+socket, and one plaintext read can
 consume several of those while a TLS record arrives in pieces -- so a record
 dribbling in slowly enough resets the clock without a byte reaching the
 caller. It still bounds the hang, which is what it is for.

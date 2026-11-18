@@ -4,6 +4,9 @@ use warnings;
 use Test::More;
 use Socket;
 use Errno;
+use IO::Handle;
+use File::Spec;
+use Socket qw( SOL_SOCKET SO_RCVTIMEO );
 use Time::HiRes qw( time );
 use API::Docker;
 use API::Docker::Error::Timeout;
@@ -22,8 +25,10 @@ use API::Docker::Error::Timeout;
 # to come out differently. A tied handle can produce both exactly, with no
 # socket and no waiting.
 #
-# Tier two is the one assertion a tied handle cannot make: that the setsockopt
-# is really in force on a real socket. That one costs about a fifth of a
+# Tier two is the one assertion a tied handle cannot make: that the timeout is
+# really held on a real socket -- by SO_RCVTIMEO where the system keeps it, by
+# select in _pull where it does not (Windows), and by select on every system
+# in the subtests that force it. That one costs about a fifth of a
 # second and needs a socketpair, no daemon and no network.
 #
 # What karr k60 changed here. The transport used to read with PerlIO's read()
@@ -130,6 +135,10 @@ sub READ {
 
 sub CLOSE { 1 }
 
+# No descriptor behind it: where the transport waits with select (Windows),
+# this is what tells it there is nothing to wait on and it reads directly.
+sub FILENO { return undef }
+
 package main;
 
 my $client = API::Docker->new(
@@ -151,6 +160,7 @@ sub scripted {
 # call made before this option existed passes, and it must leave every read
 # site behaving exactly as it did.
 sub ctx      { return { endpoint => $ENDPOINT, timeout => 2 } }
+sub ctx_for  { return { endpoint => $ENDPOINT, timeout => $_[0] } }
 sub ctx_off  { return { endpoint => $ENDPOINT } }
 
 # Run $code and report whether it raised a timeout, so the two meanings of one
@@ -646,13 +656,13 @@ subtest 'the exception is still the string it replaces' => sub {
 # ---------------------------------------------------------------------------
 # A real socket: that the setsockopt is in force, and that _request arms it
 # ---------------------------------------------------------------------------
-subtest 'the real socket: SO_RCVTIMEO is actually set' => sub {
+subtest 'the real socket: the timeout is actually held' => sub {
   socketpair(my $ours, my $theirs, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or plan skip_all => "socketpair unavailable: $!";
 
   $client->_apply_read_timeout($ours, 0.2);
 
-  # The peer is open and silent, so without the option in force this read
+  # The peer is open and silent, so without the bound in force this read
   # blocks forever and the test never finishes.
   my $t0 = time;
   eval { $client->_read_line($ours, ctx()) };
@@ -674,6 +684,110 @@ subtest 'the real socket: SO_RCVTIMEO is actually set' => sub {
   close $ours;
   close $theirs;
 };
+
+# The way read_timeout is held where SO_RCVTIMEO is accepted and ignored
+# (Windows, measured: setsockopt succeeds and getsockopt reads the value back,
+# but recv, sysread and readline on a silent peer still wait forever; select
+# with the same timeout returns on time). _pull then waits with select before
+# each sysread. The switch below makes that path run on every system, so the
+# suite checks it everywhere and not only where it is needed.
+subtest 'the real socket: the select path holds the timeout' => sub {
+  socketpair(my $ours, my $theirs, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+    or plan skip_all => "socketpair unavailable: $!";
+
+  local $API::Docker::Role::HTTP::SELECT_READ_TIMEOUT = 1;
+  $client->_apply_read_timeout($ours, 0.2);
+
+  my $t0 = time;
+  eval { $client->_read_line($ours, ctx_for(0.2)) };
+  my $err     = $@;
+  my $elapsed = time - $t0;
+
+  isa_ok $err, 'API::Docker::Error::Timeout';
+  cmp_ok $elapsed, '>=', 0.15,
+    'it waited for the timeout rather than returning at once ('
+    . sprintf('%.2fs', $elapsed) . ')';
+  cmp_ok $elapsed, '<', 5, 'and gave up rather than hanging';
+
+  syswrite $theirs, "still here\n";
+  is $client->_read_line($ours, ctx_for(0.2)), "still here\n",
+    'and the handle still reads after an expiry';
+
+  syswrite $theirs, "one\ntwo\n";
+  is $client->_read_line($ours, ctx_for(0.2)), "one\n",
+    'a line that has arrived is not waited for';
+  is $client->_read_line($ours, ctx_for(0.2)), "two\n",
+    'and what is already buffered is served without asking the socket';
+
+  close $theirs;
+  my $out = eval { $client->_read_line($ours, ctx_for(0.2)) };
+  ok !$@, 'the peer closing is the end of the response, not a timeout'
+    or diag "raised: $@";
+  is $out, undef, 'which is simply undef';
+
+  close $ours;
+};
+
+subtest 'the select path does not arm SO_RCVTIMEO' => sub {
+  socketpair(my $ours, my $theirs, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+    or plan skip_all => "socketpair unavailable: $!";
+
+  # Where the option is ignored there is nothing to arm, and where it is
+  # accepted the select path alone is what holds the time.
+  local $API::Docker::Role::HTTP::SELECT_READ_TIMEOUT = 1;
+  $client->_apply_read_timeout($ours, 0.2);
+  my $opt = getsockopt($ours, SOL_SOCKET, SO_RCVTIMEO);
+  ok !(defined $opt && grep { $_ } unpack('l!l!', $opt)),
+    'the socket option is left unset';
+  close $ours;
+  close $theirs;
+};
+
+subtest 'the select path reads a handle without a descriptor directly' => sub {
+  local $API::Docker::Role::HTTP::SELECT_READ_TIMEOUT = 1;
+  is $client->_read_line(scripted({ line => "scripted\n" }), ctx()),
+    "scripted\n", 'a tied handle is read, not waited on';
+  my ($v, $err) = timed_out(sub {
+    $client->_read_line(scripted({ timeout => 1 }), ctx()) });
+  isa_ok $err, 'API::Docker::Error::Timeout', 'and its expiry is still a timeout';
+};
+
+subtest 'the select path does not wait when it has no timeout' => sub {
+  socketpair(my $ours, my $theirs, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+    or plan skip_all => "socketpair unavailable: $!";
+  local $API::Docker::Role::HTTP::SELECT_READ_TIMEOUT = 1;
+
+  syswrite $theirs, "no clock\n";
+  is $client->_read_line($ours, ctx_off()), "no clock\n",
+    'read_timeout 0 reads as before';
+  close $ours;
+  close $theirs;
+};
+
+subtest 'the select path leaves bytes a TLS socket already holds alone' => sub {
+  socketpair(my $ours, my $theirs, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+    or plan skip_all => "socketpair unavailable: $!";
+  local $API::Docker::Role::HTTP::SELECT_READ_TIMEOUT = 1;
+
+  # IO::Socket::SSL decrypts a whole record and hands out part of it, so the
+  # socket can be silent while plaintext is waiting; select would then fire
+  # on data that is in hand. The object says so through pending.
+  my $sock = IO::Handle->new_from_fd(fileno($ours), 'r');
+  bless $sock, 'Test::PendingSock';
+  my $got = eval { $client->_pull($sock, ctx_for(0.2)) };
+  ok !$@, 'no wait, no timeout while pending reports bytes'
+    or diag "raised: $@";
+  is $got, 'data', 'the read goes straight to the handle';
+  close $ours;
+  close $theirs;
+};
+
+{
+  package Test::PendingSock;
+  our @ISA = ('IO::Handle');
+  sub pending { 5 }
+  sub sysread { $_[1] = "pending-bytes"; return length $_[1] }
+}
 
 subtest 'a stale errno cannot be mistaken for this read timing out' => sub {
   socketpair(my $ours, my $theirs, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
@@ -773,8 +887,11 @@ subtest 'a socket that cannot take a timeout is refused, not ignored' => sub {
   # A real, open handle that is simply not a socket -- so setsockopt fails
   # with ENOTSOCK rather than with "unopened", which is the shape a wrong
   # transport would actually have.
-  open my $fh, '<', '/dev/null' or die $!;
+  open my $fh, '<', File::Spec->devnull or die $!;
 
+  # The setsockopt path itself, whatever system this runs on: where the
+  # transport waits with select instead (Windows) there is no option to set.
+  local $API::Docker::Role::HTTP::SELECT_READ_TIMEOUT = 0;
   eval { $client->_apply_read_timeout($fh, 1) };
   like $@, qr/cannot set a read timeout/,
     'setsockopt failing croaks: a caller waiting on a bound that is not in '
