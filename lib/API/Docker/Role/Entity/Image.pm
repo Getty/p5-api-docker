@@ -1,6 +1,6 @@
 package API::Docker::Role::Entity::Image;
 # ABSTRACT: Image operations, on the generated image types
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use Moo::Role;
 with 'API::Docker::Role::Entity';
 requires 'id';

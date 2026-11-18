@@ -1,6 +1,6 @@
 package API::Docker::Type::DriverData;
 # ABSTRACT: Information about the storage driver used to store the container's and image's filesystem
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

@@ -1,6 +1,6 @@
 package API::Docker::Type::FilesystemChange;
 # ABSTRACT: Change in the container's filesystem
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

@@ -1,6 +1,6 @@
 package API::Docker::Type::NetworkStatus;
 # ABSTRACT: provides runtime information about the network such as the number of allocated IPs
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use API::Docker::Type::IPAMStatus;
 use namespace::clean;

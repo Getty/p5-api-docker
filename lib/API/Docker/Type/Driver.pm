@@ -1,6 +1,6 @@
 package API::Docker::Type::Driver;
 # ABSTRACT: A driver (network, logging, secrets)
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

@@ -1,6 +1,6 @@
 package API::Docker::Role::Entity::Plugin;
 # ABSTRACT: Plugin operations, on the generated plugin type
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use Moo::Role;
 with 'API::Docker::Role::Entity';
 requires 'name';

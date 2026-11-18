@@ -1,6 +1,6 @@
 package API::Docker::Type::BuildCache;
 # ABSTRACT: Information about a build cache record
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

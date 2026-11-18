@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskSpec::Placement::Preference;
 # ABSTRACT: One scheduling preference of a task
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use API::Docker::Type::TaskSpec::Placement::Preference::Spread;
 use namespace::clean;

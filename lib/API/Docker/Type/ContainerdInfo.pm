@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerdInfo;
 # ABSTRACT: Information for connecting to the containerd instance that is used by the daemon
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use API::Docker::Type::ContainerdInfo::Namespaces;
 use namespace::clean;

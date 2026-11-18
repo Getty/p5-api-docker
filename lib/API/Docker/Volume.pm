@@ -1,6 +1,6 @@
 package API::Docker::Volume;
 # ABSTRACT: Removed in 0.004 -- replaced by API::Docker::Type::Volume
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use strict;
 use warnings;
 use Carp qw( croak );

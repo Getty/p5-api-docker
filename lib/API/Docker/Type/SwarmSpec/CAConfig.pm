@@ -1,6 +1,6 @@
 package API::Docker::Type::SwarmSpec::CAConfig;
 # ABSTRACT: CA configuration
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use API::Docker::Type::SwarmSpec::CAConfig::ExternalCA;
 use namespace::clean;

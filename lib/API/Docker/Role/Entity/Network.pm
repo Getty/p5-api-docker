@@ -1,6 +1,6 @@
 package API::Docker::Role::Entity::Network;
 # ABSTRACT: Network operations, on the generated network type
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use Moo::Role;
 with 'API::Docker::Role::Entity';
 requires 'id';

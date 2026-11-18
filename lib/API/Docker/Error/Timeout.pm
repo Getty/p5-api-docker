@@ -1,6 +1,6 @@
 package API::Docker::Error::Timeout;
 # ABSTRACT: Read timeout while waiting for the Docker Engine
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use Moo;
 # namespace::clean has to come BEFORE "use overload" here, not after it as
 # everywhere else in this distribution -- same reason as in

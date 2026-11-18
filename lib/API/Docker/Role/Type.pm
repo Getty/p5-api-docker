@@ -1,6 +1,6 @@
 package API::Docker::Role::Type;
 # ABSTRACT: Instance behaviour of a generated API::Docker::Type class
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use Moo::Role;
 use Carp qw( croak );
 use JSON::MaybeXS ();

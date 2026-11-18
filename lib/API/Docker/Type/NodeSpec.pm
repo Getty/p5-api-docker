@@ -1,6 +1,6 @@
 package API::Docker::Type::NodeSpec;
 # ABSTRACT: The body of a C<POST /nodes/{id}/update> request
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

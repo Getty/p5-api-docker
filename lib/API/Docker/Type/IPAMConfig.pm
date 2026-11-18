@@ -1,6 +1,6 @@
 package API::Docker::Type::IPAMConfig;
 # ABSTRACT: One entry of C<IPAM.Config>
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

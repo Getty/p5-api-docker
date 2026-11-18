@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerWaitResponse;
 # ABSTRACT: OK response to ContainerWait operation
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use API::Docker::Type::ContainerWaitExitError;
 use namespace::clean;

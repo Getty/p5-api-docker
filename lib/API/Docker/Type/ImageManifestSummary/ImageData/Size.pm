@@ -1,6 +1,6 @@
 package API::Docker::Type::ImageManifestSummary::ImageData::Size;
 # ABSTRACT: The unpacked size of an image manifest
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

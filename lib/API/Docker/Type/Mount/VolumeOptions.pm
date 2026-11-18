@@ -1,6 +1,6 @@
 package API::Docker::Type::Mount::VolumeOptions;
 # ABSTRACT: Optional configuration for the C<volume> type
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use API::Docker::Type::Mount::VolumeOptions::DriverConfig;
 use namespace::clean;

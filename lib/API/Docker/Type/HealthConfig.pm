@@ -1,6 +1,6 @@
 package API::Docker::Type::HealthConfig;
 # ABSTRACT: A test to perform to check that the container is healthy
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

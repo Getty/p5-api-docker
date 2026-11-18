@@ -1,6 +1,6 @@
 package API::Docker::Role::Entity::Container;
 # ABSTRACT: Container operations, on the generated container types
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use Moo::Role;
 with 'API::Docker::Role::Entity';
 requires 'id';

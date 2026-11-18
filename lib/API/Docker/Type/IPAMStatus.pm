@@ -1,6 +1,6 @@
 package API::Docker::Type::IPAMStatus;
 # ABSTRACT: The value of C<NetworkStatus.IPAM>
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use API::Docker::Type::SubnetStatus;
 use namespace::clean;

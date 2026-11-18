@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskSpec::ContainerSpec::Privileges::AppArmor;
 # ABSTRACT: Options for configuring AppArmor on the container
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

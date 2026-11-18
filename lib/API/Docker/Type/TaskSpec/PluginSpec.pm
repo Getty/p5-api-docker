@@ -1,6 +1,6 @@
 package API::Docker::Type::TaskSpec::PluginSpec;
 # ABSTRACT: Plugin spec for the service
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use API::Docker::Type::PluginPrivilege;
 use namespace::clean;

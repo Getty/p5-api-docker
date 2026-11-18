@@ -1,6 +1,6 @@
 package API::Docker::Type::HostConfig::LogConfig;
 # ABSTRACT: The logging configuration for this container
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

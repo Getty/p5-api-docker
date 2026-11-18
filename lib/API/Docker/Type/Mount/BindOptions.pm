@@ -1,6 +1,6 @@
 package API::Docker::Type::Mount::BindOptions;
 # ABSTRACT: Optional configuration for the C<bind> type
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

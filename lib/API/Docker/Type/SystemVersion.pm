@@ -1,6 +1,6 @@
 package API::Docker::Type::SystemVersion;
 # ABSTRACT: Response of Engine API: GET "/version"
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use API::Docker::Type::SystemVersion::Component;
 use API::Docker::Type::SystemVersion::Platform;

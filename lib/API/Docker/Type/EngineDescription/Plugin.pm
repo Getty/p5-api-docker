@@ -1,6 +1,6 @@
 package API::Docker::Type::EngineDescription::Plugin;
 # ABSTRACT: One entry of C<EngineDescription.Plugins>
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

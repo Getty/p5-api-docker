@@ -1,6 +1,6 @@
 package API::Docker::API::Containers;
 # ABSTRACT: Docker Engine Containers API
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use Moo;
 with 'API::Docker::Role::Filters', 'API::Docker::Role::Using',
   'API::Docker::Role::JSONBody';

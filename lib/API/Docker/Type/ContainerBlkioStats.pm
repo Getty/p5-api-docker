@@ -1,6 +1,6 @@
 package API::Docker::Type::ContainerBlkioStats;
 # ABSTRACT: BlkioStats stores all IO service stats for data read and write
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use API::Docker::Type::ContainerBlkioStatEntry;
 use namespace::clean;

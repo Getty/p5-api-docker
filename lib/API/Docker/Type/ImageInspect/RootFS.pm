@@ -1,6 +1,6 @@
 package API::Docker::Type::ImageInspect::RootFS;
 # ABSTRACT: Information about the image's RootFS, including the layer IDs
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

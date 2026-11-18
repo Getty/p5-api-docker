@@ -1,6 +1,6 @@
 package API::Docker::Type::Resources;
 # ABSTRACT: A container's resources (cgroups config, ulimits, etc)
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use API::Docker::Type::DeviceMapping;
 use API::Docker::Type::DeviceRequest;

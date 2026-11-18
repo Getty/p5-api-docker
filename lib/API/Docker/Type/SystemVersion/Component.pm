@@ -1,6 +1,6 @@
 package API::Docker::Type::SystemVersion::Component;
 # ABSTRACT: One entry of C<SystemVersion.Components>
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

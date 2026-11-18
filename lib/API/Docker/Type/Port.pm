@@ -1,6 +1,6 @@
 package API::Docker::Type::Port;
 # ABSTRACT: An open port on a container
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

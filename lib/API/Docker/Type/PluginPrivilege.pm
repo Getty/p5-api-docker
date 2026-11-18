@@ -1,6 +1,6 @@
 package API::Docker::Type::PluginPrivilege;
 # ABSTRACT: Describes a permission the user has to accept upon installing the plugin
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use API::Docker::Type;
 use namespace::clean;
 

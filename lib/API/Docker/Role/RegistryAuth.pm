@@ -1,6 +1,6 @@
 package API::Docker::Role::RegistryAuth;
 # ABSTRACT: AuthConfig encoding shared by the registry-facing endpoints
-our $VERSION = '0.006';
+our $VERSION = '0.007';
 use Moo::Role;
 use Carp qw( croak );
 use JSON::MaybeXS qw( decode_json encode_json );
