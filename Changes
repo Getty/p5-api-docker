@@ -1,6 +1,6 @@
 Revision history for API-Docker
 
-{{$NEXT}}
+0.006     2026-11-18 01:20:29Z
 
   - The test suite runs again in an installed distribution (`perl Makefile.PL
     && make && make test`, as cpanm and CPAN smokers do): t/dist_source.t now
