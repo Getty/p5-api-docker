@@ -1,0 +1,47 @@
+---
+claimed_at: 2026-11-24T20:30:01Z
+claimed_by: ct-1124
+class: standard
+completed: 2026-11-24T20:30:01Z
+created: 2026-11-24T18:48:54Z
+id: 119
+priority: critical
+started: 2026-11-24T20:30:01Z
+status: done
+tags:
+- cpantesters
+- tests
+- bug
+title: 'CPAN Testers: fix the 41 FAIL reports of 0.006'
+updated: 2026-11-24T20:30:19Z
+---
+
+API::Docker 0.006 on CPAN Testers (2026-11-24): 41 FAIL, 127 PASS, 3 NA. main carries only the
+Windows read_timeout fix so far.
+
+1. t/transport_shape.t and t/plugins.t (36 reports, perl 5.14 to 5.42, Linux and the BSDs;
+   the same perls pass elsewhere, so an installed module or its version decides): a body
+   that is a bare JSON scalar comes back as bytes instead of decoded: "null decodes to
+   undef, not to the string \"null\"" (got 'null'), "and is the JSON boolean" (got 'true'),
+   "a quoted string, without its quotes", "leading whitespace and a trailing newline do not
+   stop it", "GET /plugins/privileges: null is undef", "GET /containers/{id}/changes: the
+   same", "the transport decodes the bare null to undef". Find what differs between a
+   passing and a failing environment (JSON backend and version, HTTP client, response
+   content type) and decode independent of it.
+2. t/read_timeout.t "the real socket: SO_RCVTIMEO is actually set" and t/tls_read.t
+   "on_chunk sees each write as it arrives, not once buffered" (4 reports: GNU/Hurd,
+   armv6l, Haiku, one Linux): the test exits without a plan after a failed check.
+
+Sample reports (GUID): 3a59fc0c-e391-11f1-abfb-989f178b6598 (1),
+62862b46-e2f2-11f1-ac7d-e624b4741bff (2).
+
+Done: 1 fixed in lib with a test that is red before; 2 fixed, or skipped with the reason
+where the platform lacks the socket option; full suite green; Changes entry for 1.
+
+2026-11-24 19:05 Cause 1 fixed in 95f3740. Root cause: the transport decoded with JSON::MaybeXS's decode_json, which leaves allow_nonref to the backend. Cpanel::JSON::XS turned it on by default only in 4.42 (2026-06-27), JSON::XS/JSON::PP in 4.0; measured in perl:5.42 with Cpanel::JSON::XS 4.40: decode_json('null'/'true'/'"hello"') croaks 'JSON text must be an object or array', so the eval failed and the body came back as bytes. Fix: one decoder JSON::MaybeXS->new(utf8 => 1, allow_nonref => 1) in Role::HTTP (_json), used for all body/stream decoding. New t/transport_json_backend.t gives the installed backend the old default (decode_json and new) before API::Docker loads: red against the 0.006 lib (null->'null', true/false/"hello"/whitespace, both endpoints), green after. With the same hook as PERL5OPT the 0.006 lib reproduces exactly the 11 CPAN Testers failures in t/transport_shape.t and t/plugins.t; the fixed lib passes them. Full suite green (49 files, 782 tests).
+
+Cause 2 fixed in e52bd0b for three of the four reports (GNU/Hurd, armv6l, Haiku). Measured: with setsockopt(SO_RCVTIMEO) failing on real sockets with ENOPROTOOPT (Hurd's answer) or EINVAL (armv6l's), played by a CORE::GLOBAL hook, the lib before e52bd0b reproduces exactly the reported symptoms (t/read_timeout.t exits 255 after 19, t/tls_read.t dies in subtest 1); the fixed lib passes both files unchanged. Decision (mine): a lib fix, not a skip. A socket that refuses the option with ENOPROTOOPT or EINVAL is marked and _pull holds the time with select, as on Windows; Haiku (option accepted, expiry not reported as EAGAIN) takes the select path outright; every other setsockopt failure (e.g. ENOTSOCK) still croaks. Why: the bound stays in force everywhere, and nothing guesses at armv6l's struct layout (most likely a 64-bit time_t behind a 32-bit long, SO_RCVTIMEO_NEW; not measured). Haiku's errno on expiry is not in the report; ETIMEDOUT stands in for it. New t/read_timeout_platforms.t: red against the old lib in subtests 1-3 and 5, green after. Not measured: that Hurd answers setsockopt on /dev/null with ENOTSOCK, which t/read_timeout.t 'a socket that cannot take a timeout is refused' relies on. Not fixed: the Linux report 62941612-e391-11f1-9f22-ea5d4922abd5 (perl 5.38.4, IO::Socket::SSL 2.092), t/tls_read.t subtest 1 '10s of silence after 3 units'; not reproduced in 15 runs here. Its 'exited with 15' is the wait status the file's END block took from the TLS server child it killed with TERM, so that server was still alive when the client gave up: either it hung after its third write without closing, or the client's read came back EAGAIN before the time was up. The report cannot tell which; no lib or test change for it. Full suite offline green: 50 files, 787 tests, no file skipped.
+
+Coordinator decision: the single Linux report 62941612 (t/tls_read.t subtest 1, perl 5.38.4) is accepted as not reproducible for this round: one report of 171, 15 local runs green, no lib or test change. Watched in the reports of the next release; no card of its own.
+
+2026-11-24 20:30 Merged to main (95f3740, e52bd0b) and pushed. bin/smoke on main: perl 5.14, 5.16, 5.24 and 5.40 PASS.
