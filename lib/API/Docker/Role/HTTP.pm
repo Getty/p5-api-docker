@@ -11,8 +11,9 @@ use Socket qw( SOL_SOCKET SO_RCVTIMEO );
 use Time::HiRes ();
 # How a read that delivered nothing says it ran out of time rather than out of
 # stream (EAGAIN/EWOULDBLOCK), and how it says it was interrupted rather than
-# either (EINTR). See _pull and _timed_out.
-use Errno qw( EAGAIN EWOULDBLOCK EINTR );
+# either (EINTR). See _pull and _timed_out. How a socket says it takes no
+# receive timeout (ENOPROTOOPT, EINVAL): see _apply_read_timeout.
+use Errno qw( EAGAIN EWOULDBLOCK EINTR EINVAL ENOPROTOOPT );
 use JSON::MaybeXS qw( encode_json );
 use Scalar::Util qw( looks_like_number );
 use Path::Tiny;
@@ -578,12 +579,33 @@ sub _connect_timeout_value {
 # _read_buffer, and a TLS socket that already holds decrypted bytes
 # (`pending`) is read without waiting.
 #
-# $SELECT_READ_TIMEOUT forces that path on any system; the tests set it.
+# On Haiku perl accepts the option and keeps the time, but a read that runs out
+# of it does not come back with EAGAIN (CPAN Testers, perl 5.42.2: the read
+# returned after the timeout and raised nothing, and a response cut short was
+# reported as truncated rather than timed out). errno being the only thing
+# that tells an expiry from an end (see _timed_out), the option is no use
+# there, and select holds the time as on Windows.
+#
+# A socket that takes no receive timeout at all is waited on the same way.
+# GNU/Hurd has no SO_RCVTIMEO: setsockopt fails with ENOPROTOOPT (CPAN
+# Testers, perl 5.24.4 and 5.44.0). An armv6l Linux refuses the struct
+# timeval packed below with EINVAL (perl 5.44.0, glibc 2.42, 32-bit IV) --
+# most likely a time_t of 64 bits behind a 32-bit long, which no pack of
+# native longs can match; not measured. Either way the socket has no bound
+# select cannot give it, so _apply_read_timeout marks it and _pull waits for
+# it, instead of refusing the request. Any other failure is still refused.
+#
+# $SELECT_READ_TIMEOUT forces that path on any system, or (0) the option on a
+# socket that takes it; the tests set it.
 our $SELECT_READ_TIMEOUT;
 
+my $NO_RCVTIMEO = __PACKAGE__ . '/no_rcvtimeo';
+
 sub _select_read_timeout {
+  my ($self, $sock) = @_;
+  return 1 if $sock && ${*$sock}{$NO_RCVTIMEO};
   return $SELECT_READ_TIMEOUT if defined $SELECT_READ_TIMEOUT;
-  return $^O eq 'MSWin32' ? 1 : 0;
+  return ($^O eq 'MSWin32' || $^O eq 'haiku') ? 1 : 0;
 }
 
 sub _apply_read_timeout {
@@ -593,7 +615,7 @@ sub _apply_read_timeout {
 
   # _pull holds the time itself; arming an option the platform ignores would
   # only suggest a bound that is not there.
-  return if $self->_select_read_timeout;
+  return if $self->_select_read_timeout($sock);
 
   my $packed;
   if ($^O eq 'cygwin') {
@@ -613,16 +635,23 @@ sub _apply_read_timeout {
     $packed = pack('l!l!', $sec, $usec);
   }
 
+  return if setsockopt($sock, SOL_SOCKET, SO_RCVTIMEO, $packed);
+  my $errno  = 0 + $!;
+  my $reason = "$!";
+
+  # The socket takes no receive timeout (see above): _pull waits for it.
+  if ($errno == ENOPROTOOPT || $errno == EINVAL) {
+    ${*$sock}{$NO_RCVTIMEO} = 1;
+    return;
+  }
+
   # Never a warning and never a silent pass. A caller that asked for a bound
   # and did not get one is left waiting on exactly the hang the option exists
   # to end, and would have no way to tell that from a daemon being slow.
-  setsockopt($sock, SOL_SOCKET, SO_RCVTIMEO, $packed)
-    or croak __PACKAGE__ . ': cannot set a read timeout of ' . $timeout
-      . 's on this socket: ' . $! . '. Refusing to continue without it -- a '
-      . 'bound that is not in force is worse than no bound at all, because '
-      . 'the caller is relying on it';
-
-  return;
+  croak __PACKAGE__ . ': cannot set a read timeout of ' . $timeout
+    . 's on this socket: ' . $reason . '. Refusing to continue without it -- a '
+    . 'bound that is not in force is worse than no bound at all, because '
+    . 'the caller is relying on it';
 }
 
 # A read that did not deliver did not deliver for one of two reasons, and they
@@ -845,11 +874,13 @@ sub _pull {
   my $buf = $self->_read_buffer($sock);
 
   while (1) {
-    # Where the platform ignores SO_RCVTIMEO, wait for the socket here, for at
-    # most the time of the request. Not readable in that time is the expiry,
-    # reported as the EAGAIN the option would have produced so that
-    # _timed_out reads both the same way. See _apply_read_timeout.
-    if ($ctx->{timeout} && $self->_select_read_timeout) {
+    # Where SO_RCVTIMEO does not hold the time -- the platform ignores it or
+    # hides its expiry, or this socket would not take it -- wait for the
+    # socket here, for at most the time of the request. Not readable in that
+    # time is the expiry, reported as the EAGAIN the option would have
+    # produced so that _timed_out reads both the same way. See
+    # _select_read_timeout.
+    if ($ctx->{timeout} && $self->_select_read_timeout($sock)) {
       my $ready = $self->_wait_readable($sock, $ctx->{timeout});
       return 'timeout' unless $ready;
     }
@@ -1991,18 +2022,32 @@ C</build> context sent to a daemon that has stopped reading.
 It is implemented with C<SO_RCVTIMEO> on the socket, which was measured to
 behave the same over C<unix://>, plain C<tcp://> and TLS: the timeout fires,
 the handle is not left unusable, and reading afterwards works. The C<struct
-timeval> it is set with was measured on Linux. A platform that rejects it
-croaks rather than continuing without the bound.
+timeval> it is set with was measured on Linux.
 
-On Windows that option is accepted and not kept: measured with Strawberry Perl
-5.42.3, C<setsockopt> succeeds and C<getsockopt> reads the value back, yet a
-read from a silent peer waits forever. There the timeout is held by waiting for
-the socket with C<select> before each read, for the same time and with the same
-meaning -- silence since the last byte -- and the option is not set. A TLS
-socket that already holds decrypted bytes is read without waiting.
+Where that option does not hold the time, the timeout is held by waiting for
+the socket with C<select> before each read instead, for the same time and with
+the same meaning -- silence since the last byte -- and the option is not set.
+A TLS socket that already holds decrypted bytes is read without waiting. That
+is the case
 
-Over TLS it is not quite an idle timer on the plaintext. C<SO_RCVTIMEO> (on
-Windows the wait for the socket) bounds each blocking receive on the underlying
+=over
+
+=item * on Windows, where the option is accepted and not kept: measured with
+Strawberry Perl 5.42.3, C<setsockopt> succeeds and C<getsockopt> reads the
+value back, yet a read from a silent peer waits forever;
+
+=item * on Haiku, where it is kept, but a read that runs out of time cannot be
+told from the end of the response;
+
+=item * on a socket that does not take the option at all -- C<setsockopt> fails
+with C<ENOPROTOOPT> or C<EINVAL>, as on GNU/Hurd and on a 32-bit ARM Linux.
+
+=back
+
+Any other failure to set it croaks rather than continuing without the bound.
+
+Over TLS it is not quite an idle timer on the plaintext. C<SO_RCVTIMEO> (or
+the wait for the socket) bounds each blocking receive on the underlying
 socket, and one plaintext read can
 consume several of those while a TLS record arrives in pieces -- so a record
 dribbling in slowly enough resets the clock without a byte reaching the

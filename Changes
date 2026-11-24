@@ -10,8 +10,16 @@ Revision history for API-Docker
     `null` instead of undef.
 
   - `read_timeout` holds on Windows too: there a request waits for the
-    socket with `select` before each read, for the time given. Everywhere
-    else it stays the socket option.
+    socket with `select` before each read, for the time given.
+
+  - `read_timeout` holds on a socket that does not take the receive-timeout
+    option -- `setsockopt` fails with ENOPROTOOPT on GNU/Hurd and with
+    EINVAL on a 32-bit ARM Linux -- and on Haiku, where a read that runs
+    out of time cannot be told from the end of the response. There a
+    request waits with `select` as on Windows. Before, such a socket
+    refused every request that set a timeout, with "cannot set a read
+    timeout", and on Haiku a response cut short was reported as truncated
+    rather than timed out.
 
   - The test suite runs on Windows. t/request_write.t checks there that a
     daemon closing early ends the call with an exception naming the
