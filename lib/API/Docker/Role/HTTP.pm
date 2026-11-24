@@ -13,7 +13,7 @@ use Time::HiRes ();
 # stream (EAGAIN/EWOULDBLOCK), and how it says it was interrupted rather than
 # either (EINTR). See _pull and _timed_out.
 use Errno qw( EAGAIN EWOULDBLOCK EINTR );
-use JSON::MaybeXS qw( encode_json decode_json );
+use JSON::MaybeXS qw( encode_json );
 use Scalar::Util qw( looks_like_number );
 use Path::Tiny;
 use Carp qw( croak shortmess );
@@ -201,7 +201,7 @@ my $REQUEST_PATH = qr{\A[A-Za-z0-9\-._~:/\@!\$&'()*+,;=%]*\z};
 # one of them, or none and gets the buffered path; see _stream_handler.
 my @STREAM_OPTION = qw( on_event on_frame on_chunk );
 
-# What a response body has to start with to be worth handing to decode_json.
+# What a response body has to start with to be worth handing to the decoder.
 # An object or an array is not the whole of JSON: the engine answers several
 # endpoints with a bare JSON scalar, and a `null` used to come back as the
 # four-character string 'null'. See _request.
@@ -282,6 +282,19 @@ has _pending_connect => (
   is       => 'rw',
   init_arg => undef,
 );
+
+# The one decoder for everything the daemon sends, with allow_nonref set
+# rather than left to the JSON backend. decode_json leaves it to the backend,
+# and the backends disagree: Cpanel::JSON::XS has accepted a JSON text that is
+# a bare scalar by default only since 4.42, JSON::XS and JSON::PP since 4.0.
+# Where an older one was installed, a body of `null` failed to decode and came
+# back as the four bytes 'null' (karr k119). See _request.
+has _json => (
+  is       => 'lazy',
+  init_arg => undef,
+);
+
+sub _build__json { JSON::MaybeXS->new(utf8 => 1, allow_nonref => 1) }
 
 sub _build__socket {
   my ($self) = @_;
@@ -1142,7 +1155,7 @@ sub _request {
     my $data;
     if ($body && $body =~ /^\s*[\{\[]/) {
       eval {
-        $data = decode_json($body);
+        $data = $self->_json->decode($body);
         # Docker answers with {"message":...}. Podman answers a failed push
         # with the stream shape instead -- {"errorDetail":{"message":...},
         # "error":...} and no message key at all -- so without these two
@@ -1219,11 +1232,16 @@ sub _request {
   #
   # The eval decides, not the pattern: a plain-text body that happens to
   # start with one of these characters fails to decode and is returned as
-  # itself. So must the eval's success, not its result -- decode_json('null')
-  # is a successful decode to undef.
+  # itself. So must the eval's success, not its result -- decoding 'null' is
+  # a successful decode to undef.
+  #
+  # Decoded with _json, never decode_json: whether a scalar is a JSON text at
+  # all is a default of the backend that changed between its versions, and
+  # with the old one every body above that is not an object or array came
+  # back as its bytes again.
   if ($body =~ $JSON_BODY) {
     my $decoded;
-    return $decoded if eval { $decoded = decode_json($body); 1 };
+    return $decoded if eval { $decoded = $self->_json->decode($body); 1 };
   }
 
   return $body;
@@ -1237,14 +1255,14 @@ sub _decode_stream {
   my @events;
   for my $line (split /\r?\n/, $body) {
     next unless $line =~ /\S/;
-    my $event = eval { decode_json($line) };
+    my $event = eval { $self->_json->decode($line) };
     push @events, $event if defined $event;
   }
 
   # Fall back to the whole body for a stream that is not newline-framed
   # (a single pretty-printed object), so nothing is silently dropped.
   unless (@events) {
-    my $event = eval { decode_json($body) };
+    my $event = eval { $self->_json->decode($body) };
     push @events, $event if defined $event;
   }
 
@@ -1656,7 +1674,7 @@ sub _stream_handler {
       my ($line) = @_;
       $line =~ s/\r\z//;
       return 1 unless $line =~ /\S/;
-      my $event = eval { decode_json($line) };
+      my $event = eval { $self->_json->decode($line) };
       return 1 unless defined $event;
       # Checked per event rather than over the finished list, so a failed
       # build croaks at the event that reports it instead of when the daemon

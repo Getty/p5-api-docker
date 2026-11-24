@@ -2,6 +2,13 @@ Revision history for API-Docker
 
 {{$NEXT}}
 
+  - A response body that is a bare JSON scalar (`null`, `true`, `"text"`)
+    is decoded whichever JSON backend JSON::MaybeXS picks. With a backend
+    that refuses such a text by default -- measured on Cpanel::JSON::XS
+    4.40, whose `decode_json('null')` croaks; 4.42 changed the default --
+    `get` and the other request methods handed back the bytes, the string
+    `null` instead of undef.
+
   - `read_timeout` holds on Windows too: there a request waits for the
     socket with `select` before each read, for the time given. Everywhere
     else it stays the socket option.
