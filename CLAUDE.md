@@ -188,7 +188,7 @@ is briefed with `docker-engine-api`, the shared Engine API reference.
 `api-docker-type-writer` is briefed with `api-docker-type-model`, which carries the
 pattern for the generated classes; see karr k79.
 
-The agents carry their skills via `briefing.skills` (see `.claude/agents/`);
+The agents carry their skills via `skills:` (see `.claude/agents/`);
 the main agent delegates rather than loading them. Skill sources live under
 `.claude/skills/` — `api-docker-core`, `api-docker-hazards` and `api-docker-type-model`
 are owned here, the rest are installed by skilletor from `.claude/skilletor.json`

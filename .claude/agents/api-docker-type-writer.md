@@ -2,16 +2,15 @@
 name: api-docker-type-writer
 description: "Writes and maintains the generated type model of API::Docker — classes under API::Docker::Type::*, the API::Docker::Type DSL and its attribute registry, maint/spec-drift-check.pl, and the swagger under spec/. Use for anything that turns a definition in Docker's swagger into a Perl class, for the snake_case-to-CamelCase mapping, and for the version notes derived from diffing two specs. Pre-loaded with the type-model pattern; the plain api-docker-worker is not."
 model: inherit
-briefing:
-  skills:
-    - api-docker-type-model
-    - api-docker-core
-    - api-docker-hazards
-    - docker-engine-api
-    - getty-perl-core
-    - getty-perl-moo
-    - kanban-issues-karr-ticket
-    - getty-perl-pod
+skills:
+  - api-docker-type-model
+  - api-docker-core
+  - api-docker-hazards
+  - docker-engine-api
+  - getty-perl-core
+  - getty-perl-moo
+  - kanban-issues-karr-ticket
+  - getty-perl-pod
 ---
 
 You are the api-docker-type-writer for **API::Docker**.

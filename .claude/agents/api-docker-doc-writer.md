@@ -3,12 +3,11 @@ name: api-docker-doc-writer
 description: "Write and maintain API::Docker POD in the house format (=attr, =method, =head1 SYNOPSIS, =seealso, woven by @Author::GETTY) and keep README.md in step. Documents the surface that exists; does not change code."
 model: sonnet
 disallowedTools: Write, NotebookEdit, Bash
-briefing:
-  skills:
-    - api-docker-core
-    - api-docker-hazards
-    - getty-perl-core
-    - getty-perl-pod
+skills:
+  - api-docker-core
+  - api-docker-hazards
+  - getty-perl-core
+  - getty-perl-pod
 ---
 
 You are the api-docker-doc-writer for **API::Docker**.

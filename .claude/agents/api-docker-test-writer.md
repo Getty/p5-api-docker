@@ -2,14 +2,13 @@
 name: api-docker-test-writer
 description: "Write API::Docker tests with Test::More and the Test::API::Docker::Mock route table. The default suite never touches a Docker daemon or the network; live paths stay gated on is_live()/can_write(). Use for test additions, regression scaffolding, new fixtures, and coverage of the HTTP transport."
 model: sonnet
-briefing:
-  skills:
-    - api-docker-core
-    - api-docker-hazards
-    - docker-engine-api
-    - getty-perl-core
-    - getty-perl-moo
-    - kanban-issues-karr-ticket
+skills:
+  - api-docker-core
+  - api-docker-hazards
+  - docker-engine-api
+  - getty-perl-core
+  - getty-perl-moo
+  - kanban-issues-karr-ticket
 ---
 
 You are the api-docker-test-writer for **API::Docker**.
